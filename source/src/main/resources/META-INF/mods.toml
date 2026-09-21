@@ -1,13 +1,13 @@
 modLoader="javafml"
 loaderVersion="${loader_version_range}"
 license="${mod_license}"
-issueTrackerURL="https://github.com/Traincraft/Traincraft/issues"
+issueTrackerURL="https://github.com/RRyanward/TafariCraft-Trains/issues"
 
 [[mods]]
 modId="${mod_id}"
 version="${mod_version}"
 displayName="${mod_name}"
-displayURL="https://github.com/Traincraft/Traincraft"
+displayURL="https://github.com/RRyanward/TafariCraft-Trains"
 logoFile="Logo.png"
 authors="${mod_authors}"
 description='''${mod_description}'''
