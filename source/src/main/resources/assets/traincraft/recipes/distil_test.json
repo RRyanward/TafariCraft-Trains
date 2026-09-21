@@ -1,0 +1,13 @@
+{
+  "type": "traincraft:distillery",
+  "input": {
+    "item": "traincraft:ore_oil_sand"
+  },
+  "output": {
+    "item": "traincraft:plastic"
+  },
+  "fluid": {
+    "name": "traincraft:oil",
+    "amount": 250
+  }
+}

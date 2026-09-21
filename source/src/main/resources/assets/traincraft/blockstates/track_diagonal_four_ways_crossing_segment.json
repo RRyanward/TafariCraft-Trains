@@ -1,0 +1,43 @@
+{
+  "multipart": [
+    {
+      "when": {
+        "assembly_part": "0",
+        "facing": "north"
+      },
+      "apply": {
+        "model": "traincraft:block/batch/track_diagonal_four_ways_crossing"
+      }
+    },
+    {
+      "when": {
+        "assembly_part": "0",
+        "facing": "east"
+      },
+      "apply": {
+        "model": "traincraft:block/batch/track_diagonal_four_ways_crossing",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "assembly_part": "0",
+        "facing": "south"
+      },
+      "apply": {
+        "model": "traincraft:block/batch/track_diagonal_four_ways_crossing",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "assembly_part": "0",
+        "facing": "west"
+      },
+      "apply": {
+        "model": "traincraft:block/batch/track_diagonal_four_ways_crossing",
+        "y": 270
+      }
+    }
+  ]
+}

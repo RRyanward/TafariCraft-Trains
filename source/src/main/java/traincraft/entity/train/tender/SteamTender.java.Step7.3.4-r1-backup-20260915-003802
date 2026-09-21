@@ -1,0 +1,2394 @@
+/*
+ * Traincraft 1.20.1 basic steam tender.
+ * Step 7.0 establishes physical locomotive/tender coupling. Step 7.1 adds
+ * persistent coal/water storage and automatic supply to the coupled locomotive.
+ * Step 7.1.1 restores the classic 1.7.10 tender inventory/GUI.
+ * Step 7.2.1 activates secondary tender coupling for three-car consists.
+ * Step 7.2.1a stabilizes chained followers on corners and at higher speed.
+ * Step 7.2.1b adds coupler clearance and prevents low-speed chained-curve bounce.
+ * Step 7.2.1c hands chained followers through 90-degree rails by track motion
+ * instead of straight-line coupler geometry, preventing corner launch/bounce.
+ * Step 7.2.1d uses Minecraft's own rail path sampling for chained followers and
+ * keeps Euclidean catch-up disabled for a short curve-exit handoff window.
+ * Step 7.2.1e keeps direction rail-owned but uses coupling distance only to trim
+ * follower speed, preventing crawl-speed overlap and downhill/high-speed gaps.
+ * Step 7.2.1f gives chained cars a consistent classic coupler gap and aligns a
+ * newly connected tender to the consist direction if it was placed backwards.
+ * Step 7.2.1g locks tender front/back polarity to rail continuity so reverse
+ * movement and coupling catch-up can no longer make the model spin 180 degrees.
+ * Step 7.2.1h makes tender polarity server-authoritative and synchronized to the
+ * client. Coupled tenders resolve their front from the actual coupling leader on
+ * the local rail tangent, so stationary connector flips and hill transitions
+ * remain deterministic without touching the proven Step 7.2.1f movement logic.
+ * Step 7.2.1i corrects the model polarity (the authored tender forward axis is
+ * opposite the locomotive-facing coupling end) and gives the first tender a
+ * larger straight/hill resting gap.
+ * Step 7.2.1j tunes that primary gap to the visible coupler nubs, keeps chained
+ * tenders tighter on grades, and guarantees permanent cart removal clears both
+ * ends of every loaded coupling without breaking links on normal chunk unload.
+ * Step 7.2.1k is DIAGNOSTIC ONLY: it adds once-per-second server telemetry for
+ * actual center spacing, model-derived coupler-nub gap, rail tangent/order and
+ * speed. It deliberately changes no coupling, spacing, speed or facing behavior.
+ * Step 7.2.1ka keeps the same diagnostic values but writes them directly to
+ * run/traincraft-coupler-telemetry.log so log-category filtering cannot hide them.
+ * Step 7.2.1l applies the measured coupler-nub targets from that telemetry and
+ * locks chained travel direction to the lead consist instead of the follower's
+ * own motion, preventing a rear cart from running the loop in the wrong direction.
+ * Step 7.2.1m keeps those proven moving-consist rules unchanged, but hard-settles
+ * a fully stopped consist back to its measured coupler targets and immediately
+ * synchronizes connector-time/server-side position snaps to the client.
+ * Step 7.3.0 keeps every tender value identical, but exposes model-derived
+ * coupler-reach hooks so longer classic rolling stock can reuse this proven
+ * rail-following controller without inheriting the tender's shorter spacing.
+ * Step 7.3.2c is DIAGNOSTIC ONLY: it adds a per-tick rail movement flight
+ * recorder plus controller-decision telemetry for reverse/curve tuning.
+ * Distributed under LGPL-v3.0.
+ */
+package traincraft.entity.train.tender;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ClientboundTeleportEntityPacket;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.Containers;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.entity.vehicle.Minecart;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseRailBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.RailShape;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.common.ForgeHooks;
+import net.minecraftforge.items.IItemHandler;
+import net.minecraftforge.fml.loading.FMLPaths;
+import net.minecraftforge.items.ItemStackHandler;
+import net.minecraftforge.network.NetworkHooks;
+import org.jetbrains.annotations.Nullable;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import traincraft.debug.TrainMovementDebug;
+import traincraft.entity.train.CoupleableRollingStock;
+import traincraft.entity.train.CouplingManager;
+import traincraft.entity.train.steam.small.SmallSteamLocomotive;
+import traincraft.item.ConnectorItem;
+import traincraft.menu.TenderMenu;
+import traincraft.registry.TCItems;
+
+import java.util.UUID;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
+
+/** Classic Traincraft steam tender with the first modern coupling constraint. */
+public class SteamTender extends Minecart implements CoupleableRollingStock, MenuProvider {
+    /* Step 7.2.1k diagnostics.  These values come directly from the rendered
+     * classic models: locomotive rear Z reach = 22 px, tender leader-facing
+     * (-Z) nub reach = 20 px, tender trailing (+Z) nub reach = 21 px, all at
+     * 0.8 render scale and 16 model pixels per block. */
+    private static final Logger COUPLER_DEBUG_LOG = LoggerFactory.getLogger("TraincraftCouplerDebug");
+    private static final Path COUPLER_DEBUG_FILE = FMLPaths.GAMEDIR.get().resolve("traincraft-coupler-telemetry.log");
+    private static final int COUPLER_DEBUG_INTERVAL_TICKS = 20;
+    private static final double MODEL_SCALE_BLOCKS_PER_PIXEL = 0.8D / 16.0D;
+    private static final double LOCO_REAR_NUB_REACH = 22.0D * MODEL_SCALE_BLOCKS_PER_PIXEL; // 1.10 blocks
+    private static final double TENDER_LEADER_NUB_REACH = 20.0D * MODEL_SCALE_BLOCKS_PER_PIXEL; // 1.00 blocks
+    private static final double TENDER_TRAILING_NUB_REACH = 21.0D * MODEL_SCALE_BLOCKS_PER_PIXEL; // 1.05 blocks
+
+    /* Step 7.1 supply backend. Step 7.1.1 exposes this through the exact
+     * classic 1.7.10 5 x 3 tender fuel grid and separate water reservoir. */
+    public static final int FUEL_INVENTORY_SIZE = 15;
+    public static final int WATER_CAPACITY_MB = 16000;
+    private static final int WATER_BUCKET_MB = 1000;
+
+    /**
+     * Classic couplers have a little slack. Keeping a small dead band prevents a
+     * freshly connected tender from receiving a large sideways/longitudinal snap
+     * the first tick the locomotive starts moving.
+     */
+    /*
+     * Step 7.2.1b: add a little more physical/visual clearance between cars.
+     * The old 1.34-1.52 block straight dead band let the tender model intrude
+     * into the locomotive cab/camera while moving in first person.  The extra
+     * ~0.18-0.20 block slack keeps the classic close-coupled look without the
+     * tender popping into the driver's view.
+     */
+    /*
+     * Step 7.2.1i: match the locomotive -> first-tender straight/hill gap to the
+     * proven tender -> tender classic spacing.  Curves keep their older looser
+     * geometry below so the first tender does not regress on 90-degree turns.
+     */
+    // Step 7.2.1l: telemetry measured the first tender at ~1.73-1.89 blocks
+    // while the rendered locomotive/tender nubs touch at ~2.10 blocks.
+    private static final double COUPLING_MIN_DISTANCE = 2.08D;
+    private static final double COUPLING_MAX_DISTANCE = 2.14D;
+    private static final double CURVE_COUPLING_MIN_DISTANCE = 1.40D;
+    private static final double CURVE_COUPLING_MAX_DISTANCE = 1.58D;
+    /*
+     * A normal hill/curve transition must never be able to tear a consist apart.
+     * This is only an emergency sanity limit for teleports or truly invalid links.
+     */
+    private static final double COUPLING_BREAK_DISTANCE = 32.0D;
+
+    /*
+     * The follower must be allowed to run a little faster than the locomotive.
+     * If both vehicles share exactly the same speed cap, any distance lost while
+     * one vehicle is on a curve/slope can never be recovered, which is what caused
+     * the large visible gap reported in Step 7.0.1.
+     */
+    private static final double COUPLING_CORRECTION = 0.40D;
+    private static final double COUPLING_MAX_CORRECTION = 0.48D;
+    private static final double COUPLING_VELOCITY_BLEND = 0.75D;
+    private static final double COUPLED_ROLLING_RESISTANCE = 0.999D;
+    private static final double CURVE_MAX_SPEED_BLOCKS_PER_TICK = 0.30D;
+    private static final double MAX_SPEED_BLOCKS_PER_TICK = 0.625D;
+    private static final double COUPLED_CURVE_CATCHUP_SPEED = 0.75D;
+    private static final double COUPLED_STRAIGHT_CATCHUP_SPEED = 1.25D;
+    private static final double POST_MOVE_GAP_THRESHOLD = 2.16D;
+    private static final double CURVE_POST_MOVE_GAP_THRESHOLD = 1.68D;
+    private static final double POST_MOVE_CATCHUP_PER_BLOCK = 0.30D;
+    /*
+     * A chained follower can become compressed while both cars occupy different
+     * parts of a vanilla 90-degree rail.  At very low speed the spacing
+     * correction used to overpower the train's forward motion, reverse the rear
+     * car for a tick, and produce the observed bounce/stall.  Never let that
+     * correction reverse a moving chained follower through a sharp curve.
+     */
+    private static final double CHAINED_CURVE_MIN_REFERENCE_SPEED = 0.003D;
+    private static final double CHAINED_CURVE_MAX_CRAWL_SPEED = 0.055D;
+    /*
+     * Step 7.2.1d: a chained car must stay on Minecraft's rail path through a
+     * corner.  The old diagonal approximation could point across the inside of
+     * a 90-degree rail and briefly launch the rear car in front of the consist.
+     * Keep the corner handoff active for a few ticks after the literal curve has
+     * cleared so straight-line catch-up cannot re-engage one tick too early.
+     */
+    private static final int CHAINED_CURVE_HANDOFF_TICKS = 8;
+    private static final double CHAINED_CURVE_SPEED_CHANGE_PER_TICK = 0.040D;
+    private static final double CHAINED_CURVE_SPEED_MARGIN = 0.015D;
+    /*
+     * Step 7.2.1e: spacing during a corner is handled ONLY as a speed trim.
+     * Direction continues to come from the local rail tangent, so these values
+     * cannot pull a rear car diagonally across a turn.  The near limit prevents
+     * the third car from visually entering the second at crawl speed; the far
+     * limit gives it a bounded catch-up reserve when the locomotive accelerates
+     * downhill or exits a corner faster than the follower.
+     */
+    /*
+     * Step 7.2.1f: tender-to-tender cars use a tight classic visual gap on
+     * straight track and hills.  A 90-degree rail temporarily uses the older,
+     * looser geometric thresholds because the straight-line distance across a
+     * curved rail is naturally shorter than the real distance along the track.
+     */
+    // Step 7.2.1l: measured straight tender-to-tender center spacing was
+    // ~1.53 blocks while the two visible tender nubs touch at ~2.05 blocks.
+    // Keep a narrow working band around that real model-derived touch point.
+    private static final double CHAINED_NEAR_DISTANCE = 2.05D;
+    private static final double CHAINED_STOP_DISTANCE = 1.90D;
+    private static final double CHAINED_FAR_DISTANCE = 2.12D;
+    private static final double CHAINED_CURVE_NEAR_DISTANCE = 1.40D;
+    private static final double CHAINED_CURVE_STOP_DISTANCE = 1.18D;
+    private static final double CHAINED_CURVE_FAR_DISTANCE = 2.00D;
+    private static final double CHAINED_STATIONARY_SETTLE_SPEED = 0.030D;
+    // Step 7.2.1m: under ~0.22 km/h, treat the whole consist as stopped and
+    // restore the measured nub spacing directly along the rail instead of waiting
+    // for minecart velocity to wake up. Moving-consist physics is unchanged.
+    private static final double STATIONARY_COUPLER_SETTLE_SPEED_THRESHOLD = 0.003D;
+    private static final double CHAINED_HANDOFF_GAP_SPEED_GAIN = 0.42D;
+    private static final double CHAINED_HANDOFF_MAX_SPEED_BOOST = 0.25D;
+    /*
+     * Step 7.3.2d: reverse push correction is a RELATIVE speed trim, not a
+     * second locomotive.  The 7.3.2c recorder caught rear cars reaching roughly
+     * 20 km/h while the locomotive was only around 1-3 km/h.  Keep reverse gap
+     * recovery within about 3.96 km/h of the physical consist speed.
+     */
+    private static final double CHAINED_REVERSE_RELATIVE_SPEED_MAX = 0.055D;
+    /*
+     * Step 7.3.2f: reverse uphill push anti-stall floor.
+     *
+     * The flight recorder showed the post-move spacing safety recursively
+     * reducing an ascending follower to ~0 while the locomotive was still
+     * actively requesting reverse. This is deliberately tiny (~0.86 km/h)
+     * and is used only inside the tightly gated reverse/uphill/near-target
+     * safety path below. It is NOT a global movement-speed change.
+     */
+    private static final double CHAINED_REVERSE_UPHILL_MIN_PUSH_SPEED = 0.012D;
+    /*
+     * Step 7.3.2g: during an active reverse grade-to-curve handoff, the
+     * Euclidean center gap can sit a few hundredths beyond the temporary
+     * curve far limit even though the rail-path spacing is healthy.
+     * The recorder caught a permanent lock at 2.209 vs far=2.200.
+     * Allow only this tiny handoff tolerance before reverse spacing safety
+     * is permitted to stop the follower.
+     */
+    private static final double REVERSE_GRADE_HANDOFF_FAR_TOLERANCE = 0.060D;
+    private static final double CHAINED_HANDOFF_MAX_SPEED = 0.92D;
+    private static final float VISUAL_FACING_MAX_TURN_DEGREES = 18.0F;
+    private static final float VISUAL_POLARITY_SNAP_DEGREES = 135.0F;
+    private static final double FACING_MOTION_EPSILON = 0.01D;
+    private static final float FACING_TIE_DEGREES = 12.0F;
+    private static final int SURVIVAL_REMOVAL_HITS = 3;
+    private static final int SURVIVAL_REMOVAL_RESET_TICKS = 100;
+
+    /**
+     * Step 7.2.1h: connector-time tender polarity must be visible even while the
+     * cart is stationary.  Plain Java fields are not sent to the client, so the
+     * server-owned rail-facing yaw is mirrored through synced entity data.
+     */
+    private static final EntityDataAccessor<Float> DATA_TRAIN_FACING_YAW =
+            SynchedEntityData.defineId(SteamTender.class, EntityDataSerializers.FLOAT);
+
+    private final ItemStackHandler fuelInventory = new ItemStackHandler(FUEL_INVENTORY_SIZE) {
+        @Override
+        public boolean isItemValid(int slot, ItemStack stack) {
+            // Fuel stays the only locomotive-supply input, but returned empty
+            // buckets may live in these storage slots so they can stack exactly
+            // like the locomotive's reserve inventory.
+            return isFuel(stack) || stack.is(Items.BUCKET);
+        }
+    };
+    private final ItemStackHandler waterContainerInventory = new ItemStackHandler(1) {
+        @Override
+        public boolean isItemValid(int slot, ItemStack stack) {
+            return stack.is(Items.WATER_BUCKET);
+        }
+
+        @Override
+        public int getSlotLimit(int slot) {
+            return 1;
+        }
+    };
+    private int waterAmount;
+    private boolean tenderInventoryDropped;
+
+    private UUID coupledRollingStockUuid;
+    // Step 7.2.0: rear/secondary coupler storage for future longer consists.
+    // The proven Step 7.0.3 locomotive/tender constraint still uses the primary link.
+    private UUID secondaryCoupledRollingStockUuid;
+    private float trainFacingYaw;
+    private boolean trainFacingInitialized;
+    private int travelDirectionSign = 1;
+    private float visualFacingYaw;
+    private float previousVisualFacingYaw;
+    private boolean visualFacingInitialized;
+    private Vec3 chainedPathDirection = Vec3.ZERO;
+    private int chainedCurveHandoffTicks;
+
+    // Step 7.3.2c diagnostic state captured by getDirectedRailPathTangent().
+    // These fields are telemetry only and are never read by movement code.
+    private String debugDirectionSource = "none";
+    private double debugReferenceDot = Double.NaN;
+    private double debugLeaderDot = Double.NaN;
+    private double debugMotionDot = Double.NaN;
+    private double debugMinimumProjection = Double.NaN;
+    private String debugControllerPhase = "PRE";
+    private int survivalRemovalHits;
+    private int lastSurvivalRemovalHitTick = -SURVIVAL_REMOVAL_RESET_TICKS;
+
+    public SteamTender(EntityType<? extends SteamTender> type, Level level) {
+        super(type, level);
+    }
+
+    @Override
+    protected void defineSynchedData() {
+        super.defineSynchedData();
+        this.entityData.define(DATA_TRAIN_FACING_YAW, 0.0F);
+    }
+
+    @Override
+    public void tick() {
+        if (!this.trainFacingInitialized && !this.level().isClientSide) {
+            this.trainFacingYaw = this.getYRot();
+            this.trainFacingInitialized = true;
+            this.syncTrainFacingYaw();
+        }
+
+        if (!this.level().isClientSide) {
+            this.applyCouplingConstraint();
+        }
+
+        super.tick();
+
+        if (!this.level().isClientSide) {
+            this.applyPostMoveCouplingCatchup();
+            this.logCouplerTelemetry();
+            this.logMovementFlightRecorder();
+            this.processWaterContainerInput();
+        }
+
+        if (this.level().isClientSide) {
+            // Never guess tender polarity from client minecart motion.  The
+            // connector and coupling topology live on the server, so mirror the
+            // authoritative yaw here even when the consist is standing still.
+            this.trainFacingYaw = this.entityData.get(DATA_TRAIN_FACING_YAW);
+            this.trainFacingInitialized = true;
+        } else {
+            this.updateTrainFacingFromRail();
+        }
+        this.updateVisualTrainFacing();
+    }
+
+    private void applyCouplingConstraint() {
+        Entity leader = this.getPrimaryCouplingLeader();
+        if (leader == null) {
+            return;
+        }
+
+        Vec3 offset = leader.position().subtract(this.position());
+        double distance = offset.length();
+        if (distance > COUPLING_BREAK_DISTANCE) {
+            CouplingManager.unlink(this, this);
+            SmallSteamLocomotive locomotive = CouplingManager.findLeadLocomotive(leader);
+            if (locomotive != null && locomotive.getFirstPassenger() instanceof ServerPlayer driver) {
+                driver.displayClientMessage(
+                        net.minecraft.network.chat.Component.translatable("message.traincraft.connector.broken"),
+                        true);
+            }
+            return;
+        }
+
+        /*
+         * Step 7.2.1m: connector-time alignment was already correct on the server,
+         * but a stopped minecart could remain visually compressed (or appear not
+         * to snap at all) until the locomotive moved.  Once the entire consist is
+         * truly stationary, restore the measured straight/hill coupler spacing by
+         * position along Minecraft's rail path.  Never do this on a sharp 90-degree
+         * curve, where Euclidean center distance is not the path distance.
+         */
+        if (this.shouldHardSettleStationaryCoupling(leader)) {
+            this.alignCouplerSpacingToLeader(leader);
+            this.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
+        if (CouplingManager.isTrainHandBrakeApplied(leader)) {
+            this.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
+        if (distance < 1.0E-5D) {
+            return;
+        }
+
+        Vec3 tenderMotion = this.getDeltaMovement();
+        Vec3 leaderMotion = leader.getDeltaMovement();
+        Vec3 consistReferenceMotion = this.getConsistReferenceMotion(leader, leaderMotion);
+        boolean curveTransition = this.isOnSharpCurve() || isRollingStockOnSharpCurve(leader);
+        boolean chainedFollower = leader instanceof SteamTender;
+        boolean chainedCornerTransition = chainedFollower
+                && this.isChainedCornerTransition((SteamTender) leader);
+
+        if (chainedCornerTransition) {
+            this.chainedCurveHandoffTicks = CHAINED_CURVE_HANDOFF_TICKS;
+        } else if (chainedFollower && this.chainedCurveHandoffTicks > 0) {
+            this.chainedCurveHandoffTicks--;
+        } else if (!chainedFollower) {
+            this.chainedCurveHandoffTicks = 0;
+            this.chainedPathDirection = Vec3.ZERO;
+        }
+
+        /*
+         * Step 7.2.1d: chained cars do not use leader/follower Euclidean spacing
+         * while negotiating a corner, nor for the brief exit window immediately
+         * afterward.  On a 90-degree rail the straight line between two cars cuts
+         * across the inside of the curve and can point a follower in front of the
+         * train.  Sample Minecraft's own minecart rail path with getPosOffs() and
+         * only adjust speed along that local path tangent.
+         */
+        if (chainedFollower) {
+            /*
+             * Step 7.2.1f: every chained follower now stays rail-owned, not just
+             * during a literal corner handoff.  This removes the last straight-
+             * line correction that could pull cart #3 into cart #2 at crawl speed.
+             * Distance changes only the follower's speed along its own rail path.
+             */
+            this.debugControllerPhase = "PRE";
+            this.applyChainedRailPathSpeed(
+                    leader, tenderMotion, consistReferenceMotion, distance);
+                    this.applyImmediateLeaderSpacingSafety(leader);
+            return;
+        }
+
+        /*
+         * The proven two-vehicle locomotive/tender constraint keeps using the
+         * tender's live motion tangent exactly as before.
+         */
+        double tenderHorizontalSpeed = Math.sqrt(
+                tenderMotion.x * tenderMotion.x + tenderMotion.z * tenderMotion.z);
+        double axisX;
+        double axisZ;
+        Vec3 chainedRailAxis = chainedFollower ? this.getCurrentRailHorizontalAxis() : null;
+        if (chainedRailAxis != null) {
+            axisX = chainedRailAxis.x;
+            axisZ = chainedRailAxis.z;
+        } else if (tenderHorizontalSpeed > 1.0E-4D) {
+            axisX = tenderMotion.x / tenderHorizontalSpeed;
+            axisZ = tenderMotion.z / tenderHorizontalSpeed;
+        } else {
+            /*
+             * Step 7.3.2b: while reversing, a temporarily stalled first tender
+             * must use the locomotive's live travel direction instead of its
+             * model-facing yaw.  Otherwise the close-gap correction can point
+             * into the locomotive just when the consist starts pushing.
+             */
+            double leaderHorizontalSpeed = Math.sqrt(
+                    leaderMotion.x * leaderMotion.x + leaderMotion.z * leaderMotion.z);
+            if (leaderHorizontalSpeed > 1.0E-4D) {
+                axisX = leaderMotion.x / leaderHorizontalSpeed;
+                axisZ = leaderMotion.z / leaderHorizontalSpeed;
+            } else {
+                double radians = Math.toRadians(this.getTrainFacingYaw());
+                axisX = Math.sin(radians);
+                axisZ = -Math.cos(radians);
+            }
+        }
+
+        double toLeaderDot = offset.x * axisX + offset.z * axisZ;
+        double towardLeaderSign = toLeaderDot >= 0.0D ? 1.0D : -1.0D;
+
+        double minimumSpacing = curveTransition
+                ? this.getPrimaryCurveCouplingMinDistance(leader)
+                : this.getPrimaryCouplingMinDistance(leader);
+        double maximumSpacing = curveTransition
+                ? this.getPrimaryCurveCouplingMaxDistance(leader)
+                : this.getPrimaryCouplingMaxDistance(leader);
+
+        double spacingError = 0.0D;
+        if (distance > maximumSpacing) {
+            spacingError = distance - maximumSpacing;
+        } else if (distance < minimumSpacing) {
+            spacingError = distance - minimumSpacing;
+        }
+        double correction = Mth.clamp(
+                spacingError * COUPLING_CORRECTION,
+                -COUPLING_MAX_CORRECTION,
+                COUPLING_MAX_CORRECTION);
+
+        double currentAlongRail = tenderMotion.x * axisX + tenderMotion.z * axisZ;
+        double leaderAlongRail = leaderMotion.x * axisX + leaderMotion.z * axisZ;
+        double referenceAlongRail = consistReferenceMotion.x * axisX
+                + consistReferenceMotion.z * axisZ;
+        double referenceTrackSpeed = Math.max(leaderMotion.length(), consistReferenceMotion.length());
+
+        /*
+         * Step 7.3.2j - reverse primary curve direction ownership.
+         *
+         * The 7.3.2i recorder caught the first tender entering a south_east
+         * curve at about 7.94 km/h while the locomotive was still on the
+         * east_west leg. Projecting locomotive/reference motion onto the
+         * tender's local curve axis produced the opposite sign and collapsed
+         * the tender to about 0.84 km/h in one tick. During established
+         * reverse travel on a curve transition, the first tender's own live
+         * along-axis sign is authoritative.
+         */
+        SmallSteamLocomotive primaryCurveLead =
+                CouplingManager.findLeadLocomotive(leader);
+        /* Step 7.3.2k - established reverse primary direction ownership. */
+        boolean reversePrimaryTravel =
+                primaryCurveLead != null
+                        && primaryCurveLead.isReverseConsistTravel();
+
+        double driveSign;
+        /*
+         * Step 7.3.2l - reverse primary topology owns direction.
+         *
+         * At crawl speed the local rail axis can reverse representation from one
+         * tick to the next. currentAlong therefore cannot be used as a stable
+         * physical direction source. During established reverse travel the first
+         * tender is being pushed, so the invariant is: move AWAY from the
+         * locomotive. towardLeaderSign expresses the local-axis direction toward
+         * the locomotive, so reverse push is its exact opposite.
+         */
+        if (reversePrimaryTravel && Math.abs(towardLeaderSign) > 0.5D) {
+            driveSign = -towardLeaderSign;
+        } else if (chainedFollower && Math.abs(currentAlongRail) > 0.002D) {
+            // A rear car's own rail direction is authoritative.  The leader can
+            // be on a different leg of a turn, so projecting its motion here can
+            // legitimately have the opposite sign.
+            driveSign = Math.signum(currentAlongRail);
+        } else if (Math.abs(referenceAlongRail) > 0.01D) {
+            driveSign = Math.signum(referenceAlongRail);
+        } else if (Math.abs(leaderAlongRail) > 0.01D) {
+            driveSign = Math.signum(leaderAlongRail);
+        } else if (Math.abs(currentAlongRail) > 0.01D) {
+            driveSign = Math.signum(currentAlongRail);
+        } else {
+            driveSign = towardLeaderSign;
+        }
+        double targetAlongRail = referenceTrackSpeed * driveSign;
+
+        double newAlongRail = currentAlongRail * (1.0D - COUPLING_VELOCITY_BLEND)
+                + targetAlongRail * COUPLING_VELOCITY_BLEND
+                + towardLeaderSign * correction;
+
+        RailShape currentShape = this.getCurrentRailShape();
+        double cap = isSharpVanillaCurve(currentShape)
+                ? COUPLED_CURVE_CATCHUP_SPEED
+                : COUPLED_STRAIGHT_CATCHUP_SPEED;
+
+        newAlongRail = Mth.clamp(newAlongRail, -cap, cap);
+
+        this.logPrimaryControllerDecision(
+                leader, curveTransition, distance,
+                minimumSpacing, maximumSpacing,
+                spacingError, correction,
+                currentAlongRail, leaderAlongRail, referenceAlongRail,
+                referenceTrackSpeed, driveSign, targetAlongRail,
+                newAlongRail, cap,
+                axisX, axisZ, towardLeaderSign);
+
+        this.setDeltaMovement(axisX * newAlongRail, tenderMotion.y, axisZ * newAlongRail);
+    }
+
+    /**
+     * Keeps a chained follower on Minecraft's own minecart path during a curve.
+     * Direction comes from the follower's local rail tangent, never from a
+     * straight-line vector to a leader that may already be on another leg of the
+     * corner.  Speed changes are deliberately rate-limited so a low-speed cart
+     * cannot be fired through the curve by one catch-up tick.
+     */
+    private void applyChainedRailPathSpeed(Entity leader, Vec3 motion,
+                                           Vec3 consistReferenceMotion,
+                                           double couplingDistance) {
+        double referenceHorizontalSpeed = Math.sqrt(
+                consistReferenceMotion.x * consistReferenceMotion.x
+                        + consistReferenceMotion.z * consistReferenceMotion.z);
+
+        Vec3 directedTangent = this.getDirectedRailPathTangent(
+                leader, motion, consistReferenceMotion);
+        if (directedTangent == null) {
+            this.logChainedControllerDecision(
+                    leader, "NO_TANGENT", false,
+                    couplingDistance, Double.NaN, Double.NaN, Double.NaN,
+                    referenceHorizontalSpeed, Math.sqrt(
+                            motion.x * motion.x + motion.z * motion.z),
+                    Double.NaN, Double.NaN, Double.NaN,
+                    Vec3.ZERO);
+            return;
+        }
+
+        double currentHorizontalSpeed = Math.sqrt(
+                motion.x * motion.x + motion.z * motion.z);
+
+        /*
+         * The Euclidean distance between two cars on opposite legs of a vanilla
+         * 90-degree curve is shorter than the true distance along the rails.
+         * Keep the tight classic spacing on straights/slopes, but do not interpret
+         * normal curved geometry as an overlap and stall the rear car.
+         */
+        boolean cornerHandoff = leader instanceof SteamTender leaderTender
+                && (this.isChainedCornerTransition(leaderTender)
+                || this.chainedCurveHandoffTicks > 0);
+
+        double nearDistance = cornerHandoff
+                ? this.getChainedCurveNearDistance(leader)
+                : this.getChainedNearDistance(leader);
+        double stopDistance = cornerHandoff
+                ? this.getChainedCurveStopDistance(leader)
+                : this.getChainedStopDistance(leader);
+        double farDistance = cornerHandoff
+                ? this.getChainedCurveFarDistance(leader)
+                : this.getChainedFarDistance(leader);
+
+        /*
+         * When a consist is stationary, settle a newly connected rear tender to
+         * the normal classic gap without teleporting it.  Motion is only along
+         * the local rail tangent, so a backwards-placed or closely placed cart
+         * cannot be fired diagonally across a corner.
+         */
+        if (referenceHorizontalSpeed <= CHAINED_CURVE_MIN_REFERENCE_SPEED) {
+            if (!cornerHandoff && Math.abs(couplingDistance - nearDistance) > 0.04D) {
+                Vec3 offset = leader.position().subtract(this.position());
+                double towardLeaderDot = offset.x * directedTangent.x
+                        + offset.z * directedTangent.z;
+                double towardLeaderSign = towardLeaderDot >= 0.0D ? 1.0D : -1.0D;
+                double settleSign = couplingDistance < nearDistance
+                        ? -towardLeaderSign
+                        : towardLeaderSign;
+                double gapError = Math.abs(couplingDistance - nearDistance);
+                double settleSpeed = Math.min(
+                        CHAINED_STATIONARY_SETTLE_SPEED,
+                        0.010D + gapError * 0.05D);
+                this.logChainedControllerDecision(
+                        leader, "STATIONARY_SETTLE", cornerHandoff,
+                        couplingDistance, nearDistance, stopDistance, farDistance,
+                        referenceHorizontalSpeed, currentHorizontalSpeed,
+                        settleSpeed, settleSpeed, settleSpeed,
+                        directedTangent.scale(settleSign));
+                this.setDeltaMovement(
+                        directedTangent.x * settleSign * settleSpeed,
+                        motion.y,
+                        directedTangent.z * settleSign * settleSpeed);
+            } else if (currentHorizontalSpeed > 1.0E-4D) {
+                this.logChainedControllerDecision(
+                        leader, "STATIONARY_STOP", cornerHandoff,
+                        couplingDistance, nearDistance, stopDistance, farDistance,
+                        referenceHorizontalSpeed, currentHorizontalSpeed,
+                        0.0D, 0.0D, 0.0D,
+                        directedTangent);
+                this.setDeltaMovement(0.0D, motion.y, 0.0D);
+            } else {
+                this.logChainedControllerDecision(
+                        leader, "STATIONARY_HOLD", cornerHandoff,
+                        couplingDistance, nearDistance, stopDistance, farDistance,
+                        referenceHorizontalSpeed, currentHorizontalSpeed,
+                        0.0D, 0.0D, 0.0D,
+                        directedTangent);
+            }
+            return;
+        }
+
+        /*
+         * Follow the lead locomotive's actual consist speed, then use only the
+         * segment gap to trim magnitude.  Direction remains rail-owned.  The
+         * stronger bounded catch-up reserve is specifically for full-power and
+         * downhill running; the locomotive-side tail governor in Step 7.2.1f
+         * prevents the leader from running away while this rear car closes.
+         */
+        double targetSpeed = referenceHorizontalSpeed + CHAINED_CURVE_SPEED_MARGIN;
+        double targetBeforeGap = targetSpeed;
+        boolean reverseDrive = this.isConsistReverseDriveRequested(leader);
+        String controllerAction = "TRACK";
+
+        if (couplingDistance > farDistance) {
+            controllerAction = reverseDrive ? "STRETCHED_REVERSE" : "STRETCHED_FORWARD";
+            double correctionCap = reverseDrive
+                    ? CHAINED_REVERSE_RELATIVE_SPEED_MAX
+                    : CHAINED_HANDOFF_MAX_SPEED_BOOST;
+            double extra = Math.min(
+                    correctionCap,
+                    (couplingDistance - farDistance)
+                            * CHAINED_HANDOFF_GAP_SPEED_GAIN);
+            /*
+             * Forward: follower is behind, so a stretched segment must speed up.
+             * Reverse: follower is being pushed and is ahead in travel order, so
+             * a stretched segment must slow down and let its leader catch up.
+             */
+            targetSpeed += reverseDrive ? -extra : extra;
+        }
+
+        /*
+         * Forward compression is corrected by slowing the follower.  In reverse
+         * that is exactly backwards: slowing a pushed follower lets its leader
+         * drive farther into it.  A compressed reverse segment therefore gets a
+         * bounded speed reserve away from the leader instead.
+         */
+        if (couplingDistance < nearDistance) {
+            controllerAction = reverseDrive ? "COMPRESSED_REVERSE" : "COMPRESSED_FORWARD";
+            double spacingScale = Mth.clamp(
+                    (couplingDistance - stopDistance)
+                            / (nearDistance - stopDistance),
+                    0.0D, 1.0D);
+            if (reverseDrive) {
+                double compressionBoost = Math.min(
+                        CHAINED_REVERSE_RELATIVE_SPEED_MAX,
+                        (nearDistance - couplingDistance)
+                                * CHAINED_HANDOFF_GAP_SPEED_GAIN);
+                targetSpeed += compressionBoost;
+            } else {
+                targetSpeed *= spacingScale;
+            }
+        }
+
+        double targetAfterGap = targetSpeed;
+        double maxCatchupSpeed = this.getChainedMaxCatchupSpeed(leader);
+        targetSpeed = Mth.clamp(
+                targetSpeed,
+                0.0D,
+                maxCatchupSpeed);
+
+        double newSpeed;
+        if (currentHorizontalSpeed < targetSpeed) {
+            newSpeed = Math.min(
+                    targetSpeed,
+                    currentHorizontalSpeed + CHAINED_CURVE_SPEED_CHANGE_PER_TICK);
+        } else {
+            newSpeed = Math.max(
+                    targetSpeed,
+                    currentHorizontalSpeed - CHAINED_CURVE_SPEED_CHANGE_PER_TICK);
+        }
+
+        if (currentHorizontalSpeed <= 1.0E-4D) {
+            newSpeed = Math.min(targetSpeed, CHAINED_CURVE_MAX_CRAWL_SPEED);
+        }
+
+        this.logChainedControllerDecision(
+                leader, controllerAction, cornerHandoff,
+                couplingDistance, nearDistance, stopDistance, farDistance,
+                referenceHorizontalSpeed, currentHorizontalSpeed,
+                targetBeforeGap, targetAfterGap, targetSpeed,
+                directedTangent, newSpeed, maxCatchupSpeed, reverseDrive);
+
+        this.setDeltaMovement(
+                directedTangent.x * newSpeed,
+                motion.y,
+                directedTangent.z * newSpeed);
+    }
+
+    /**
+     * Returns the current rail-path tangent with a stable travel direction.  The
+     * undirected tangent is sampled by AbstractMinecart.getPosOffs(), which follows
+     * the real vanilla rail path through a 90-degree curve instead of approximating
+     * the curved block as one fixed diagonal vector.
+     */
+    @Nullable
+    private Vec3 getDirectedRailPathTangent(Entity leader, Vec3 motion,
+                                             Vec3 consistReferenceMotion) {
+        Vec3 tangent = this.getCurrentRailHorizontalAxis();
+        this.debugDirectionSource = "none";
+        this.debugReferenceDot = Double.NaN;
+        this.debugLeaderDot = Double.NaN;
+        this.debugMotionDot = Double.NaN;
+        this.debugMinimumProjection = Double.NaN;
+        if (tangent == null) {
+            return null;
+        }
+
+        /*
+         * Step 7.2.1l: NEVER let a chained follower's own velocity decide the
+         * train's travel direction while the consist is moving.  The telemetry
+         * caught the exact failure: cart #3 had leaderAlong=-1.864 but
+         * motionAlong=+0.083, so its speed controller accelerated it away from
+         * cart #2 until it ran around the loop and met the locomotive from ahead.
+         *
+         * Use the lead locomotive/reference motion first.  On the brief part of
+         * a 90-degree turn where that projection is nearly perpendicular, retain
+         * the previous directed rail tangent for continuity.  The immediate
+         * leader and follower motion are only fallbacks.
+         */
+        double directionDot = 0.0D;
+        boolean directionKnown = false;
+
+        /*
+         * Step 7.3.2e: coupling topology owns travel direction.
+         *
+         * The movement flight recorder caught a rear vehicle selecting the lead
+         * locomotive's projection while that locomotive was already on a
+         * different leg of a hill/curve. The projection was numerically strong,
+         * but it pointed away from the immediate leader.
+         *
+         * Use the follower's LOCAL rail tangent plus the IMMEDIATE coupling
+         * topology first. Forward followers move toward their leader; reverse-
+         * pushed followers move away from it. If that projection is nearly
+         * perpendicular, the existing continuity/reference fallbacks still run.
+         */
+        Vec3 topologyOffset = leader.position().subtract(this.position());
+        double topologyDot = topologyOffset.x * tangent.x
+                + topologyOffset.z * tangent.z;
+        double topologyHorizontalDistance = Math.sqrt(
+                topologyOffset.x * topologyOffset.x
+                        + topologyOffset.z * topologyOffset.z);
+        double topologyProjectionThreshold = Math.max(
+                0.05D,
+                Math.min(0.20D, topologyHorizontalDistance * 0.05D));
+        if (Math.abs(topologyDot) > topologyProjectionThreshold) {
+            directionDot = this.isConsistReverseDriveRequested(leader)
+                    ? -topologyDot
+                    : topologyDot;
+            directionKnown = true;
+        }
+
+        double referenceHorizontalSpeed = Math.sqrt(
+                consistReferenceMotion.x * consistReferenceMotion.x
+                        + consistReferenceMotion.z * consistReferenceMotion.z);
+        double referenceDot = consistReferenceMotion.x * tangent.x
+                + consistReferenceMotion.z * tangent.z;
+        double projectionRatio = Mth.clamp(
+                this.getChainedDirectionProjectionRatio(leader),
+                0.0D, 1.0D);
+        double minimumReferenceProjection = Math.max(
+                0.002D,
+                referenceHorizontalSpeed * projectionRatio);
+        this.debugReferenceDot = referenceDot;
+        this.debugMinimumProjection = minimumReferenceProjection;
+        if (!directionKnown
+                && referenceHorizontalSpeed > 1.0E-4D
+                && Math.abs(referenceDot) > minimumReferenceProjection) {
+            directionDot = referenceDot;
+            directionKnown = true;
+            this.debugDirectionSource = "REFERENCE";
+        }
+
+        if (!directionKnown
+                && this.chainedPathDirection.x * this.chainedPathDirection.x
+                + this.chainedPathDirection.z * this.chainedPathDirection.z > 1.0E-8D) {
+            double continuityDot = this.chainedPathDirection.x * tangent.x
+                    + this.chainedPathDirection.z * tangent.z;
+            if (Math.abs(continuityDot) > 0.05D) {
+                directionDot = continuityDot;
+                directionKnown = true;
+                this.debugDirectionSource = "CONTINUITY";
+            }
+        }
+
+        if (!directionKnown) {
+            Vec3 leaderMotion = leader.getDeltaMovement();
+            double leaderHorizontalSpeed = Math.sqrt(
+                    leaderMotion.x * leaderMotion.x + leaderMotion.z * leaderMotion.z);
+            double leaderDot = leaderMotion.x * tangent.x + leaderMotion.z * tangent.z;
+            this.debugLeaderDot = leaderDot;
+            double minimumLeaderProjection = Math.max(
+                    0.002D,
+                    leaderHorizontalSpeed * projectionRatio);
+            if (leaderHorizontalSpeed > 1.0E-4D
+                    && Math.abs(leaderDot) > minimumLeaderProjection) {
+                directionDot = leaderDot;
+                directionKnown = true;
+                this.debugDirectionSource = "LEADER";
+            }
+        }
+
+        if (!directionKnown) {
+            double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+            double motionDot = motion.x * tangent.x + motion.z * tangent.z;
+            this.debugMotionDot = motionDot;
+            if (horizontalSpeed > 1.0E-4D && Math.abs(motionDot) > 0.002D) {
+                directionDot = motionDot;
+                directionKnown = true;
+                this.debugDirectionSource = "FOLLOWER";
+            }
+        }
+
+        if (!directionKnown) {
+            // Stationary fallback only.  Spacing-settle code separately decides
+            // whether to move toward or away from the leader, so model polarity
+            // cannot launch a moving consist in the wrong direction.
+            Vec3 toLeader = leader.position().subtract(this.position());
+            directionDot = toLeader.x * tangent.x + toLeader.z * tangent.z;
+            if (Math.abs(directionDot) <= 1.0E-5D) {
+                directionDot = 1.0D;
+            }
+            this.debugDirectionSource = "STATIONARY_TO_LEADER";
+        }
+
+        if (directionDot < 0.0D) {
+            tangent = tangent.scale(-1.0D);
+        }
+
+        this.chainedPathDirection = tangent;
+        return tangent;
+    }
+
+
+
+    /**
+     * Step 7.3.2c primary locomotive->first-car controller recorder.  This is
+     * separate from chained rail-path telemetry because the primary pair uses
+     * the original velocity-blend/correction controller.
+     */
+    private void logPrimaryControllerDecision(
+            Entity leader, boolean curveTransition, double distance,
+            double minimumSpacing, double maximumSpacing,
+            double spacingError, double correction,
+            double currentAlongRail, double leaderAlongRail,
+            double referenceAlongRail, double referenceTrackSpeed,
+            double driveSign, double targetAlongRail, double newAlongRail,
+            double cap, double axisX, double axisZ, double towardLeaderSign) {
+
+        SmallSteamLocomotive leadLocomotive = CouplingManager.findLeadLocomotive(leader);
+        boolean reverseInput = leadLocomotive != null
+                && leadLocomotive.isReverseDriveRequested();
+        boolean reverseDrive = leadLocomotive != null
+                && leadLocomotive.isReverseConsistTravel();
+        double touchTarget = this.getCouplerTouchTargetDistance(leader);
+
+        String header =
+                "gameTick,entityTick,id,type,leaderId,leaderType,reverse,reverseInput,curve,"
+                        + "distance,touchTarget,nubGap,minSpacing,maxSpacing,spacingError,correction,"
+                        + "currentAlong,leaderAlong,referenceAlong,referenceTrackSpeed,"
+                        + "driveSign,targetAlong,newAlong,cap,axisX,axisZ,towardLeaderSign,"
+                        + "railShape,leaderRailShape,x,y,z,leaderX,leaderY,leaderZ";
+
+        String row = String.format(java.util.Locale.ROOT,
+                "%d,%d,%d,%s,%d,%s,%s,%s,%s,"
+                        + "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
+                        + "%.6f,%.6f,%.6f,%.6f,"
+                        + "%.1f,%.6f,%.6f,%.6f,%.6f,%.6f,%.1f,"
+                        + "%s,%s,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",
+                this.level().getGameTime(), this.tickCount,
+                this.getId(), this.getClass().getSimpleName(),
+                leader.getId(), leader.getClass().getSimpleName(),
+                Boolean.toString(reverseDrive), Boolean.toString(reverseInput),
+                Boolean.toString(curveTransition),
+                distance, touchTarget, distance - touchTarget,
+                minimumSpacing, maximumSpacing, spacingError, correction,
+                currentAlongRail, leaderAlongRail, referenceAlongRail,
+                referenceTrackSpeed,
+                driveSign, targetAlongRail, newAlongRail, cap,
+                axisX, axisZ, towardLeaderSign,
+                this.getCurrentRailShape(), getRailShapeFor(leader),
+                this.getX(), this.getY(), this.getZ(),
+                leader.getX(), leader.getY(), leader.getZ());
+
+        TrainMovementDebug.append(
+                TrainMovementDebug.PRIMARY_CONTROLLER_FILE, header, row);
+    }
+
+    /**
+     * Step 7.3.2c per-tick post-move flight recorder.  This deliberately runs
+     * after vanilla movement and post-move coupling catch-up so each row is the
+     * exact server state the player sees for this rolling-stock entity.
+     */
+    private void logMovementFlightRecorder() {
+        Entity leader = this.getPrimaryCouplingLeader();
+        if (leader == null) {
+            return;
+        }
+
+        Vec3 offset = leader.position().subtract(this.position());
+        Vec3 motion = this.getDeltaMovement();
+        Vec3 leaderMotion = leader.getDeltaMovement();
+        Vec3 referenceMotion = this.getConsistReferenceMotion(leader, leaderMotion);
+        Vec3 axis = this.getCurrentRailHorizontalAxis();
+
+        double centerDistance = offset.length();
+        double horizontalDistance = Math.sqrt(offset.x * offset.x + offset.z * offset.z);
+        double touchTarget = this.getCouplerTouchTargetDistance(leader);
+        double nubGap = centerDistance - touchTarget;
+        double speedBpt = horizontalSpeedBlocksPerTick(motion);
+        double leaderSpeedBpt = horizontalSpeedBlocksPerTick(leaderMotion);
+        double referenceSpeedBpt = horizontalSpeedBlocksPerTick(referenceMotion);
+
+        double axisX = axis != null ? axis.x : Double.NaN;
+        double axisZ = axis != null ? axis.z : Double.NaN;
+        double leaderAlong = axis != null
+                ? offset.x * axis.x + offset.z * axis.z
+                : Double.NaN;
+        double motionAlong = axis != null
+                ? motion.x * axis.x + motion.z * axis.z
+                : Double.NaN;
+        double referenceAlong = axis != null
+                ? referenceMotion.x * axis.x + referenceMotion.z * axis.z
+                : Double.NaN;
+
+        SmallSteamLocomotive leadLocomotive = CouplingManager.findLeadLocomotive(leader);
+        boolean reverseInput = leadLocomotive != null
+                && leadLocomotive.isReverseDriveRequested();
+        boolean reverseDrive = leadLocomotive != null
+                && leadLocomotive.isReverseConsistTravel();
+        int leadId = leadLocomotive != null ? leadLocomotive.getId() : -1;
+        Vec3 leadMotion = leadLocomotive != null
+                ? leadLocomotive.getDeltaMovement()
+                : Vec3.ZERO;
+
+        BlockPos railPos = getRailPosFor(this);
+        BlockPos leaderRailPos = getRailPosFor(leader);
+        RailShape railShape = this.getCurrentRailShape();
+        RailShape leaderRailShape = getRailShapeFor(leader);
+        String role = leader instanceof SteamTender ? "CHAINED" : "PRIMARY";
+
+        String header =
+                "gameTick,entityTick,id,type,role,leaderId,leaderType,leadLocoId,reverse,reverseInput,"
+                        + "center,horiz,vertical,touchTarget,nubGap,"
+                        + "speedBpt,speedKmh,dx,dy,dz,"
+                        + "leaderSpeedBpt,leaderSpeedKmh,leaderDx,leaderDy,leaderDz,"
+                        + "referenceSpeedBpt,referenceSpeedKmh,referenceDx,referenceDy,referenceDz,"
+                        + "leadDx,leadDy,leadDz,leadSpeedKmh,"
+                        + "railX,railY,railZ,railShape,leaderRailX,leaderRailY,leaderRailZ,leaderRailShape,"
+                        + "axisX,axisZ,leaderAlong,motionAlong,referenceAlong,pathDirX,pathDirZ,handoff,"
+                        + "x,y,z,leaderX,leaderY,leaderZ";
+
+        String row = String.format(java.util.Locale.ROOT,
+                "%d,%d,%d,%s,%s,%d,%s,%d,%s,%s,"
+                        + "%.6f,%.6f,%.6f,%.6f,%.6f,"
+                        + "%.6f,%.3f,%.6f,%.6f,%.6f,"
+                        + "%.6f,%.3f,%.6f,%.6f,%.6f,"
+                        + "%.6f,%.3f,%.6f,%.6f,%.6f,"
+                        + "%.6f,%.6f,%.6f,%.3f,"
+                        + "%d,%d,%d,%s,%d,%d,%d,%s,"
+                        + "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d,"
+                        + "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",
+                this.level().getGameTime(), this.tickCount,
+                this.getId(), this.getClass().getSimpleName(), role,
+                leader.getId(), leader.getClass().getSimpleName(), leadId,
+                Boolean.toString(reverseDrive), Boolean.toString(reverseInput),
+                centerDistance, horizontalDistance, leader.getY() - this.getY(),
+                touchTarget, nubGap,
+                speedBpt, speedBpt * 72.0D, motion.x, motion.y, motion.z,
+                leaderSpeedBpt, leaderSpeedBpt * 72.0D,
+                leaderMotion.x, leaderMotion.y, leaderMotion.z,
+                referenceSpeedBpt, referenceSpeedBpt * 72.0D,
+                referenceMotion.x, referenceMotion.y, referenceMotion.z,
+                leadMotion.x, leadMotion.y, leadMotion.z,
+                horizontalSpeedBlocksPerTick(leadMotion) * 72.0D,
+                railPos.getX(), railPos.getY(), railPos.getZ(), railShape,
+                leaderRailPos.getX(), leaderRailPos.getY(), leaderRailPos.getZ(), leaderRailShape,
+                axisX, axisZ, leaderAlong, motionAlong, referenceAlong,
+                this.chainedPathDirection.x, this.chainedPathDirection.z,
+                this.chainedCurveHandoffTicks,
+                this.getX(), this.getY(), this.getZ(),
+                leader.getX(), leader.getY(), leader.getZ());
+
+        TrainMovementDebug.append(TrainMovementDebug.MOTION_FILE, header, row);
+    }
+
+    private void logChainedControllerDecision(
+            Entity leader, String action, boolean cornerHandoff,
+            double couplingDistance, double nearDistance, double stopDistance,
+            double farDistance, double referenceHorizontalSpeed,
+            double currentHorizontalSpeed, double targetBeforeGap,
+            double targetAfterGap, double targetClamped, Vec3 directedTangent) {
+        this.logChainedControllerDecision(
+                leader, action, cornerHandoff,
+                couplingDistance, nearDistance, stopDistance, farDistance,
+                referenceHorizontalSpeed, currentHorizontalSpeed,
+                targetBeforeGap, targetAfterGap, targetClamped,
+                directedTangent, targetClamped,
+                this.getChainedMaxCatchupSpeed(leader),
+                this.isConsistReverseDriveRequested(leader));
+    }
+
+    /**
+     * Step 7.3.2c controller-decision recorder.  Unlike the older once-per-second
+     * spacing log, this records the exact speed target and rail-direction source
+     * on every server tick before the controller writes delta movement.
+     */
+    private void logChainedControllerDecision(
+            Entity leader, String action, boolean cornerHandoff,
+            double couplingDistance, double nearDistance, double stopDistance,
+            double farDistance, double referenceHorizontalSpeed,
+            double currentHorizontalSpeed, double targetBeforeGap,
+            double targetAfterGap, double targetClamped, Vec3 directedTangent,
+            double newSpeed, double maxCatchupSpeed, boolean reverseDrive) {
+
+        double touchTarget = this.getCouplerTouchTargetDistance(leader);
+        SmallSteamLocomotive leadLocomotive = CouplingManager.findLeadLocomotive(leader);
+        boolean reverseInput = leadLocomotive != null
+                && leadLocomotive.isReverseDriveRequested();
+        double relativeSpeedKmh =
+                (currentHorizontalSpeed - referenceHorizontalSpeed) * 72.0D;
+
+        String header =
+                "gameTick,entityTick,id,type,leaderId,leaderType,reverse,reverseInput,phase,action,cornerHandoff,handoff,"
+                        + "distance,touchTarget,nubGap,near,stop,far,"
+                        + "referenceSpeedBpt,referenceSpeedKmh,currentSpeedBpt,currentSpeedKmh,relativeSpeedKmh,"
+                        + "targetBeforeGap,targetAfterGap,targetClamped,newSpeed,maxCatchup,"
+                        + "tangentX,tangentZ,directionSource,referenceDot,leaderDot,motionDot,minProjection,"
+                        + "railShape,leaderRailShape,x,y,z,leaderX,leaderY,leaderZ";
+
+        String row = String.format(java.util.Locale.ROOT,
+                "%d,%d,%d,%s,%d,%s,%s,%s,%s,%s,%s,%d,"
+                        + "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
+                        + "%.6f,%.3f,%.6f,%.3f,%.3f,"
+                        + "%.6f,%.6f,%.6f,%.6f,%.6f,"
+                        + "%.6f,%.6f,%s,%.6f,%.6f,%.6f,%.6f,"
+                        + "%s,%s,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",
+                this.level().getGameTime(), this.tickCount,
+                this.getId(), this.getClass().getSimpleName(),
+                leader.getId(), leader.getClass().getSimpleName(),
+                Boolean.toString(reverseDrive), Boolean.toString(reverseInput),
+                this.debugControllerPhase, action,
+                Boolean.toString(cornerHandoff), this.chainedCurveHandoffTicks,
+                couplingDistance, touchTarget, couplingDistance - touchTarget,
+                nearDistance, stopDistance, farDistance,
+                referenceHorizontalSpeed, referenceHorizontalSpeed * 72.0D,
+                currentHorizontalSpeed, currentHorizontalSpeed * 72.0D,
+                relativeSpeedKmh,
+                targetBeforeGap, targetAfterGap, targetClamped, newSpeed,
+                maxCatchupSpeed,
+                directedTangent.x, directedTangent.z,
+                this.debugDirectionSource,
+                this.debugReferenceDot, this.debugLeaderDot,
+                this.debugMotionDot, this.debugMinimumProjection,
+                this.getCurrentRailShape(), getRailShapeFor(leader),
+                this.getX(), this.getY(), this.getZ(),
+                leader.getX(), leader.getY(), leader.getZ());
+
+        TrainMovementDebug.append(TrainMovementDebug.CONTROLLER_FILE, header, row);
+    }
+
+    private static double horizontalSpeedBlocksPerTick(Vec3 motion) {
+        return Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+    }
+
+    private static BlockPos getRailPosFor(Entity entity) {
+        BlockPos railPos = entity.blockPosition();
+        BlockState state = entity.level().getBlockState(railPos);
+        if (!BaseRailBlock.isRail(state)) {
+            BlockPos below = railPos.below();
+            BlockState belowState = entity.level().getBlockState(below);
+            if (BaseRailBlock.isRail(belowState)) {
+                railPos = below;
+            }
+        }
+        return railPos;
+    }
+
+
+    /**
+     * Step 7.3.2e hard safety supervisor for chained rail movement.
+     *
+     * The normal controller may use the lead locomotive as feed-forward so a
+     * long consist does not lose a little speed at every car. The movement
+     * recorder exposed the dangerous edge case: if an IMMEDIATE leader slows or
+     * stops on a hill/curve, the following car can still be carrying locomotive
+     * speed and physically run through it.
+     *
+     * This supervisor never changes coupling topology and never moves a car off
+     * Minecraft's rail tangent. It only bounds follower speed against the
+     * immediate leader and the model-aware spacing band.
+     */
+    private void applyImmediateLeaderSpacingSafety(Entity leader) {
+        if (!(leader instanceof SteamTender)) {
+            return;
+        }
+
+        Vec3 motion = this.getDeltaMovement();
+        Vec3 leaderMotion = leader.getDeltaMovement();
+
+        double currentSpeed = Math.sqrt(
+                motion.x * motion.x + motion.z * motion.z);
+        double leaderSpeed = Math.sqrt(
+                leaderMotion.x * leaderMotion.x + leaderMotion.z * leaderMotion.z);
+        double distance = this.position().distanceTo(leader.position());
+
+        boolean cornerHandoff = leader instanceof SteamTender leaderTender
+                && (this.isChainedCornerTransition(leaderTender)
+                || this.chainedCurveHandoffTicks > 0);
+
+        double nearDistance = cornerHandoff
+                ? this.getChainedCurveNearDistance(leader)
+                : this.getChainedNearDistance(leader);
+        double farDistance = cornerHandoff
+                ? this.getChainedCurveFarDistance(leader)
+                : this.getChainedFarDistance(leader);
+
+        boolean reverseDrive = this.isConsistReverseDriveRequested(leader);
+        double desiredSpeed = leaderSpeed;
+
+        if (distance > farDistance) {
+            double correction = Math.min(
+                    CHAINED_HANDOFF_MAX_SPEED_BOOST,
+                    (distance - farDistance) * CHAINED_HANDOFF_GAP_SPEED_GAIN);
+            desiredSpeed += reverseDrive ? -correction : correction;
+        } else if (distance < nearDistance) {
+            double correction = Math.min(
+                    CHAINED_HANDOFF_MAX_SPEED_BOOST,
+                    (nearDistance - distance) * CHAINED_HANDOFF_GAP_SPEED_GAIN);
+            desiredSpeed += reverseDrive ? correction : -correction;
+        }
+
+        desiredSpeed = Mth.clamp(
+                desiredSpeed,
+                0.0D,
+                this.getChainedMaxCatchupSpeed(leader));
+
+        boolean intervene = false;
+        double safeSpeed = currentSpeed;
+
+        if (!reverseDrive) {
+            /*
+             * Forward: compressed cars must stop driving through the car ahead.
+             * A stretched car may catch up, but it may not run faster than the
+             * spacing controller's immediate-leader target.
+             */
+            if (distance < nearDistance && currentSpeed > desiredSpeed) {
+                safeSpeed = desiredSpeed;
+                intervene = true;
+            } else if (distance > farDistance && currentSpeed > desiredSpeed) {
+                safeSpeed = desiredSpeed;
+                intervene = true;
+            } else if (distance >= nearDistance && distance <= farDistance
+                    && currentSpeed > leaderSpeed + 0.08D) {
+                safeSpeed = leaderSpeed + 0.08D;
+                intervene = true;
+            }
+        } else {
+            /*
+             * Reverse: the follower is physically ahead of its leader. A
+             * compressed segment must clear away from the pushing leader now;
+             * a stretched segment must stop outrunning that leader.
+             */
+            RailShape reverseSafetyRailShape = this.getCurrentRailShape();
+            RailShape reverseSafetyLeaderRailShape = getRailShapeFor(leader);
+            SmallSteamLocomotive reverseSafetyLead =
+                    CouplingManager.findLeadLocomotive(leader);
+            boolean reverseSafetyInput = reverseSafetyLead != null
+                    && reverseSafetyLead.isReverseDriveRequested();
+            boolean reverseSafetyFollowerAscending =
+                    reverseSafetyRailShape == RailShape.ASCENDING_NORTH
+                            || reverseSafetyRailShape == RailShape.ASCENDING_SOUTH
+                            || reverseSafetyRailShape == RailShape.ASCENDING_EAST
+                            || reverseSafetyRailShape == RailShape.ASCENDING_WEST;
+            boolean reverseSafetyLeaderAscending =
+                    reverseSafetyLeaderRailShape == RailShape.ASCENDING_NORTH
+                            || reverseSafetyLeaderRailShape == RailShape.ASCENDING_SOUTH
+                            || reverseSafetyLeaderRailShape == RailShape.ASCENDING_EAST
+                            || reverseSafetyLeaderRailShape == RailShape.ASCENDING_WEST;
+            boolean reverseGradeHandoff =
+                    reverseSafetyInput
+                            && cornerHandoff
+                            && (reverseSafetyFollowerAscending || reverseSafetyLeaderAscending);
+            double reverseSafetyFarDistance = farDistance
+                    + (reverseGradeHandoff
+                            ? REVERSE_GRADE_HANDOFF_FAR_TOLERANCE
+                            : 0.0D);
+
+            if (distance < nearDistance && currentSpeed < desiredSpeed) {
+                safeSpeed = desiredSpeed;
+                intervene = true;
+            } else if (distance > reverseSafetyFarDistance && currentSpeed > desiredSpeed) {
+                safeSpeed = desiredSpeed;
+                intervene = true;
+            }
+        }
+
+        if (!intervene) {
+            return;
+        }
+
+        Vec3 consistReferenceMotion = this.getConsistReferenceMotion(
+                leader, leaderMotion);
+        Vec3 directedTangent = this.getDirectedRailPathTangent(
+                leader, motion, consistReferenceMotion);
+        if (directedTangent == null) {
+            return;
+        }
+
+        safeSpeed = Mth.clamp(
+                safeSpeed,
+                0.0D,
+                this.getChainedMaxCatchupSpeed(leader));
+
+        /*
+         * Step 7.3.2f - Reverse uphill anti-stall.
+         *
+         * Do not let the post-move spacing safety recursively starve a
+         * reverse-pushed car that is already climbing and sitting at roughly
+         * correct coupler spacing. The floor is allowed only while the lead
+         * locomotive is actively requesting reverse, only on ascending rail,
+         * only outside curve handoff, and only inside a narrow near/far
+         * spacing envelope. Compressed or genuinely stretched segments still
+         * use the normal safety controller unchanged.
+         */
+        RailShape reverseUphillRailShape = this.getCurrentRailShape();
+        boolean reverseUphillAscending =
+                reverseUphillRailShape == RailShape.ASCENDING_NORTH
+                        || reverseUphillRailShape == RailShape.ASCENDING_SOUTH
+                        || reverseUphillRailShape == RailShape.ASCENDING_EAST
+                        || reverseUphillRailShape == RailShape.ASCENDING_WEST;
+        SmallSteamLocomotive reverseUphillLead =
+                CouplingManager.findLeadLocomotive(leader);
+        boolean reverseUphillInput = reverseUphillLead != null
+                && reverseUphillLead.isReverseDriveRequested();
+        boolean reverseUphillSpacingWindow =
+                distance >= nearDistance - 0.040D
+                        && distance <= farDistance + 0.040D;
+
+        if (reverseDrive
+                && reverseUphillInput
+                && !cornerHandoff
+                && reverseUphillAscending
+                && reverseUphillSpacingWindow
+                && safeSpeed < CHAINED_REVERSE_UPHILL_MIN_PUSH_SPEED) {
+            safeSpeed = Math.min(
+                    CHAINED_REVERSE_UPHILL_MIN_PUSH_SPEED,
+                    this.getChainedMaxCatchupSpeed(leader));
+        }
+
+        this.setDeltaMovement(
+                directedTangent.x * safeSpeed,
+                motion.y,
+                directedTangent.z * safeSpeed);
+
+        /*
+         * Keep a compact intervention trace in the existing dedicated coupler
+         * log. The 7.3.2d flight recorder can still be used unchanged.
+         */
+        if ((this.tickCount & 1) == 0) {
+            String line = String.format(java.util.Locale.ROOT,
+                    "[TC-SPACING-SAFETY] gameTick=%d entityTick=%d id=%d type=%s leader=%s#%d reverse=%s "
+                            + "distance=%.3f near=%.3f far=%.3f current=%.3f leaderSpeed=%.3f safe=%.3f "
+                            + "rail=%s leaderRail=%s",
+                    this.level().getGameTime(), this.tickCount, this.getId(),
+                    this.getClass().getSimpleName(),
+                    leader.getClass().getSimpleName(), leader.getId(),
+                    reverseDrive,
+                    distance, nearDistance, farDistance,
+                    currentSpeed, leaderSpeed, safeSpeed,
+                    this.getCurrentRailShape(), getRailShapeFor(leader));
+            COUPLER_DEBUG_LOG.info(line);
+            try {
+                Files.writeString(
+                        COUPLER_DEBUG_FILE,
+                        line + System.lineSeparator(),
+                        StandardCharsets.UTF_8,
+                        StandardOpenOption.CREATE,
+                        StandardOpenOption.WRITE,
+                        StandardOpenOption.APPEND);
+            } catch (IOException exception) {
+                COUPLER_DEBUG_LOG.error(
+                        "[TC-SPACING-SAFETY] Failed to write {}",
+                        COUPLER_DEBUG_FILE,
+                        exception);
+            }
+        }
+    }
+    /**
+     * Step 7.2.1k diagnostic telemetry.  Logged after vanilla minecart movement
+     * and the post-move catch-up so the numbers represent the spacing the player
+     * actually sees.  No state is changed here.
+     */
+    private void logCouplerTelemetry() {
+        if ((this.tickCount % COUPLER_DEBUG_INTERVAL_TICKS) != 0) {
+            return;
+        }
+
+        Entity leader = this.getPrimaryCouplingLeader();
+        if (leader == null) {
+            return;
+        }
+
+        Vec3 offset = leader.position().subtract(this.position());
+        double centerDistance = offset.length();
+        double horizontalDistance = Math.sqrt(offset.x * offset.x + offset.z * offset.z);
+        double verticalDelta = leader.getY() - this.getY();
+
+        boolean chained = leader instanceof SteamTender;
+        double touchCenterDistance = this.getCouplerTouchTargetDistance(leader);
+        // On ascending rails the model rotates with the track, so the coupler
+        // reach is along the 3D rail path, not only the horizontal projection.
+        double estimatedNubGap = centerDistance - touchCenterDistance;
+
+        Vec3 axis = this.getCurrentRailHorizontalAxis();
+        double leaderAlongAxis = Double.NaN;
+        double motionAlongAxis = Double.NaN;
+        String axisText = "none";
+        if (axis != null) {
+            leaderAlongAxis = offset.x * axis.x + offset.z * axis.z;
+            Vec3 motion = this.getDeltaMovement();
+            motionAlongAxis = motion.x * axis.x + motion.z * axis.z;
+            axisText = String.format(java.util.Locale.ROOT, "%.3f,%.3f", axis.x, axis.z);
+        }
+
+        Vec3 followerMotion = this.getDeltaMovement();
+        Vec3 leaderMotion = leader.getDeltaMovement();
+        double followerKmh = horizontalSpeedKmh(followerMotion);
+        double leaderKmh = horizontalSpeedKmh(leaderMotion);
+        SmallSteamLocomotive leadLocomotive = CouplingManager.findLeadLocomotive(leader);
+        double leadKmh = leadLocomotive != null
+                ? horizontalSpeedKmh(leadLocomotive.getDeltaMovement())
+                : leaderKmh;
+
+        RailShape followerShape = this.getCurrentRailShape();
+        RailShape leaderShape = getRailShapeFor(leader);
+        String role = chained ? "CHAINED" : "PRIMARY";
+
+        String line = String.format(java.util.Locale.ROOT,
+                "[TC-COUPLER] gameTick=%d entityTick=%d tender=%d role=%s leader=%s#%d center=%.3f horiz=%.3f dy=%.3f nubGap=%.3f touchTarget=%.3f "
+                        + "speed=%.2f leaderSpeed=%.2f leadSpeed=%.2f rail=%s leaderRail=%s axis=(%s) leaderAlong=%.3f motionAlong=%.3f "
+                        + "handoff=%d pos=(%.3f,%.3f,%.3f) leaderPos=(%.3f,%.3f,%.3f)",
+                this.level().getGameTime(), this.tickCount,
+                this.getId(), role, leader.getClass().getSimpleName(), leader.getId(),
+                centerDistance, horizontalDistance, verticalDelta, estimatedNubGap, touchCenterDistance,
+                followerKmh, leaderKmh, leadKmh,
+                followerShape, leaderShape, axisText, leaderAlongAxis, motionAlongAxis,
+                this.chainedCurveHandoffTicks,
+                this.getX(), this.getY(), this.getZ(),
+                leader.getX(), leader.getY(), leader.getZ());
+        // Keep the normal Forge log line, but also write a dedicated file so the
+        // diagnostic survives any logger/category filtering in the dev client.
+        COUPLER_DEBUG_LOG.info(line);
+        try {
+            Files.writeString(COUPLER_DEBUG_FILE, line + System.lineSeparator(),
+                    StandardCharsets.UTF_8,
+                    StandardOpenOption.CREATE,
+                    StandardOpenOption.WRITE,
+                    StandardOpenOption.APPEND);
+        } catch (IOException exception) {
+            COUPLER_DEBUG_LOG.error("[TC-COUPLER] Failed to write {}", COUPLER_DEBUG_FILE, exception);
+        }
+    }
+
+    private static double horizontalSpeedKmh(Vec3 motion) {
+        double blocksPerTick = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        return blocksPerTick * 20.0D * 3.6D;
+    }
+
+    @Nullable
+    private static RailShape getRailShapeFor(Entity entity) {
+        if (!(entity instanceof Minecart minecart)) {
+            return null;
+        }
+
+        BlockPos railPos = entity.blockPosition();
+        BlockState state = entity.level().getBlockState(railPos);
+        if (!BaseRailBlock.isRail(state)) {
+            railPos = railPos.below();
+            state = entity.level().getBlockState(railPos);
+        }
+        if (!BaseRailBlock.isRail(state)) {
+            return null;
+        }
+
+        BaseRailBlock rail = (BaseRailBlock) state.getBlock();
+        return rail.getRailDirection(state, entity.level(), railPos, minecart);
+    }
+
+    /**
+     * For the first tender, preserve the original immediate-locomotive reference.
+     * For a chained follower, use the lead locomotive as the speed reference so
+     * small losses are not compounded once per car.
+     */
+    private Vec3 getConsistReferenceMotion(Entity leader, Vec3 fallback) {
+        if (leader instanceof SteamTender) {
+            SmallSteamLocomotive locomotive = CouplingManager.findLeadLocomotive(leader);
+            if (locomotive != null && !locomotive.isRemoved()) {
+                return locomotive.getDeltaMovement();
+            }
+        }
+        return fallback;
+    }
+
+    /**
+     * True when the lead locomotive is actively commanding reverse.  Coupling
+     * topology stays locomotive -> rear cars even when physical travel reverses,
+     * so chained gap control must invert its speed response while the consist is
+     * being pushed.
+     */
+    private boolean isConsistReverseDriveRequested(Entity leader) {
+        SmallSteamLocomotive locomotive = leader instanceof SmallSteamLocomotive direct
+                ? direct
+                : CouplingManager.findLeadLocomotive(leader);
+        return locomotive != null
+                && !locomotive.isRemoved()
+                && locomotive.isReverseConsistTravel();
+    }
+
+    /**
+     * Returns an undirected local horizontal tangent to Minecraft's actual
+     * minecart path.  getPosOffs() follows the rail geometry across block
+     * boundaries, so a 90-degree rail is no longer represented by a fixed
+     * diagonal vector that points through the inside of the corner.
+     */
+    @Nullable
+    private Vec3 getCurrentRailHorizontalAxis() {
+        Vec3 forward = this.getPosOffs(
+                this.getX(), this.getY(), this.getZ(), 0.25D);
+        Vec3 backward = this.getPosOffs(
+                this.getX(), this.getY(), this.getZ(), -0.25D);
+        if (forward != null && backward != null) {
+            double dx = forward.x - backward.x;
+            double dz = forward.z - backward.z;
+            double length = Math.sqrt(dx * dx + dz * dz);
+            if (length > 1.0E-5D) {
+                return new Vec3(dx / length, 0.0D, dz / length);
+            }
+        }
+
+        // Fallback for the rare tick where path sampling cannot resolve both
+        // sides of the cart.  Straight/slope rails are exact here; the curved
+        // fallback is used only until getPosOffs() becomes available again.
+        RailShape shape = this.getCurrentRailShape();
+        if (shape == null) {
+            return null;
+        }
+
+        double diagonal = 1.0D / Math.sqrt(2.0D);
+        return switch (shape) {
+            case NORTH_SOUTH, ASCENDING_NORTH, ASCENDING_SOUTH -> new Vec3(0.0D, 0.0D, 1.0D);
+            case EAST_WEST, ASCENDING_EAST, ASCENDING_WEST -> new Vec3(1.0D, 0.0D, 0.0D);
+            case SOUTH_EAST, NORTH_WEST -> new Vec3(diagonal, 0.0D, diagonal);
+            case NORTH_EAST, SOUTH_WEST -> new Vec3(diagonal, 0.0D, -diagonal);
+        };
+    }
+
+    /**
+     * True while two chained tenders are negotiating the same corner handoff.
+     * Checking axis disagreement as well as the literal curved-rail shape covers
+     * the brief case where the leader has already left the curve and the follower
+     * has not reached it yet (or vice versa).
+     */
+    private boolean isChainedCornerTransition(SteamTender leader) {
+        if (this.isOnSharpCurve() || leader.isOnSharpCurve()) {
+            return true;
+        }
+
+        Vec3 followerAxis = this.getCurrentRailHorizontalAxis();
+        Vec3 leaderAxis = leader.getCurrentRailHorizontalAxis();
+        if (followerAxis == null || leaderAxis == null) {
+            return false;
+        }
+
+        double axisDot = Math.abs(
+                followerAxis.x * leaderAxis.x + followerAxis.z * leaderAxis.z);
+        return axisDot < 0.85D;
+    }
+
+    @Nullable
+    private Entity getPrimaryCouplingLeader() {
+        Entity linked = CouplingManager.resolve(this, this);
+        if (linked == null || linked.isRemoved()) {
+            return null;
+        }
+        return linked instanceof SmallSteamLocomotive || linked instanceof SteamTender
+                ? linked
+                : null;
+    }
+
+    private static boolean isRollingStockOnSharpCurve(Entity entity) {
+        if (entity instanceof SmallSteamLocomotive locomotive) {
+            return locomotive.isOnSharpCurve();
+        }
+        if (entity instanceof SteamTender tender) {
+            return tender.isOnSharpCurve();
+        }
+        return false;
+    }
+
+    /**
+     * True only when the follower, its immediate leader and the lead locomotive
+     * are all essentially stopped.  This is intentionally stricter than merely
+     * checking the handbrake so a crawling or coasting consist never receives a
+     * position snap.  Sharp curves keep the proven rail-path spacing logic.
+     */
+    private boolean shouldHardSettleStationaryCoupling(Entity leader) {
+        /*
+         * Step 7.3.2m - active reverse must never hard-settle.
+         *
+         * Step 7.2.1m's stationary spacing snap is correct only when the consist
+         * is genuinely resting. The 7.3.2l-r1 recorder proved that a powered
+         * reverse consist can crawl below the 0.003 b/t stationary threshold at
+         * a hill/curve exit. The old helper then snapped spacing, zeroed motion,
+         * returned before the primary controller, and repeatedly deadlocked the
+         * pushed consist even though the driver was still holding reverse.
+         *
+         * A live reverse command is therefore authoritative: allow normal rail
+         * movement/controller logic to wake and push the consist. Once reverse
+         * is released, the original stationary settle behavior is unchanged.
+         */
+        SmallSteamLocomotive commandedLead =
+                leader instanceof SmallSteamLocomotive directLeader
+                        ? directLeader
+                        : CouplingManager.findLeadLocomotive(leader);
+
+        if (commandedLead != null && commandedLead.isReverseDriveRequested()) {
+            return false;
+        }
+        if (this.isOnSharpCurve() || isRollingStockOnSharpCurve(leader)) {
+            return false;
+        }
+
+        if (horizontalSpeedBlocksPerTick(this.getDeltaMovement())
+                > STATIONARY_COUPLER_SETTLE_SPEED_THRESHOLD) {
+            return false;
+        }
+        if (horizontalSpeedBlocksPerTick(leader.getDeltaMovement())
+                > STATIONARY_COUPLER_SETTLE_SPEED_THRESHOLD) {
+            return false;
+        }
+
+        SmallSteamLocomotive locomotive = CouplingManager.findLeadLocomotive(leader);
+        return locomotive == null
+                || horizontalSpeedBlocksPerTick(locomotive.getDeltaMovement())
+                <= STATIONARY_COUPLER_SETTLE_SPEED_THRESHOLD;
+    }
+
+
+    /**
+     * Vanilla minecart motion is resolved independently for each vehicle. On a
+     * descending rail or the first tick of a curve that can consume part of the
+     * tender's commanded speed after the pre-move coupling constraint has already
+     * run. Reinforce the follower velocity after movement so the next tick starts
+     * with enough speed to close the couplers instead of letting the gap compound.
+     */
+    private void applyPostMoveCouplingCatchup() {
+        Entity leader = this.getPrimaryCouplingLeader();
+        if (leader == null) {
+            return;
+        }
+
+        if (CouplingManager.isTrainHandBrakeApplied(leader)) {
+            this.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
+        Vec3 offset = leader.position().subtract(this.position());
+        double distance = offset.length();
+        boolean curveTransition = this.isOnSharpCurve() || isRollingStockOnSharpCurve(leader);
+        boolean chainedFollower = leader instanceof SteamTender;
+        boolean chainedCornerTransition = chainedFollower
+                && this.isChainedCornerTransition((SteamTender) leader);
+        if (chainedFollower) {
+            // Chained cars are always rail-path controlled now. Re-apply the same
+            // bounded speed/gap hold after vanilla resolves the cart onto the rail.
+            Vec3 consistReferenceMotion = this.getConsistReferenceMotion(
+                    leader, leader.getDeltaMovement());
+            this.debugControllerPhase = "POST";
+            this.applyChainedRailPathSpeed(
+                    leader, this.getDeltaMovement(), consistReferenceMotion, distance);
+                    this.applyImmediateLeaderSpacingSafety(leader);
+            return;
+        }
+
+        double postMoveGapThreshold = curveTransition
+                ? this.getPrimaryCurvePostMoveGapThreshold(leader)
+                : this.getPrimaryPostMoveGapThreshold(leader);
+        if (distance <= postMoveGapThreshold || distance < 1.0E-5D) {
+            return;
+        }
+
+        Vec3 motion = this.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        double axisX;
+        double axisZ;
+        Vec3 chainedRailAxis = leader instanceof SteamTender ? this.getCurrentRailHorizontalAxis() : null;
+        if (chainedRailAxis != null) {
+            axisX = chainedRailAxis.x;
+            axisZ = chainedRailAxis.z;
+        } else if (horizontalSpeed > 1.0E-4D) {
+            axisX = motion.x / horizontalSpeed;
+            axisZ = motion.z / horizontalSpeed;
+        } else {
+            Vec3 leaderMotion = leader.getDeltaMovement();
+            double leaderHorizontalSpeed = Math.sqrt(
+                    leaderMotion.x * leaderMotion.x + leaderMotion.z * leaderMotion.z);
+            if (leaderHorizontalSpeed > 1.0E-4D) {
+                axisX = leaderMotion.x / leaderHorizontalSpeed;
+                axisZ = leaderMotion.z / leaderHorizontalSpeed;
+            } else {
+                double radians = Math.toRadians(this.getTrainFacingYaw());
+                axisX = Math.sin(radians);
+                axisZ = -Math.cos(radians);
+            }
+        }
+
+        double towardDot = offset.x * axisX + offset.z * axisZ;
+        double towardSign = towardDot >= 0.0D ? 1.0D : -1.0D;
+        Vec3 consistReferenceMotion = this.getConsistReferenceMotion(leader, leader.getDeltaMovement());
+        double leaderSpeed = Math.max(leader.getDeltaMovement().length(), consistReferenceMotion.length());
+        double requestedCatchup = leaderSpeed
+                + (distance - postMoveGapThreshold) * POST_MOVE_CATCHUP_PER_BLOCK;
+
+        RailShape shape = this.getCurrentRailShape();
+        double cap = isSharpVanillaCurve(shape)
+                ? COUPLED_CURVE_CATCHUP_SPEED
+                : COUPLED_STRAIGHT_CATCHUP_SPEED;
+        double catchupSpeed = Mth.clamp(requestedCatchup, 0.0D, cap);
+
+        double currentAlongRail = motion.x * axisX + motion.z * axisZ;
+        double desiredAlongRail = towardSign * catchupSpeed;
+        if (Math.signum(desiredAlongRail) != Math.signum(currentAlongRail)
+                || Math.abs(desiredAlongRail) > Math.abs(currentAlongRail)) {
+            this.setDeltaMovement(axisX * desiredAlongRail, motion.y, axisZ * desiredAlongRail);
+        }
+    }
+
+    @Override
+    public InteractionResult interact(Player player, InteractionHand hand) {
+        ItemStack held = player.getItemInHand(hand);
+        if (held.getItem() instanceof ConnectorItem) {
+            return ConnectorItem.handleRollingStockClick(this, player, hand);
+        }
+
+        if (!this.level().isClientSide && player instanceof ServerPlayer serverPlayer) {
+            NetworkHooks.openScreen(serverPlayer, this,
+                    buffer -> buffer.writeInt(this.getId()));
+        }
+        return InteractionResult.sidedSuccess(this.level().isClientSide);
+    }
+
+    @Override
+    public Component getDisplayName() {
+        return Component.literal("Tender");
+    }
+
+    @Nullable
+    @Override
+    public AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
+        return new TenderMenu(containerId, inventory, this);
+    }
+
+    /**
+     * The original tender uses a dedicated liquid-container slot. For the first
+     * classic GUI pass, a water bucket placed in that slot transfers 1000 mB to
+     * the tender and leaves the empty bucket in the same slot. A full tank leaves
+     * the water bucket untouched instead of consuming it.
+     */
+    private void processWaterContainerInput() {
+        ItemStack stack = this.waterContainerInventory.getStackInSlot(0);
+        if (!stack.is(Items.WATER_BUCKET)
+                || this.waterAmount > WATER_CAPACITY_MB - WATER_BUCKET_MB) {
+            return;
+        }
+
+        this.waterAmount += WATER_BUCKET_MB;
+
+        // Match the locomotive: return empty buckets into reserve storage first
+        // so vanilla buckets can stack there. If all 15 storage slots are full,
+        // keep the returned bucket in the dedicated liquid-container slot.
+        int bucketOutputSlot = this.findEmptyBucketOutputSlot();
+        if (bucketOutputSlot >= 0) {
+            this.waterContainerInventory.setStackInSlot(0, ItemStack.EMPTY);
+            this.fuelInventory.insertItem(
+                    bucketOutputSlot, new ItemStack(Items.BUCKET), false);
+        } else {
+            this.waterContainerInventory.setStackInSlot(0, new ItemStack(Items.BUCKET));
+        }
+    }
+
+    private int findEmptyBucketOutputSlot() {
+        ItemStack emptyBucket = new ItemStack(Items.BUCKET);
+        for (int slot = 0; slot < FUEL_INVENTORY_SIZE; slot++) {
+            ItemStack remainder = this.fuelInventory.insertItem(slot, emptyBucket, true);
+            if (remainder.isEmpty()) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    @Override
+    public void push(Entity entity) {
+        if (this.isCoupledTo(entity.getUUID())) {
+            return;
+        }
+        super.push(entity);
+    }
+
+    @Override
+    public boolean hurt(DamageSource damageSource, float amount) {
+        Entity attacker = damageSource.getEntity();
+        // Vanilla creative minecart removal can discard the entity from inside
+        // super.hurt(). Unlink first so the surviving locomotive never keeps a
+        // stale tender UUID.
+        if (!this.level().isClientSide
+                && attacker instanceof Player creativePlayer
+                && creativePlayer.getAbilities().instabuild) {
+            CouplingManager.unlinkAll(this, this);
+        }
+
+        boolean handled = super.hurt(damageSource, amount);
+        if (!handled || this.level().isClientSide || this.isRemoved()) {
+            return handled;
+        }
+
+        if (!(attacker instanceof Player player) || player.getAbilities().instabuild) {
+            return handled;
+        }
+
+        if (this.tickCount - this.lastSurvivalRemovalHitTick > SURVIVAL_REMOVAL_RESET_TICKS) {
+            this.survivalRemovalHits = 0;
+        }
+        this.lastSurvivalRemovalHitTick = this.tickCount;
+        this.survivalRemovalHits++;
+        if (this.survivalRemovalHits >= SURVIVAL_REMOVAL_HITS) {
+            this.destroy(damageSource);
+        }
+        return true;
+    }
+
+    @Override
+    public void destroy(DamageSource damageSource) {
+        CouplingManager.unlinkAll(this, this);
+        this.dropTenderFuelInventory();
+        super.destroy(damageSource);
+    }
+
+    /**
+     * Final safety net for cart removal. Player damage normally reaches destroy(),
+     * and creative removal is unlinked before vanilla hurt() can discard the cart,
+     * but other permanent removal paths can bypass both callbacks. Only destructive
+     * removals clear couplers; chunk unload/dimension lifecycle removal must preserve
+     * saved train links.
+     */
+    @Override
+    public void remove(Entity.RemovalReason reason) {
+        if (!this.level().isClientSide && reason.shouldDestroy()) {
+            CouplingManager.unlinkAll(this, this);
+        }
+        super.remove(reason);
+    }
+
+    private void dropTenderFuelInventory() {
+        if (this.level().isClientSide || this.tenderInventoryDropped) {
+            return;
+        }
+
+        this.tenderInventoryDropped = true;
+        for (int slot = 0; slot < FUEL_INVENTORY_SIZE; slot++) {
+            ItemStack stack = this.fuelInventory.getStackInSlot(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+            ItemStack dropped = this.fuelInventory.extractItem(slot, stack.getCount(), false);
+            if (!dropped.isEmpty()) {
+                Containers.dropItemStack(
+                        this.level(),
+                        this.getX(), this.getY() + 0.35D, this.getZ(),
+                        dropped);
+            }
+        }
+
+        ItemStack waterContainer = this.waterContainerInventory.extractItem(
+                0, this.waterContainerInventory.getStackInSlot(0).getCount(), false);
+        if (!waterContainer.isEmpty()) {
+            Containers.dropItemStack(
+                    this.level(),
+                    this.getX(), this.getY() + 0.35D, this.getZ(),
+                    waterContainer);
+        }
+    }
+
+    @Override
+    protected void applyNaturalSlowdown() {
+        if (this.hasCoupledRollingStock()) {
+            Vec3 motion = this.getDeltaMovement();
+            this.setDeltaMovement(
+                    motion.x * COUPLED_ROLLING_RESISTANCE,
+                    motion.y,
+                    motion.z * COUPLED_ROLLING_RESISTANCE);
+            return;
+        }
+        super.applyNaturalSlowdown();
+    }
+
+    @Override
+    public double getSlopeAdjustment() {
+        // While attached, the locomotive owns the train's tractive/gravity state.
+        // This keeps the tender from independently rolling downhill and stretching
+        // the coupling on a normal one-block rail incline.
+        return this.hasCoupledRollingStock() ? 0.0D : super.getSlopeAdjustment();
+    }
+
+    @Override
+    public boolean shouldDoRailFunctions() {
+        return false;
+    }
+
+    @Override
+    protected double getMaxSpeed() {
+        RailShape shape = this.getCurrentRailShape();
+        if (this.hasCoupledRollingStock()) {
+            return isSharpVanillaCurve(shape)
+                    ? COUPLED_CURVE_CATCHUP_SPEED
+                    : COUPLED_STRAIGHT_CATCHUP_SPEED;
+        }
+        if (isSharpVanillaCurve(shape)) {
+            return CURVE_MAX_SPEED_BLOCKS_PER_TICK;
+        }
+        return MAX_SPEED_BLOCKS_PER_TICK;
+    }
+
+    private static boolean isSharpVanillaCurve(@Nullable RailShape shape) {
+        return shape == RailShape.NORTH_EAST
+                || shape == RailShape.NORTH_WEST
+                || shape == RailShape.SOUTH_EAST
+                || shape == RailShape.SOUTH_WEST;
+    }
+
+    /**
+     * Step 7.2.1h server-authoritative tender polarity.
+     *
+     * A coupled tender always knows which vehicle is physically in front of it:
+     * its primary coupling leader.  Resolve the leader onto the tender's local
+     * rail axis, then apply the classic model's fixed 180-degree polarity offset.
+     * This remains true while driving forward, reversing, climbing or descending
+     * because the physical order of the consist does not change.
+     *
+     * For an uncoupled tender, preserve the established front/back end by taking
+     * the rail-facing candidate closest to its previous facing.
+     */
+    private void updateTrainFacingFromRail() {
+        RailShape shape = this.getCurrentRailShape();
+        if (shape == null) {
+            return;
+        }
+
+        float previous = this.getTrainFacingYaw();
+        Entity leader = this.getPrimaryCouplingLeader();
+
+        if (leader != null) {
+            this.trainFacingYaw = this.getClassicTenderFacingFromLeader(leader, previous);
+        } else {
+            this.trainFacingYaw = this.getRailFacingClosestTo(shape, previous);
+        }
+
+        this.trainFacingInitialized = true;
+        this.setYRot(this.trainFacingYaw);
+        this.yRotO = this.trainFacingYaw;
+        this.syncTrainFacingYaw();
+    }
+
+    private void syncTrainFacingYaw() {
+        if (!this.level().isClientSide) {
+            float wrapped = Mth.wrapDegrees(this.trainFacingYaw);
+            this.trainFacingYaw = wrapped;
+            if (Math.abs(Mth.wrapDegrees(this.entityData.get(DATA_TRAIN_FACING_YAW) - wrapped)) > 0.01F) {
+                this.entityData.set(DATA_TRAIN_FACING_YAW, wrapped);
+            }
+        }
+    }
+
+    private float getRailFacingClosestTo(RailShape shape, float referenceYaw) {
+        float axisYaw = switch (shape) {
+            case NORTH_SOUTH, ASCENDING_NORTH, ASCENDING_SOUTH -> 0.0F;
+            case EAST_WEST, ASCENDING_EAST, ASCENDING_WEST -> 90.0F;
+            case SOUTH_EAST, NORTH_WEST -> 45.0F;
+            case NORTH_EAST, SOUTH_WEST -> -45.0F;
+        };
+
+        float first = Mth.wrapDegrees(axisYaw);
+        float opposite = Mth.wrapDegrees(axisYaw + 180.0F);
+        float firstDistance = Math.abs(Mth.wrapDegrees(first - referenceYaw));
+        float oppositeDistance = Math.abs(Mth.wrapDegrees(opposite - referenceYaw));
+        return firstDistance <= oppositeDistance ? first : opposite;
+    }
+
+    /**
+     * Step 7.2.1i classic tender polarity.
+     *
+     * Step 7.2.1h correctly found the rail tangent end that points toward the
+     * coupling leader, but the tender model's authored forward yaw is physically
+     * the opposite end of the body.  That made every deterministic connector
+     * correction land 180 degrees backwards.  Keep the same stable server-side
+     * rail/leader decision, then invert it once for the model's real polarity.
+     */
+    private float getClassicTenderFacingFromLeader(Entity leader, float fallbackYaw) {
+        RailShape shape = this.getCurrentRailShape();
+        if (shape == null) {
+            return Mth.wrapDegrees(fallbackYaw + 180.0F);
+        }
+
+        float first = this.getRailFacingClosestTo(shape, fallbackYaw);
+        float opposite = Mth.wrapDegrees(first + 180.0F);
+        Vec3 toLeader = leader.position().subtract(this.position());
+        double horizontalLength = Math.sqrt(toLeader.x * toLeader.x + toLeader.z * toLeader.z);
+
+        float towardLeaderYaw;
+        if (horizontalLength < 1.0E-4D) {
+            towardLeaderYaw = first;
+        } else {
+            double firstRadians = Math.toRadians(first);
+            double oppositeRadians = Math.toRadians(opposite);
+            double firstDot = Math.sin(firstRadians) * toLeader.x
+                    + (-Math.cos(firstRadians)) * toLeader.z;
+            double oppositeDot = Math.sin(oppositeRadians) * toLeader.x
+                    + (-Math.cos(oppositeRadians)) * toLeader.z;
+
+            // Around the exact center of a curve the leader vector can be nearly
+            // perpendicular to the local tangent.  Preserve the stable fallback
+            // side in that tiny tie case instead of allowing a random 180 flip.
+            if (Math.abs(firstDot - oppositeDot) < horizontalLength * 0.05D) {
+                towardLeaderYaw = first;
+            } else {
+                towardLeaderYaw = firstDot >= oppositeDot ? first : opposite;
+            }
+        }
+
+        // The classic tender model's locomotive-facing coupling end is opposite
+        // its authored forward yaw.  This is the single polarity correction.
+        return Mth.wrapDegrees(towardLeaderYaw + 180.0F);
+    }
+
+    /** Render-only yaw smoothing; the rail physics still uses the exact shape. */
+    private void updateVisualTrainFacing() {
+        if (!this.visualFacingInitialized) {
+            this.visualFacingYaw = this.getTrainFacingYaw();
+            this.previousVisualFacingYaw = this.visualFacingYaw;
+            this.visualFacingInitialized = true;
+            return;
+        }
+
+        this.previousVisualFacingYaw = this.visualFacingYaw;
+        float delta = Mth.wrapDegrees(this.getTrainFacingYaw() - this.visualFacingYaw);
+
+        // A true 180-degree polarity change only happens when the connector has
+        // corrected a backwards-placed tender (or when an old save is repaired).
+        // Snap that once instead of visibly spinning the model for several ticks.
+        if (Math.abs(delta) >= VISUAL_POLARITY_SNAP_DEGREES) {
+            this.visualFacingYaw = this.getTrainFacingYaw();
+            this.previousVisualFacingYaw = this.visualFacingYaw;
+            return;
+        }
+
+        float step = Mth.clamp(delta,
+                -VISUAL_FACING_MAX_TURN_DEGREES,
+                VISUAL_FACING_MAX_TURN_DEGREES);
+        this.visualFacingYaw = Mth.wrapDegrees(this.visualFacingYaw + step);
+    }
+
+    public float getRenderTrainFacingYaw(float partialTicks) {
+        if (!this.visualFacingInitialized) {
+            return this.getTrainFacingYaw();
+        }
+        return Mth.rotLerp(partialTicks, this.previousVisualFacingYaw, this.visualFacingYaw);
+    }
+
+    public boolean isOnSharpCurve() {
+        return isSharpVanillaCurve(this.getCurrentRailShape());
+    }
+
+    @Nullable
+    private RailShape getCurrentRailShape() {
+        BlockPos railPos = this.blockPosition();
+        BlockState state = this.level().getBlockState(railPos);
+        if (!BaseRailBlock.isRail(state)) {
+            railPos = railPos.below();
+            state = this.level().getBlockState(railPos);
+        }
+        if (!BaseRailBlock.isRail(state)) {
+            return null;
+        }
+        BaseRailBlock rail = (BaseRailBlock) state.getBlock();
+        return rail.getRailDirection(state, this.level(), railPos, this);
+    }
+
+    public IItemHandler getFuelInventory() {
+        return this.fuelInventory;
+    }
+
+    public IItemHandler getWaterContainerInventory() {
+        return this.waterContainerInventory;
+    }
+
+    public int getWaterAmount() {
+        return this.waterAmount;
+    }
+
+    public int getWaterCapacity() {
+        return WATER_CAPACITY_MB;
+    }
+
+    /**
+     * Pulls the next stored furnace-fuel stack for a coupled locomotive. The
+     * locomotive owns burn timing; the tender only owns reserve storage.
+     */
+    public ItemStack extractFuelStackForLocomotive() {
+        if (this.level().isClientSide) {
+            return ItemStack.EMPTY;
+        }
+        for (int slot = 0; slot < FUEL_INVENTORY_SIZE; slot++) {
+            ItemStack stack = this.fuelInventory.getStackInSlot(slot);
+            if (isFuel(stack)) {
+                return this.fuelInventory.extractItem(slot, stack.getCount(), false);
+            }
+        }
+        return ItemStack.EMPTY;
+    }
+
+    /** Drains up to maxAmountMb of tender water for the coupled locomotive. */
+    public int drainWaterForLocomotive(int maxAmountMb) {
+        if (this.level().isClientSide || maxAmountMb <= 0 || this.waterAmount <= 0) {
+            return 0;
+        }
+        int drained = Math.min(this.waterAmount, maxAmountMb);
+        this.waterAmount -= drained;
+        return drained;
+    }
+
+    private int getStoredFuelItemCount() {
+        int total = 0;
+        for (int slot = 0; slot < FUEL_INVENTORY_SIZE; slot++) {
+            total += this.fuelInventory.getStackInSlot(slot).getCount();
+        }
+        return total;
+    }
+
+    private static boolean isFuel(ItemStack stack) {
+        return !stack.isEmpty() && ForgeHooks.getBurnTime(stack, RecipeType.SMELTING) > 0;
+    }
+
+    /**
+     * Called by the server coupling manager when this tender becomes a follower.
+     * A tender placed backwards is snapped to the classic model polarity on its
+     * own rail immediately when the connector establishes the link.  This is
+     * visual/orientation state only; no locomotive/tender supply logic changes.
+     */
+    public void alignFacingToCouplingLeader(Entity leader) {
+        float consistYaw;
+        if (leader instanceof SmallSteamLocomotive locomotive) {
+            consistYaw = locomotive.getTrainFacingYaw();
+        } else if (leader instanceof SteamTender tender) {
+            SmallSteamLocomotive locomotive = CouplingManager.findLeadLocomotive(leader);
+            consistYaw = locomotive != null
+                    ? locomotive.getTrainFacingYaw()
+                    : tender.getTrainFacingYaw();
+        } else {
+            consistYaw = leader.getYRot();
+        }
+
+        float desiredYaw = this.getClassicTenderFacingFromLeader(
+                leader, Mth.wrapDegrees(consistYaw));
+        this.trainFacingYaw = desiredYaw;
+        this.trainFacingInitialized = true;
+        this.travelDirectionSign = 1;
+        this.chainedPathDirection = Vec3.ZERO;
+        this.chainedCurveHandoffTicks = 0;
+        this.visualFacingYaw = desiredYaw;
+        this.previousVisualFacingYaw = desiredYaw;
+        this.visualFacingInitialized = true;
+        this.setYRot(desiredYaw);
+        this.yRotO = desiredYaw;
+        this.syncTrainFacingYaw();
+    }
+
+    /**
+     * Step 7.3.0 model-derived coupler geometry.
+     *
+     * Existing steam-tender values remain exactly the Step 7.2.1m numbers.
+     * Subclasses only override the physical reach of their rendered coupler
+     * nubs; all spacing bands are shifted by the resulting touch-target delta.
+     * This lets future classic cars reuse the frozen rail/corner controller
+     * without pretending every vehicle is the same length as the tender.
+     */
+    protected double getLeaderFacingCouplerReach() {
+        return TENDER_LEADER_NUB_REACH;
+    }
+
+    protected double getTrailingCouplerReach() {
+        return TENDER_TRAILING_NUB_REACH;
+    }
+
+    public double getCouplerTouchTargetDistance(Entity leader) {
+        double leaderReach;
+        if (leader instanceof SmallSteamLocomotive) {
+            leaderReach = LOCO_REAR_NUB_REACH;
+        } else if (leader instanceof SteamTender tenderLeader) {
+            leaderReach = tenderLeader.getTrailingCouplerReach();
+        } else {
+            leaderReach = TENDER_TRAILING_NUB_REACH;
+        }
+        return leaderReach + this.getLeaderFacingCouplerReach();
+    }
+
+    private double getPrimaryTouchTargetDelta(Entity leader) {
+        return this.getCouplerTouchTargetDistance(leader)
+                - (LOCO_REAR_NUB_REACH + TENDER_LEADER_NUB_REACH);
+    }
+
+    private double getChainedTouchTargetDelta(Entity leader) {
+        return this.getCouplerTouchTargetDistance(leader)
+                - (TENDER_TRAILING_NUB_REACH + TENDER_LEADER_NUB_REACH);
+    }
+
+    protected double getPrimaryCouplingMinDistance(Entity leader) {
+        return COUPLING_MIN_DISTANCE + this.getPrimaryTouchTargetDelta(leader);
+    }
+
+    protected double getPrimaryCouplingMaxDistance(Entity leader) {
+        return COUPLING_MAX_DISTANCE + this.getPrimaryTouchTargetDelta(leader);
+    }
+
+    protected double getPrimaryCurveCouplingMinDistance(Entity leader) {
+        return CURVE_COUPLING_MIN_DISTANCE + this.getPrimaryTouchTargetDelta(leader);
+    }
+
+    protected double getPrimaryCurveCouplingMaxDistance(Entity leader) {
+        return CURVE_COUPLING_MAX_DISTANCE + this.getPrimaryTouchTargetDelta(leader);
+    }
+
+    protected double getPrimaryPostMoveGapThreshold(Entity leader) {
+        return POST_MOVE_GAP_THRESHOLD + this.getPrimaryTouchTargetDelta(leader);
+    }
+
+    protected double getPrimaryCurvePostMoveGapThreshold(Entity leader) {
+        return CURVE_POST_MOVE_GAP_THRESHOLD + this.getPrimaryTouchTargetDelta(leader);
+    }
+
+    protected double getChainedNearDistance(Entity leader) {
+        return CHAINED_NEAR_DISTANCE + this.getChainedTouchTargetDelta(leader);
+    }
+
+    protected double getChainedStopDistance(Entity leader) {
+        return CHAINED_STOP_DISTANCE + this.getChainedTouchTargetDelta(leader);
+    }
+
+    protected double getChainedFarDistance(Entity leader) {
+        return CHAINED_FAR_DISTANCE + this.getChainedTouchTargetDelta(leader);
+    }
+
+    protected double getChainedCurveNearDistance(Entity leader) {
+        return CHAINED_CURVE_NEAR_DISTANCE + this.getChainedTouchTargetDelta(leader);
+    }
+
+    protected double getChainedCurveStopDistance(Entity leader) {
+        return CHAINED_CURVE_STOP_DISTANCE + this.getChainedTouchTargetDelta(leader);
+    }
+
+    protected double getChainedCurveFarDistance(Entity leader) {
+        return CHAINED_CURVE_FAR_DISTANCE + this.getChainedTouchTargetDelta(leader);
+    }
+
+    /**
+     * Model-specific confidence gate for chained travel direction.
+     *
+     * The proven tender/freight/passenger baseline returns zero, preserving its
+     * exact Step 7.2.1m/7.3.x behavior.  Long or very-rear vehicles may override
+     * this so a nearly perpendicular projection from the lead locomotive cannot
+     * flip their rail-path direction during a corner handoff.
+     */
+    protected double getChainedDirectionProjectionRatio(Entity leader) {
+        return 0.0D;
+    }
+
+    /**
+     * Model-specific chained catch-up cap.  Default preserves the frozen global
+     * controller; subclasses can choose a safer ceiling without retuning every
+     * existing vehicle.
+     */
+    protected double getChainedMaxCatchupSpeed(Entity leader) {
+        return CHAINED_HANDOFF_MAX_SPEED;
+    }
+
+    /**
+     * Step 7.2.1l connector-time coupler-nub alignment.
+     *
+     * The telemetry gave us real straight-track center distances, and the classic
+     * model geometry gives exact touch targets: 2.10 blocks for locomotive ->
+     * tender and 2.05 blocks for tender -> tender.  Move only the follower and
+     * only along Minecraft's rail path.  This works even when the handbrake is on,
+     * which is why the old runtime spacing correction could not fix a stationary
+     * freshly connected consist.
+     */
+    public void alignCouplerSpacingToLeader(Entity leader) {
+        if (this.level().isClientSide || leader == null || leader.isRemoved()) {
+            return;
+        }
+
+        double targetDistance = this.getCouplerTouchTargetDistance(leader);
+        double currentDistance = this.position().distanceTo(leader.position());
+        double currentError = Math.abs(currentDistance - targetDistance);
+        if (currentError <= 0.025D) {
+            return;
+        }
+
+        // Connector use is a setup action, not a towing teleport.  The measured
+        // overlap is ~0.37-0.52 blocks, so cap one-time correction to 0.85 blocks.
+        double correctionDistance = Math.min(0.85D, currentError + 0.08D);
+        Vec3 best = this.position();
+        double bestError = currentError;
+
+        double[] scales = {1.0D, 0.75D, 0.50D, 0.25D};
+        for (double sign : new double[]{-1.0D, 1.0D}) {
+            for (double scale : scales) {
+                Vec3 candidate = this.getPosOffs(
+                        this.getX(), this.getY(), this.getZ(),
+                        sign * correctionDistance * scale);
+                if (candidate == null) {
+                    continue;
+                }
+                double error = Math.abs(candidate.distanceTo(leader.position()) - targetDistance);
+                if (error + 1.0E-4D < bestError) {
+                    best = candidate;
+                    bestError = error;
+                }
+            }
+        }
+
+        if (!best.equals(this.position()) && bestError < currentError) {
+            this.setPos(best.x, best.y, best.z);
+            this.setDeltaMovement(Vec3.ZERO);
+            this.forceClientPositionSync();
+        }
+    }
+
+    /**
+     * A raw server-side setPos() can remain invisible to a stationary client-side
+     * minecart until normal movement produces another tracking packet.  Send one
+     * absolute entity teleport packet immediately so connector-time and stopped-
+     * consist spacing corrections are visible without nudging the locomotive.
+     */
+    private void forceClientPositionSync() {
+        if (this.level() instanceof ServerLevel serverLevel) {
+            serverLevel.getChunkSource().broadcastAndSend(
+                    this, new ClientboundTeleportEntityPacket(this));
+        }
+    }
+
+    public float getTrainFacingYaw() {
+        return this.trainFacingInitialized ? this.trainFacingYaw : this.getYRot();
+    }
+
+    @Nullable
+    @Override
+    public UUID getCoupledRollingStockUuid() {
+        return this.coupledRollingStockUuid;
+    }
+
+    @Override
+    public void setCoupledRollingStockUuid(@Nullable UUID uuid) {
+        this.coupledRollingStockUuid = uuid;
+    }
+
+    @Nullable
+    @Override
+    public UUID getSecondaryCoupledRollingStockUuid() {
+        return this.secondaryCoupledRollingStockUuid;
+    }
+
+    @Override
+    public void setSecondaryCoupledRollingStockUuid(@Nullable UUID uuid) {
+        this.secondaryCoupledRollingStockUuid = uuid;
+    }
+
+    @Override
+    protected void addAdditionalSaveData(CompoundTag tag) {
+        super.addAdditionalSaveData(tag);
+        tag.put("TenderFuelInventory", this.fuelInventory.serializeNBT());
+        tag.put("TenderWaterContainer", this.waterContainerInventory.serializeNBT());
+        tag.putInt("TenderWaterAmount", this.waterAmount);
+        if (this.coupledRollingStockUuid != null) {
+            tag.putUUID("CoupledRollingStock", this.coupledRollingStockUuid);
+        }
+        if (this.secondaryCoupledRollingStockUuid != null) {
+            tag.putUUID("SecondaryCoupledRollingStock", this.secondaryCoupledRollingStockUuid);
+        }
+        tag.putFloat("TrainFacingYaw", this.getTrainFacingYaw());
+        tag.putBoolean("TrainFacingInitialized", this.trainFacingInitialized);
+    }
+
+    @Override
+    protected void readAdditionalSaveData(CompoundTag tag) {
+        super.readAdditionalSaveData(tag);
+        if (tag.contains("TenderFuelInventory")) {
+            this.fuelInventory.deserializeNBT(tag.getCompound("TenderFuelInventory"));
+        }
+        if (tag.contains("TenderWaterContainer")) {
+            this.waterContainerInventory.deserializeNBT(tag.getCompound("TenderWaterContainer"));
+        }
+        this.waterAmount = Mth.clamp(tag.getInt("TenderWaterAmount"), 0, WATER_CAPACITY_MB);
+        this.coupledRollingStockUuid = tag.hasUUID("CoupledRollingStock")
+                ? tag.getUUID("CoupledRollingStock")
+                : null;
+        this.secondaryCoupledRollingStockUuid = tag.hasUUID("SecondaryCoupledRollingStock")
+                ? tag.getUUID("SecondaryCoupledRollingStock")
+                : null;
+        if (tag.contains("TrainFacingYaw")) {
+            this.trainFacingYaw = tag.getFloat("TrainFacingYaw");
+            this.trainFacingInitialized = tag.getBoolean("TrainFacingInitialized");
+            if (!this.level().isClientSide && this.trainFacingInitialized) {
+                this.syncTrainFacingYaw();
+            }
+        }
+    }
+
+    @Override
+    protected Item getDropItem() {
+        return TCItems.STEAM_TENDER.get();
+    }
+
+    @Override
+    public ItemStack getPickResult() {
+        return new ItemStack(TCItems.STEAM_TENDER.get());
+    }
+}
+

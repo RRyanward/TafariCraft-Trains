@@ -1,0 +1,6 @@
+/run/
+/run_data/
+/run_server/
+/build/
+/.idea/
+/.gradle/

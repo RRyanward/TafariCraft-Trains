@@ -1,0 +1,36 @@
+{
+  "multipart": [
+    {
+      "when": {"assembly_part":"0","facing":"north","original_visual_root":"false"},
+      "apply": {"model":"traincraft:block/batch/track_diagonal_straight_medium","y":90}
+    },
+    {
+      "when": {"assembly_part":"0","facing":"east","original_visual_root":"false"},
+      "apply": {"model":"traincraft:block/batch/track_diagonal_straight_medium"}
+    },
+    {
+      "when": {"assembly_part":"0","facing":"south","original_visual_root":"false"},
+      "apply": {"model":"traincraft:block/batch/track_diagonal_straight_medium","y":270}
+    },
+    {
+      "when": {"assembly_part":"0","facing":"west","original_visual_root":"false"},
+      "apply": {"model":"traincraft:block/batch/track_diagonal_straight_medium","y":180}
+    },
+    {
+      "when": {"assembly_part":"6","facing":"north","original_visual_root":"true"},
+      "apply": {"model":"traincraft:block/batch/track_diagonal_straight_medium","y":90}
+    },
+    {
+      "when": {"assembly_part":"6","facing":"east","original_visual_root":"true"},
+      "apply": {"model":"traincraft:block/batch/track_diagonal_straight_medium","y":180}
+    },
+    {
+      "when": {"assembly_part":"6","facing":"south","original_visual_root":"true"},
+      "apply": {"model":"traincraft:block/batch/track_diagonal_straight_medium","y":270}
+    },
+    {
+      "when": {"assembly_part":"6","facing":"west","original_visual_root":"true"},
+      "apply": {"model":"traincraft:block/batch/track_diagonal_straight_medium"}
+    }
+  ]
+}

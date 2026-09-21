@@ -1,0 +1,80 @@
+/*
+ * Traincraft 1.20.1 entity registry.
+ * Original project: https://github.com/Traincraft/Traincraft
+ * Distributed under LGPL-v3.0.
+ */
+package traincraft.registry;
+
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
+import traincraft.Traincraft;
+import traincraft.entity.train.caboose.ClassicCaboose;
+import traincraft.entity.train.freight.FreightCart;
+import traincraft.entity.train.passenger.PassengerCoachBlue;
+import traincraft.entity.train.steam.small.SmallSteamLocomotive;
+import traincraft.entity.train.tender.SteamTender;
+
+public final class TCEntities {
+    public static final DeferredRegister<EntityType<?>> ENTITY_TYPES =
+            DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, Traincraft.MOD_ID);
+
+    /**
+     * First rolling-stock type in the 1.20.1 port.
+     * Dimensions preserve the original Traincraft definition as closely as
+     * Minecraft's width/height entity box permits.
+     */
+    public static final RegistryObject<EntityType<SmallSteamLocomotive>> LOCOMOTIVE_STEAM_SMALL =
+            ENTITY_TYPES.register("locomotive_steam_small", () ->
+                    EntityType.Builder.<SmallSteamLocomotive>of(SmallSteamLocomotive::new, MobCategory.MISC)
+                            .sized(1.04F, 1.856F)
+                            .clientTrackingRange(10)
+                            .updateInterval(1)
+                            .build(Traincraft.MOD_ID + ":locomotive_steam_small"));
+
+    /** Step 7.0 classic steam tender used by the first physical coupling system. */
+    public static final RegistryObject<EntityType<SteamTender>> STEAM_TENDER =
+            ENTITY_TYPES.register("steam_tender", () ->
+                    EntityType.Builder.<SteamTender>of(SteamTender::new, MobCategory.MISC)
+                            .sized(0.96F, 1.20F)
+                            .clientTrackingRange(10)
+                            .updateInterval(1)
+                            .build(Traincraft.MOD_ID + ":steam_tender"));
+
+    /** Step 7.3.0 first classic non-tender rolling-stock vehicle. */
+    public static final RegistryObject<EntityType<FreightCart>> FREIGHT_CART =
+            ENTITY_TYPES.register("freight_cart", () ->
+                    EntityType.Builder.<FreightCart>of(FreightCart::new, MobCategory.MISC)
+                            .sized(0.98F, 1.60F)
+                            .clientTrackingRange(10)
+                            .updateInterval(1)
+                            .build(Traincraft.MOD_ID + ":freight_cart"));
+
+    /** Step 7.3.1 first classic rideable passenger coach. */
+    public static final RegistryObject<EntityType<PassengerCoachBlue>> PASSENGER_COACH_BLUE =
+            ENTITY_TYPES.register("passenger_coach_blue", () ->
+                    EntityType.Builder.<PassengerCoachBlue>of(PassengerCoachBlue::new, MobCategory.MISC)
+                            .sized(1.05F, 1.70F)
+                            .clientTrackingRange(10)
+                            .updateInterval(1)
+                            .build(Traincraft.MOD_ID + ":passenger_coach_blue"));
+
+    /** Step 7.3.2 classic single-rider caboose. */
+    public static final RegistryObject<EntityType<ClassicCaboose>> CABOOSE =
+            ENTITY_TYPES.register("caboose", () ->
+                    EntityType.Builder.<ClassicCaboose>of(ClassicCaboose::new, MobCategory.MISC)
+                            .sized(1.00F, 1.70F)
+                            .clientTrackingRange(10)
+                            .updateInterval(1)
+                            .build(Traincraft.MOD_ID + ":caboose"));
+
+    private TCEntities() {
+    }
+
+    public static void register(IEventBus modBus) {
+        ENTITY_TYPES.register(modBus);
+    }
+}

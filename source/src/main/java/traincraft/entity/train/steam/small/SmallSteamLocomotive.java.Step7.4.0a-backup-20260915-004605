@@ -1,0 +1,1954 @@
+/*
+ * Traincraft 1.20.1 Small Steam Locomotive.
+ * Ported from the original 1.12.2 LocomotiveSteamSmall/LocomotiveSteam logic.
+ * Step 7.2.1l retunes only the consist governor thresholds to the measured
+ * coupler-nub spacing; propulsion, boiler, traction and braking remain unchanged.
+ * Step 7.3.2c is DIAGNOSTIC ONLY: it records per-tick locomotive movement and
+ * consist-governor decisions for reverse/curve tuning.
+ * Distributed under LGPL-v3.0.
+ */
+package traincraft.entity.train.steam.small;
+
+import traincraft.Traincraft;
+import traincraft.debug.TrainMovementDebug;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.chat.Component;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.core.particles.ParticleTypes;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.sounds.SoundSource;
+import net.minecraft.world.MenuProvider;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.Containers;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.player.Inventory;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.vehicle.Minecart;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
+import net.minecraft.world.item.crafting.RecipeType;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseRailBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.RailShape;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.common.ForgeHooks;
+import net.minecraftforge.items.IItemHandler;
+import net.minecraftforge.items.ItemStackHandler;
+import org.jetbrains.annotations.Nullable;
+
+import java.util.HashMap;
+import java.util.Map;
+import java.util.UUID;
+import traincraft.menu.SteamLocomotiveMenu;
+import traincraft.entity.train.CoupleableRollingStock;
+import traincraft.entity.train.CouplingManager;
+import traincraft.entity.train.tender.SteamTender;
+import traincraft.item.ConnectorItem;
+import traincraft.registry.TCItems;
+import traincraft.registry.TCSounds;
+
+/** First powered Traincraft rolling-stock entity in the 1.20.1 port. */
+public class SmallSteamLocomotive extends Minecart implements MenuProvider, CoupleableRollingStock {
+    public static final int BURN_SLOT = 0;
+    public static final int WATER_SLOT = 1;
+    public static final int INVENTORY_SIZE = 11;
+    public static final int WATER_CAPACITY_MB = 5000;
+    public static final int STEAM_CAPACITY = 1000;
+
+    private static final EntityDataAccessor<Integer> DATA_BURN_TIME = SynchedEntityData.defineId(SmallSteamLocomotive.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_MAX_BURN_TIME = SynchedEntityData.defineId(SmallSteamLocomotive.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_WATER_AMOUNT = SynchedEntityData.defineId(SmallSteamLocomotive.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_STEAM_AMOUNT = SynchedEntityData.defineId(SmallSteamLocomotive.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Float> DATA_BOILER_TEMPERATURE_K = SynchedEntityData.defineId(SmallSteamLocomotive.class, EntityDataSerializers.FLOAT);
+    private static final EntityDataAccessor<Boolean> DATA_HAND_BRAKE = SynchedEntityData.defineId(SmallSteamLocomotive.class, EntityDataSerializers.BOOLEAN);
+
+    /** Original Traincraft maximum forward speed: 45 km/h = 0.625 blocks/tick. */
+    public static final double MAX_SPEED_BLOCKS_PER_TICK = 0.625D;
+    public static final double MAX_REVERSE_SPEED_BLOCKS_PER_TICK = 0.625D;
+    public static final double ACCELERATION_METRES_PER_SECOND_SQ = 0.5D;
+    public static final double BRAKE_METRES_PER_SECOND_SQ = 0.968D;
+
+    /* Step 7.0.3 consist governor. The locomotive must not be able to run away
+     * from a coupled tender while vanilla minecart slope/curve resolution is
+     * temporarily slowing the follower. */
+    /* Step 7.2.1j: the visible loco/tender coupler nubs meet around a larger
+     * center-to-center gap than the original minecart-derived spacing. Start the
+     * governor just beyond that normal gap so it does not fight the new rest point. */
+    // Step 7.2.1l: first-tender working distance is now centered on the
+    // measured/model-derived 2.10-block nub touch point, so the governor must
+    // start beyond that normal gap instead of trimming the locomotive constantly.
+    private static final double COUPLED_GOVERNOR_START_DISTANCE = 2.22D;
+    private static final double COUPLED_GOVERNOR_FULL_DISTANCE = 2.90D;
+    private static final double COUPLED_CURVE_GOVERNOR_START_DISTANCE = 1.48D;
+    private static final double COUPLED_CURVE_GOVERNOR_FULL_DISTANCE = 2.15D;
+    private static final double COUPLED_GOVERNOR_MIN_RETAIN = 0.35D;
+    private static final double COUPLED_GOVERNOR_TENDER_MARGIN = 0.06D;
+
+    /* Step 7.2.1f: the original governor only watches the first tender. A
+     * three-car consist can therefore keep locomotive->tender #1 healthy while
+     * tender #2 is being left behind. Step 7.2.1j starts this tail governor a
+     * little sooner on grades so the third cart holds the coupler-nub gap. */
+    // Step 7.2.1l: tender-to-tender normal gap is ~2.05 blocks.  The tail
+    // governor only intervenes after the visible nubs have actually stretched.
+    private static final double CHAINED_GOVERNOR_START_DISTANCE = 2.18D;
+    private static final double CHAINED_GOVERNOR_FULL_DISTANCE = 2.70D;
+    private static final double CHAINED_GOVERNOR_MIN_RETAIN = 0.40D;
+    private static final double CHAINED_GOVERNOR_FOLLOWER_MARGIN = 0.05D;
+    private static final double CHAINED_GOVERNOR_MIN_MOVING_SPEED = 0.06D;
+    private static final int CHAINED_GOVERNOR_MAX_HOPS = 12;
+
+    /*
+     * Step 7.3.2b: the original governor only protected stretched couplers.
+     * In reverse the locomotive is pushing the consist, so compression is the
+     * dangerous case instead: if a follower is slow on a hill/corner, the
+     * locomotive must ease off before physically driving through it.
+     */
+    private static final double REVERSE_COMPRESSION_GOVERNOR_START = 0.08D;
+    private static final double REVERSE_COMPRESSION_GOVERNOR_FULL = 0.32D;
+    private static final double REVERSE_COMPRESSION_PARTNER_MARGIN = 0.025D;
+    private static final double REVERSE_COMPRESSION_MIN_SPEED = 0.020D;
+
+    private static final float VISUAL_FACING_MAX_TURN_DEGREES = 18.0F;
+
+    /* Original 1.12 Traincraft steam-temperature limits. The rewrite exposed
+     * these values through ITemperatureSupplier but never actually advanced the
+     * temperature. Step 6.9 gives those original limits live boiler behaviour. */
+    public static final double MIN_BOILER_TEMPERATURE_K = 253.15D;     // -20 C
+    public static final double DEFAULT_BOILER_TEMPERATURE_K = 293.15D; // 20 C
+    public static final double HOT_BOILER_TEMPERATURE_K = 373.15D;     // 100 C
+    public static final double MAX_BOILER_TEMPERATURE_K = 473.15D;     // 200 C
+    public static final double CRITICAL_BOILER_TEMPERATURE_K = 493.15D; // 220 C
+    private static final double ABSOLUTE_BOILER_TEMPERATURE_K = 513.15D; // 240 C safety cap
+
+    /* Step 6.9.4: a watered boiler now settles around a controllable working
+     * temperature instead of climbing forever just because fuel is burning.
+     * The dangerous runaway case is intentionally a low/dry boiler, matching
+     * classic Traincraft's "water first, then fuel" behaviour. */
+    private static final double NORMAL_OPERATING_TEMPERATURE_K = 438.15D; // 165 C
+    private static final double LOW_WATER_OPERATING_TEMPERATURE_K = 468.15D; // 195 C
+    private static final double BOILER_WET_HEAT_PER_TICK = 0.06D;
+    private static final double BOILER_LOW_WATER_HEAT_PER_TICK = 0.09D;
+    private static final double BOILER_DRY_FIRE_HEAT_PER_TICK = 0.18D;
+    private static final double BOILER_ACTIVE_COOL_PER_TICK = 0.04D;
+    private static final double BOILER_COOL_PER_TICK = 0.035D;
+    private static final double BOILER_SAFETY_VALVE_COOL_PER_TICK = 0.10D;
+    private static final int BOILER_WARNING_INTERVAL_TICKS = 100;
+    private static final int BOILER_VALVE_INTERVAL_TICKS = 10;
+
+    /* Step 6.9.1: once the boiler reaches the critical 220 C range, it may no
+     * longer be ignored forever. A wet critical boiler gets about ten seconds
+     * of reaction time; a dry, still-fired boiler consumes the failure timer
+     * twice as fast. Cooling below 220 C immediately starts recovering the timer. */
+    private static final int BOILER_FAILURE_LIMIT_TICKS = 200;
+    private static final int BOILER_FAILURE_RECOVERY_PER_TICK = 4;
+    private static final int BOILER_CRITICAL_WARNING_INTERVAL_TICKS = 40;
+    private static final float BOILER_FAILURE_EXPLOSION_STRENGTH = 3.5F;
+
+    private static final double ACCELERATION_PER_TICK = ACCELERATION_METRES_PER_SECOND_SQ / 400.0D;
+    private static final double BRAKE_PER_TICK = BRAKE_METRES_PER_SECOND_SQ / 400.0D;
+    private static final double STOP_EPSILON = 0.003D;
+
+    /*
+     * Step 7.3.2n: vanilla ascending-rail projection can trap a powered reverse
+     * locomotive below STOP_EPSILON at a crest. This floor is deliberately only
+     * for active reverse on an ascending rail and exists to overcome that numeric
+     * rail deadlock; later realism/tractive-effort limits remain separate.
+     */
+    private static final double REVERSE_UPHILL_MIN_TRACTION_SPEED = 0.012D;
+    private static final double FACING_MOTION_EPSILON = 0.01D;
+    private static final float FACING_TIE_DEGREES = 12.0F;
+    private static final double NO_STEAM_DEAD_STOP_SPEED = 0.03D;
+    private static final double POWERED_ROLLING_RESISTANCE = 0.999D;
+    private static final double COAST_ROLLING_RESISTANCE = 0.995D;
+
+    /* Step 6.9.3: vanilla one-block curves become unstable when a full-size
+     * locomotive enters them at near-straight-line top speed. Keep the 45 km/h
+     * straight-track speed, but cap the four sharp vanilla curve shapes to a
+     * safer 21.6 km/h while the cart is physically on the bend. */
+    private static final double CURVE_MAX_SPEED_BLOCKS_PER_TICK = 0.30D;
+
+    /* Feedwater automation is deliberately conservative. Storage buckets wait
+     * until the tank is at/below 40%, then top it just above that threshold.
+     * If the boiler is already overheating, every queued bucket that can fit is
+     * injected immediately as an emergency quench. */
+    private static final int AUTO_WATER_REFILL_THRESHOLD_MB = 2000;
+    private static final double WATER_BUCKET_COOLING_K = 20.0D;
+
+    /* Train impact behaviour. The locomotive should move living entities, not be
+     * bounced backward by sheep/mobs. Damage scales with speed, and a high-speed
+     * impact is lethal just like the classic heavy Traincraft rolling stock. */
+    private static final double IMPACT_MIN_SPEED_KMH = 3.0D;
+    private static final double IMPACT_INSTANT_KILL_SPEED_KMH = 35.0D;
+    private static final int IMPACT_DAMAGE_COOLDOWN_TICKS = 10;
+
+    /* Step 6.9.6: a full-size locomotive should be removable in Survival without
+     * requiring the player to race vanilla minecart damage decay. Three normal
+     * player hits within five seconds deliberately remove it from the rails. */
+    private static final int SURVIVAL_REMOVAL_HITS = 3;
+    private static final int SURVIVAL_REMOVAL_RESET_TICKS = 100;
+
+    private static final double DRIVER_SEAT_BACK_OFFSET = 0.62D;
+    private static final double DRIVER_SEAT_Y_OFFSET = 0.18D;
+
+    /* JTMT/model-derived chimney top: centered about 0.75 blocks toward the front. */
+    private static final double CHIMNEY_FRONT_OFFSET = 0.75D;
+    private static final double CHIMNEY_TOP_Y = 1.82D;
+    private static final double RUN_SOUND_SPEED_THRESHOLD = 0.02D;
+
+    /* Rear/firebox click zone measured along the locomotive's front/rear axis. */
+    private static final double FIREBOX_REAR = -1.15D;
+    private static final double FIREBOX_FRONT = 0.30D;
+    private static final double FIREBOX_MIN_Y = 0.10D;
+    private static final double FIREBOX_MAX_Y = 1.70D;
+
+    private final ItemStackHandler steamInventory = new ItemStackHandler(INVENTORY_SIZE) {
+        @Override
+        public boolean isItemValid(int slot, ItemStack stack) {
+            if (slot == BURN_SLOT) {
+                return isFuel(stack);
+            }
+            if (slot == WATER_SLOT) {
+                return isWaterContainer(stack);
+            }
+            // Storage slots may also retain the empty buckets produced by the
+            // locomotive's automatic feedwater system.
+            return isFuel(stack) || isWaterContainer(stack) || stack.is(Items.BUCKET);
+        }
+
+        @Override
+        protected void onContentsChanged(int slot) {
+            SmallSteamLocomotive.this.setChangedForSync();
+        }
+    };
+
+    private boolean forwardInput;
+    private boolean reverseInput;
+    private boolean brakeInput;
+    private boolean handBrakeApplied;
+
+    private float trainFacingYaw;
+    private boolean trainFacingInitialized;
+    private int travelDirectionSign = 1;
+    private float visualFacingYaw;
+    private float previousVisualFacingYaw;
+    private boolean visualFacingInitialized;
+
+    private int burnTime;
+    private int maxBurnTime;
+    private int waterAmount;
+    private int steamAmount;
+    private int steamGenerationTicker;
+    private double boilerTemperatureK = DEFAULT_BOILER_TEMPERATURE_K;
+    private int boilerOverheatTicks;
+    private int boilerFailureTicks;
+    private int lastWhistleTick = -100;
+    private boolean boilerFailureInProgress;
+    private boolean steamInventoryDropped;
+    private UUID coupledRollingStockUuid;
+    // Step 7.2.0: reserved second coupler for future longer consists.
+    // Existing Step 7.0.3 movement continues to use coupledRollingStockUuid only.
+    private UUID secondaryCoupledRollingStockUuid;
+    private int survivalRemovalHits;
+    private int lastSurvivalRemovalHitTick = -SURVIVAL_REMOVAL_RESET_TICKS;
+    private final Map<Integer, Integer> lastImpactTicks = new HashMap<>();
+
+    public SmallSteamLocomotive(EntityType<? extends SmallSteamLocomotive> type, Level level) {
+        super(type, level);
+    }
+
+    @Override
+    protected void defineSynchedData() {
+        super.defineSynchedData();
+        this.entityData.define(DATA_BURN_TIME, 0);
+        this.entityData.define(DATA_MAX_BURN_TIME, 0);
+        this.entityData.define(DATA_WATER_AMOUNT, 0);
+        this.entityData.define(DATA_STEAM_AMOUNT, 0);
+        this.entityData.define(DATA_BOILER_TEMPERATURE_K, (float) DEFAULT_BOILER_TEMPERATURE_K);
+        this.entityData.define(DATA_HAND_BRAKE, false);
+    }
+
+    @Override
+    public void tick() {
+        if (!this.trainFacingInitialized) {
+            this.trainFacingYaw = this.getYRot();
+            this.trainFacingInitialized = true;
+        }
+
+        if (!this.level().isClientSide) {
+            this.tickSteamSystem();
+            if (this.isRemoved()) {
+                return;
+            }
+
+            if (!(this.getFirstPassenger() instanceof ServerPlayer)) {
+                this.forwardInput = false;
+                this.reverseInput = false;
+                this.brakeInput = false;
+            }
+
+            this.applyDriverInput();
+            this.applyCoupledConsistGovernor();
+            this.tickSteamEffects();
+            this.syncTelemetryToClient();
+        }
+
+        super.tick();
+
+        // With an empty boiler the locomotive may still receive tiny motion from
+        // minecart rail resolution, a previous tick, or a very small slope. Clamp
+        // that low-speed creep to zero so a cold/unfired engine stays visibly dead.
+        if (!this.level().isClientSide && this.steamAmount <= 0 && !this.handBrakeApplied) {
+            Vec3 motion = this.getDeltaMovement();
+            double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+            if (horizontalSpeed < NO_STEAM_DEAD_STOP_SPEED) {
+                this.setDeltaMovement(0.0D, motion.y, 0.0D);
+            }
+        }
+
+        // A set hand brake is a parking brake: vanilla minecart slope physics must
+        // not be allowed to creep the locomotive after our control step.
+        if (!this.level().isClientSide && this.handBrakeApplied) {
+            // A parking brake must kill the slope's vertical component too. Keeping
+            // Y motion allowed an uphill cart to keep creeping after C was applied.
+            this.setDeltaMovement(Vec3.ZERO);
+        }
+
+        this.updateTrainFacingFromRail();
+        this.updateVisualTrainFacing();
+    }
+
+    private void tickSteamSystem() {
+        // Step 6.9.8: fuel and feedwater reserves are serviced independently.
+        // Normal reserve water stays untouched until the tank reaches the low-water
+        // threshold. Once overheating begins, every queued water bucket is used as
+        // an emergency quench even if the tank itself is already full; excess water
+        // is treated as overflow while its cooling effect is still applied.
+        boolean emergencyWaterDump = this.boilerTemperatureK > MAX_BOILER_TEMPERATURE_K;
+        this.refillPrimarySlotsFromStorage();
+        if (emergencyWaterDump) {
+            this.consumePrimaryWaterContainer(true);
+            this.dumpQueuedWaterForEmergencyCooling();
+            if (this.boilerTemperatureK > MAX_BOILER_TEMPERATURE_K) {
+                this.quenchFromCoupledTender();
+            }
+        } else {
+            this.consumePrimaryWaterContainer(false);
+            this.autoRefillWaterFromStorage();
+            this.autoRefillWaterFromCoupledTender();
+        }
+
+        if (this.burnTime <= 0 && this.waterAmount > 0 && this.steamAmount < STEAM_CAPACITY) {
+            ItemStack fuel = this.steamInventory.getStackInSlot(BURN_SLOT);
+            int burn = ForgeHooks.getBurnTime(fuel, RecipeType.SMELTING);
+            if (burn > 0) {
+                this.maxBurnTime = burn;
+                this.burnTime = burn;
+                ItemStack remaining = fuel.copy();
+                remaining.shrink(1);
+                this.steamInventory.setStackInSlot(BURN_SLOT, remaining);
+            }
+        }
+
+        boolean fireLit = this.burnTime > 0;
+        if (fireLit) {
+            this.burnTime--;
+
+            // Step 6.0 boiler model: fire + water builds a buffered steam reserve.
+            // At full steam the boiler stops consuming water until steam is used.
+            if (this.waterAmount > 0 && this.steamAmount < STEAM_CAPACITY) {
+                this.steamGenerationTicker++;
+                if (this.steamGenerationTicker >= 2) {
+                    this.steamGenerationTicker = 0;
+                    this.waterAmount = Math.max(0, this.waterAmount - 1);
+                    this.steamAmount = Math.min(STEAM_CAPACITY, this.steamAmount + 2);
+                }
+            }
+        } else {
+            this.steamGenerationTicker = 0;
+        }
+
+        this.tickBoilerTemperature(fireLit);
+    }
+
+    private void tickBoilerTemperature(boolean fireLit) {
+        if (fireLit) {
+            if (this.waterAmount <= 0) {
+                // Dry firing is the true runaway condition. It will continue
+                // climbing through overheat/critical even against the safety valve.
+                this.boilerTemperatureK += BOILER_DRY_FIRE_HEAT_PER_TICK;
+            } else {
+                boolean lowWater = this.waterAmount <= AUTO_WATER_REFILL_THRESHOLD_MB;
+                double targetTemperature = lowWater
+                        ? LOW_WATER_OPERATING_TEMPERATURE_K
+                        : NORMAL_OPERATING_TEMPERATURE_K;
+                double heatRate = lowWater
+                        ? BOILER_LOW_WATER_HEAT_PER_TICK
+                        : BOILER_WET_HEAT_PER_TICK;
+
+                // A healthy watered boiler reaches a stable working temperature
+                // rather than inevitably overheating. Running low on water raises
+                // that equilibrium close to the danger line, giving the player a
+                // clear reason to refill before the tank actually runs dry.
+                if (this.boilerTemperatureK < targetTemperature) {
+                    this.boilerTemperatureK = Math.min(
+                            targetTemperature,
+                            this.boilerTemperatureK + heatRate);
+                } else if (this.boilerTemperatureK > targetTemperature) {
+                    this.boilerTemperatureK = Math.max(
+                            targetTemperature,
+                            this.boilerTemperatureK - BOILER_ACTIVE_COOL_PER_TICK);
+                }
+            }
+        } else if (this.boilerTemperatureK > DEFAULT_BOILER_TEMPERATURE_K) {
+            this.boilerTemperatureK = Math.max(
+                    DEFAULT_BOILER_TEMPERATURE_K,
+                    this.boilerTemperatureK - BOILER_COOL_PER_TICK);
+        } else if (this.boilerTemperatureK < DEFAULT_BOILER_TEMPERATURE_K) {
+            // Worlds upgraded from a future colder-environment system should
+            // naturally settle back toward the classic 20 C resting temperature.
+            this.boilerTemperatureK = Math.min(
+                    DEFAULT_BOILER_TEMPERATURE_K,
+                    this.boilerTemperatureK + BOILER_COOL_PER_TICK);
+        }
+
+        if (this.boilerTemperatureK > MAX_BOILER_TEMPERATURE_K) {
+            this.boilerOverheatTicks++;
+
+            // Classic-style safety-valve behaviour: dump a little stored steam
+            // while above 200 C and take a small amount of heat with it.
+            this.boilerTemperatureK -= BOILER_SAFETY_VALVE_COOL_PER_TICK;
+            if (this.boilerOverheatTicks % BOILER_VALVE_INTERVAL_TICKS == 0
+                    && this.steamAmount > 0) {
+                this.steamAmount = Math.max(0, this.steamAmount - 6);
+            }
+
+            if (this.boilerOverheatTicks == 1
+                    || this.boilerOverheatTicks % BOILER_WARNING_INTERVAL_TICKS == 0) {
+                if (this.getFirstPassenger() instanceof ServerPlayer driver) {
+                    driver.displayClientMessage(
+                            Component.translatable(
+                                    "message.traincraft.boiler.overheating",
+                                    Math.round(this.getBoilerTemperatureC())),
+                            true);
+                }
+            }
+        } else {
+            this.boilerOverheatTicks = 0;
+        }
+
+        if (this.boilerTemperatureK >= CRITICAL_BOILER_TEMPERATURE_K) {
+            // Dry firing is the dangerous case: with no water to absorb heat the
+            // critical timer advances twice as quickly.
+            this.boilerFailureTicks += this.waterAmount > 0 ? 1 : 2;
+
+            if (this.boilerFailureTicks == 1
+                    || this.boilerFailureTicks % BOILER_CRITICAL_WARNING_INTERVAL_TICKS == 0) {
+                if (this.getFirstPassenger() instanceof ServerPlayer driver) {
+                    int secondsLeft = Math.max(0,
+                            (BOILER_FAILURE_LIMIT_TICKS - this.boilerFailureTicks + 19) / 20);
+                    driver.displayClientMessage(
+                            Component.translatable(
+                                    "message.traincraft.boiler.critical",
+                                    Math.round(this.getBoilerTemperatureC()),
+                                    secondsLeft),
+                            true);
+                }
+            }
+
+            if (this.boilerFailureTicks >= BOILER_FAILURE_LIMIT_TICKS) {
+                this.failBoiler();
+                return;
+            }
+        } else if (this.boilerFailureTicks > 0) {
+            // Dropping back below the critical range quickly restores the safety
+            // margin. Below 200 C the timer is completely cleared.
+            if (this.boilerTemperatureK <= MAX_BOILER_TEMPERATURE_K) {
+                this.boilerFailureTicks = 0;
+            } else {
+                this.boilerFailureTicks = Math.max(
+                        0, this.boilerFailureTicks - BOILER_FAILURE_RECOVERY_PER_TICK);
+            }
+        }
+
+        this.boilerTemperatureK = Mth.clamp(
+                this.boilerTemperatureK,
+                MIN_BOILER_TEMPERATURE_K,
+                ABSOLUTE_BOILER_TEMPERATURE_K);
+    }
+
+    private void failBoiler() {
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        if (this.getFirstPassenger() instanceof ServerPlayer driver) {
+            driver.displayClientMessage(
+                    Component.translatable("message.traincraft.boiler.failure"),
+                    true);
+        }
+
+        // A destroyed locomotive must release its tender before the entity is
+        // discarded so the surviving rolling stock does not retain a stale link.
+        CouplingManager.unlink(this, this);
+
+        // Step 6.9.5: preserve the locomotive inventory across the blast. The
+        // explosion happens first, then the stored fuel/water/items are scattered
+        // so the blast itself cannot immediately delete the recovery drops.
+        this.boilerFailureInProgress = true;
+        try {
+            serverLevel.explode(
+                    this,
+                    this.getX(), this.getY() + 0.8D, this.getZ(),
+                    BOILER_FAILURE_EXPLOSION_STRENGTH,
+                    Level.ExplosionInteraction.TNT);
+        } finally {
+            this.boilerFailureInProgress = false;
+        }
+
+        this.dropSteamInventory();
+        this.discard();
+    }
+
+    /**
+     * Drop every internal locomotive inventory stack exactly once. This is used
+     * both when the player breaks/removes the locomotive from the rails and when
+     * an overheated boiler destroys it.
+     */
+    private void dropSteamInventory() {
+        if (this.level().isClientSide || this.steamInventoryDropped) {
+            return;
+        }
+
+        this.steamInventoryDropped = true;
+        for (int slot = 0; slot < INVENTORY_SIZE; slot++) {
+            ItemStack stack = this.steamInventory.getStackInSlot(slot);
+            if (stack.isEmpty()) {
+                continue;
+            }
+
+            ItemStack dropped = this.steamInventory.extractItem(slot, stack.getCount(), false);
+            if (!dropped.isEmpty()) {
+                Containers.dropItemStack(
+                        this.level(),
+                        this.getX(), this.getY() + 0.35D, this.getZ(),
+                        dropped);
+            }
+        }
+    }
+
+    /**
+     * Survival removal helper. Vanilla minecart damage decays every tick, which
+     * makes a large Traincraft locomotive frustrating to remove with ordinary
+     * survival attacks. Keep vanilla damage/animation handling, but guarantee
+     * that three successful player hits within five seconds remove the locomotive.
+     * The normal destroy path below then returns the locomotive item and spills
+     * its internal inventory. Creative mode keeps vanilla instant-removal rules.
+     */
+    @Override
+    public boolean hurt(DamageSource damageSource, float amount) {
+        Entity attacker = damageSource.getEntity();
+        // Creative-mode minecart removal may discard the entity during
+        // super.hurt(). Release the tender first so it cannot retain a stale
+        // locomotive UUID.
+        if (!this.level().isClientSide
+                && attacker instanceof Player creativePlayer
+                && creativePlayer.getAbilities().instabuild) {
+            CouplingManager.unlink(this, this);
+        }
+
+        boolean handled = super.hurt(damageSource, amount);
+        if (!handled || this.level().isClientSide || this.isRemoved()) {
+            return handled;
+        }
+
+        if (!(attacker instanceof Player player) || player.getAbilities().instabuild) {
+            return handled;
+        }
+
+        if (this.tickCount - this.lastSurvivalRemovalHitTick > SURVIVAL_REMOVAL_RESET_TICKS) {
+            this.survivalRemovalHits = 0;
+        }
+        this.lastSurvivalRemovalHitTick = this.tickCount;
+        this.survivalRemovalHits++;
+
+        if (this.survivalRemovalHits >= SURVIVAL_REMOVAL_HITS) {
+            this.ejectPassengers();
+            this.destroy(damageSource);
+        }
+
+        return true;
+    }
+
+    /**
+     * Normal minecart destruction still drops the locomotive item through the
+     * vanilla Minecart path, but Traincraft's internal inventory must be spilled
+     * first. During the boiler's own explosion we suppress that vanilla destroy
+     * callback so the engine itself is destroyed while its cargo is dropped after
+     * the blast.
+     */
+    @Override
+    public void destroy(DamageSource damageSource) {
+        if (this.boilerFailureInProgress) {
+            return;
+        }
+
+        CouplingManager.unlink(this, this);
+        this.dropSteamInventory();
+        super.destroy(damageSource);
+    }
+
+    /**
+     * Permanent-removal safety net matching the tender. This catches destructive
+     * removal paths that do not pass through the normal minecart destroy callback
+     * while deliberately preserving couplers during chunk unloads.
+     */
+    @Override
+    public void remove(Entity.RemovalReason reason) {
+        if (!this.level().isClientSide && reason.shouldDestroy()) {
+            CouplingManager.unlinkAll(this, this);
+        }
+        super.remove(reason);
+    }
+
+    private void tickSteamEffects() {
+        if (!(this.level() instanceof ServerLevel serverLevel)) {
+            return;
+        }
+
+        Vec3 motion = this.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        boolean runningOnSteam = horizontalSpeed > RUN_SOUND_SPEED_THRESHOLD && this.steamAmount > 0;
+        boolean fireLit = this.burnTime > 0;
+
+        if (!runningOnSteam && !fireLit && !this.isBoilerOverheating()) {
+            return;
+        }
+
+        Vec3 chimney = this.getChimneyTop();
+
+        if (this.isBoilerOverheating() && this.tickCount % BOILER_VALVE_INTERVAL_TICKS == 0) {
+            serverLevel.sendParticles(
+                    ParticleTypes.POOF,
+                    chimney.x, chimney.y, chimney.z,
+                    this.isBoilerCritical() ? 6 : 4,
+                    0.10D, 0.05D, 0.10D,
+                    this.isBoilerCritical() ? 0.09D : 0.06D
+            );
+            if (this.isBoilerCritical()) {
+                serverLevel.sendParticles(
+                        ParticleTypes.LARGE_SMOKE,
+                        chimney.x, chimney.y, chimney.z,
+                        2,
+                        0.07D, 0.04D, 0.07D,
+                        0.025D
+                );
+            }
+        }
+
+        int particlePeriod = runningOnSteam ? 2 : 6;
+        if (this.tickCount % particlePeriod == 0) {
+            int count = runningOnSteam ? 2 : 1;
+            serverLevel.sendParticles(
+                    ParticleTypes.POOF,
+                    chimney.x, chimney.y, chimney.z,
+                    count,
+                    0.045D, 0.025D, 0.045D,
+                    runningOnSteam ? 0.035D : 0.018D
+            );
+
+            // The main steam plume uses the vanilla POOF particle for a greyish-white
+            // steam color. A coal fire still adds an occasional darker puff.
+            if (fireLit && this.tickCount % 12 == 0) {
+                serverLevel.sendParticles(
+                        ParticleTypes.SMOKE,
+                        chimney.x, chimney.y, chimney.z,
+                        1,
+                        0.03D, 0.02D, 0.03D,
+                        0.012D
+                );
+            }
+        }
+
+        // These are the original Traincraft steam_idle.ogg / steam_run.ogg assets.
+        // Their lengths are about 31 and 15 ticks respectively, so replaying at
+        // those intervals produces a continuous engine loop without new audio.
+        if (runningOnSteam && this.tickCount % 15 == 0) {
+            serverLevel.playSound(
+                    null, chimney.x, chimney.y, chimney.z,
+                    TCSounds.STEAM_RUN.get(), SoundSource.NEUTRAL,
+                    0.75F, 0.96F + this.random.nextFloat() * 0.08F
+            );
+        } else if (!runningOnSteam && fireLit && this.tickCount % 31 == 0) {
+            serverLevel.playSound(
+                    null, chimney.x, chimney.y, chimney.z,
+                    TCSounds.STEAM_IDLE.get(), SoundSource.NEUTRAL,
+                    0.55F, 0.98F + this.random.nextFloat() * 0.04F
+            );
+        }
+    }
+
+    private Vec3 getChimneyTop() {
+        double radians = Math.toRadians(this.getTrainFacingYaw());
+        double frontX = Math.sin(radians);
+        double frontZ = -Math.cos(radians);
+        return new Vec3(
+                this.getX() + frontX * CHIMNEY_FRONT_OFFSET,
+                this.getY() + CHIMNEY_TOP_Y,
+                this.getZ() + frontZ * CHIMNEY_FRONT_OFFSET
+        );
+    }
+
+    private void syncTelemetryToClient() {
+        this.entityData.set(DATA_BURN_TIME, this.burnTime);
+        this.entityData.set(DATA_MAX_BURN_TIME, this.maxBurnTime);
+        this.entityData.set(DATA_WATER_AMOUNT, this.waterAmount);
+        this.entityData.set(DATA_STEAM_AMOUNT, this.steamAmount);
+        this.entityData.set(DATA_BOILER_TEMPERATURE_K, (float) this.boilerTemperatureK);
+        this.entityData.set(DATA_HAND_BRAKE, this.handBrakeApplied);
+    }
+
+    private void refillPrimarySlotsFromStorage() {
+        // Step 6.9.2 and earlier could leave a returned empty bucket sitting in the
+        // primary water slot. Move that legacy/output bucket back into storage when
+        // possible so a manually loaded water bucket can use the dedicated slot.
+        ItemStack primaryWaterStack = this.steamInventory.getStackInSlot(WATER_SLOT);
+        if (primaryWaterStack.is(Items.BUCKET)) {
+            int bucketOutputSlot = this.findEmptyBucketOutputSlot();
+            if (bucketOutputSlot >= 0) {
+                this.steamInventory.setStackInSlot(WATER_SLOT, ItemStack.EMPTY);
+                this.steamInventory.insertItem(
+                        bucketOutputSlot, new ItemStack(Items.BUCKET), false);
+            }
+        }
+
+        // Step 7.3.4-r3 - demand-driven firebox feed: one item only when burnTime is zero.
+        // Reserve fuel: when the dedicated firebox slot runs empty, pull the next
+        // valid furnace-fuel stack from the locomotive's 3x3 storage area.
+        if (this.burnTime <= 0 && this.steamInventory.getStackInSlot(BURN_SLOT).isEmpty()) {
+            for (int slot = 2; slot < INVENTORY_SIZE; slot++) {
+                ItemStack stack = this.steamInventory.getStackInSlot(slot);
+                if (isFuel(stack)) {
+                    ItemStack suppliedFuel = this.steamInventory.extractItem(slot, 1, false);
+                    if (!suppliedFuel.isEmpty()) {
+                        this.steamInventory.setStackInSlot(BURN_SLOT, suppliedFuel);
+                    }
+                    break;
+                }
+            }
+        }
+
+        // Step 7.1: the locomotive's own 3x3 reserve remains first priority. Only
+        // when it is exhausted does a physically coupled tender hand over its next
+        // fuel stack. Burn timing and fuel validation remain locomotive-owned.
+        if (this.burnTime <= 0 && this.steamInventory.getStackInSlot(BURN_SLOT).isEmpty()) {
+            SteamTender tender = this.getCoupledSteamTender();
+            if (tender != null) {
+                ItemStack suppliedFuel = tender.extractFuelStackForLocomotive();
+                if (!suppliedFuel.isEmpty()) {
+                    this.steamInventory.setStackInSlot(BURN_SLOT, suppliedFuel);
+                }
+            }
+        }
+    }
+
+    @Nullable
+    private SteamTender getCoupledSteamTender() {
+        Entity linked = CouplingManager.resolve(this, this);
+        if (!(linked instanceof SteamTender tender) || tender.isRemoved()) {
+            return null;
+        }
+
+        // Step 7.3.3 - accept reciprocal tender link in either coupler slot.
+        //
+        // Step 7.1 was written when the tender effectively had one locomotive
+        // coupling. Multi-car consists now legitimately use both tender coupling
+        // UUID slots. Depending on coupling order/relinking, the locomotive can be
+        // stored in either slot. Requiring only the primary slot rejects a real,
+        // physically resolved tender and prevents coal auto-feed.
+        //
+        // Keep the original safety property: CouplingManager.resolve() above must
+        // first resolve THIS locomotive to THIS tender, and the tender must also
+        // point back to this locomotive in one of its two actual coupler slots.
+        UUID locomotiveUuid = this.getUUID();
+        boolean reciprocalPrimary =
+                locomotiveUuid.equals(tender.getCoupledRollingStockUuid());
+        boolean reciprocalSecondary =
+                locomotiveUuid.equals(tender.getSecondaryCoupledRollingStockUuid());
+
+        return reciprocalPrimary || reciprocalSecondary
+                ? tender
+                : null;
+    }
+
+    /**
+     * Step 7.1 tender feedwater. Local locomotive buckets are always consumed
+     * first; the tender only tops the boiler tank after those reserves cannot lift
+     * it above the existing 2000 mB automatic-refill threshold.
+     */
+    private void autoRefillWaterFromCoupledTender() {
+        /*
+         * Step 7.3.4-r3 - demand-driven tender feedwater.
+         *
+         * The tender is bulk storage. Normal automatic feedwater only replaces
+         * the amount actually missing below the existing 2000 mB locomotive
+         * working threshold, with at most 1000 mB transferred per service tick.
+         * Emergency overheat quenching remains separate and unchanged.
+         */
+        if (this.waterAmount >= AUTO_WATER_REFILL_THRESHOLD_MB) {
+            return;
+        }
+
+        SteamTender tender = this.getCoupledSteamTender();
+        if (tender == null) {
+            return;
+        }
+
+        int room = WATER_CAPACITY_MB - this.waterAmount;
+        int deficit = AUTO_WATER_REFILL_THRESHOLD_MB - this.waterAmount;
+        int requested = Math.min(1000, Math.min(room, deficit));
+        if (requested <= 0) {
+            return;
+        }
+
+        int supplied = tender.drainWaterForLocomotive(requested);
+        if (supplied <= 0) {
+            return;
+        }
+
+        this.waterAmount += supplied;
+        this.applyFeedwaterCooling(supplied);
+    }
+    /**
+     * A still-overheating boiler may take one emergency bucket-equivalent from the
+     * tender. This mirrors the locomotive's existing emergency bucket quench while
+     * avoiding a one-tick dump of the tender's entire reservoir.
+     */
+    private void quenchFromCoupledTender() {
+        SteamTender tender = this.getCoupledSteamTender();
+        if (tender == null) {
+            return;
+        }
+
+        int supplied = tender.drainWaterForLocomotive(1000);
+        if (supplied <= 0) {
+            return;
+        }
+        this.waterAmount = Math.min(WATER_CAPACITY_MB, this.waterAmount + supplied);
+        this.applyFeedwaterCooling(supplied);
+    }
+
+    /**
+     * Normal reserve feedwater is demand-driven: once the tank reaches 2000 mB or
+     * lower, pull queued storage buckets until it climbs back above the threshold.
+     * Buckets are consumed directly from their 3x3 storage slots so the automation
+     * cannot be blocked by the dedicated water slot.
+     */
+    private void autoRefillWaterFromStorage() {
+        int guard = INVENTORY_SIZE;
+        while (guard-- > 0 && this.waterAmount <= AUTO_WATER_REFILL_THRESHOLD_MB) {
+            int slot = this.findStoredWaterBucketSlot();
+            if (slot < 0 || !this.consumeStoredWaterBucket(slot, false)) {
+                break;
+            }
+        }
+    }
+
+    /**
+     * During an overheat, use every reserve water bucket in the 3x3 locomotive
+     * inventory as emergency cooling. A full tank does not block this response:
+     * the additional water is treated as overflow, but each bucket still removes
+     * heat and returns an empty bucket to the same storage slot.
+     */
+    private void dumpQueuedWaterForEmergencyCooling() {
+        for (int slot = 2; slot < INVENTORY_SIZE; slot++) {
+            if (this.steamInventory.getStackInSlot(slot).is(Items.WATER_BUCKET)) {
+                this.consumeStoredWaterBucket(slot, true);
+            }
+        }
+    }
+
+    private int findStoredWaterBucketSlot() {
+        for (int slot = 2; slot < INVENTORY_SIZE; slot++) {
+            if (this.steamInventory.getStackInSlot(slot).is(Items.WATER_BUCKET)) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    private boolean consumeStoredWaterBucket(int slot, boolean emergencyQuench) {
+        if (slot < 2 || slot >= INVENTORY_SIZE) {
+            return false;
+        }
+        if (!this.steamInventory.getStackInSlot(slot).is(Items.WATER_BUCKET)) {
+            return false;
+        }
+        if (!emergencyQuench && this.waterAmount > WATER_CAPACITY_MB - 1000) {
+            return false;
+        }
+
+        this.waterAmount = Math.min(WATER_CAPACITY_MB, this.waterAmount + 1000);
+        this.applyFeedwaterCooling();
+
+        // A vanilla water bucket is non-stackable, so the exact source storage
+        // slot can safely become the returned empty bucket.
+        this.steamInventory.setStackInSlot(slot, new ItemStack(Items.BUCKET));
+        return true;
+    }
+
+    private boolean consumePrimaryWaterContainer(boolean emergencyQuench) {
+        ItemStack water = this.steamInventory.getStackInSlot(WATER_SLOT);
+        if (!water.is(Items.WATER_BUCKET)) {
+            return false;
+        }
+        if (!emergencyQuench && this.waterAmount > WATER_CAPACITY_MB - 1000) {
+            return false;
+        }
+
+        this.waterAmount = Math.min(WATER_CAPACITY_MB, this.waterAmount + 1000);
+        this.applyFeedwaterCooling();
+
+        int bucketOutputSlot = this.findEmptyBucketOutputSlot();
+        if (bucketOutputSlot >= 0) {
+            this.steamInventory.setStackInSlot(WATER_SLOT, ItemStack.EMPTY);
+            this.steamInventory.insertItem(
+                    bucketOutputSlot, new ItemStack(Items.BUCKET), false);
+        } else {
+            // If storage is completely full, keep the returned empty bucket in the
+            // dedicated slot rather than refusing an emergency quench.
+            this.steamInventory.setStackInSlot(WATER_SLOT, new ItemStack(Items.BUCKET));
+        }
+        return true;
+    }
+
+    private void applyFeedwaterCooling() {
+        this.applyFeedwaterCooling(1000);
+    }
+
+    private void applyFeedwaterCooling(int suppliedWaterMb) {
+        if (this.boilerTemperatureK > DEFAULT_BOILER_TEMPERATURE_K && suppliedWaterMb > 0) {
+            double cooling = WATER_BUCKET_COOLING_K * Math.min(1000, suppliedWaterMb) / 1000.0D;
+            this.boilerTemperatureK = Math.max(
+                    DEFAULT_BOILER_TEMPERATURE_K,
+                    this.boilerTemperatureK - cooling);
+        }
+    }
+
+    private int findEmptyBucketOutputSlot() {
+        ItemStack emptyBucket = new ItemStack(Items.BUCKET);
+        for (int slot = 2; slot < INVENTORY_SIZE; slot++) {
+            ItemStack remainder = this.steamInventory.insertItem(slot, emptyBucket, true);
+            if (remainder.isEmpty()) {
+                return slot;
+            }
+        }
+        return -1;
+    }
+
+    /** Called only after networking verifies the sender is the driver. */
+    public void setDriverControls(boolean forward, boolean reverse, boolean brake) {
+        this.forwardInput = forward;
+        this.reverseInput = reverse;
+        this.brakeInput = brake;
+    }
+
+    /**
+     * Server-side consist helpers use this to distinguish pulling from pushing.
+     * Reverse input is authoritative for the current powered travel direction.
+     */
+    public boolean isReverseDriveRequested() {
+        return this.reverseInput && !this.forwardInput;
+    }
+
+    /**
+     * Stable physical consist direction used by coupling controllers.
+     *
+     * Driver key state is not enough here: when the player releases S the train
+     * can keep coasting backwards for many ticks.  The old reverse controller
+     * immediately fell back to forward/pulling semantics during that coast,
+     * which is exactly what the Step 7.3.2c flight recorder caught.
+     *
+     * While moving, determine direction from actual locomotive motion relative
+     * to the locomotive nose and retain the last reliable rail-facing travel
+     * sign through the brief perpendicular part of a curve.  Only when nearly
+     * stopped do live W/S controls choose the next intended direction.
+     */
+    public boolean isReverseConsistTravel() {
+        Vec3 motion = this.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(
+                motion.x * motion.x + motion.z * motion.z);
+
+        if (horizontalSpeed > STOP_EPSILON) {
+            double radians = Math.toRadians(this.getTrainFacingYaw());
+            double frontX = Math.sin(radians);
+            double frontZ = -Math.cos(radians);
+            double motionDotFront = motion.x * frontX + motion.z * frontZ;
+
+            if (motionDotFront > horizontalSpeed * 0.20D) {
+                return false;
+            }
+            if (motionDotFront < -horizontalSpeed * 0.20D) {
+                return true;
+            }
+
+            // On the center of a 90-degree curve the motion can be nearly
+            // perpendicular to body yaw.  travelDirectionSign is deliberately
+            // latched by updateTrainFacingFromRail() for this exact case.
+            return this.travelDirectionSign < 0;
+        }
+
+        if (this.forwardInput ^ this.reverseInput) {
+            return this.reverseInput;
+        }
+
+        return this.travelDirectionSign < 0;
+    }
+
+    /** Toggles the classic C-key parking/hand brake. Called after driver validation. */
+    public void toggleHandBrake(ServerPlayer player) {
+        this.handBrakeApplied = !this.handBrakeApplied;
+        this.entityData.set(DATA_HAND_BRAKE, this.handBrakeApplied);
+        if (this.handBrakeApplied) {
+            this.setDeltaMovement(Vec3.ZERO);
+        }
+
+        player.displayClientMessage(
+                Component.translatable(this.handBrakeApplied
+                        ? "message.traincraft.hand_brake.applied"
+                        : "message.traincraft.hand_brake.released"),
+                true
+        );
+    }
+
+    /** Plays this locomotive's original Traincraft steam whistle for nearby players. */
+    public void playWhistle(ServerPlayer player) {
+        // Keep the server authoritative and prevent accidental key-repeat spam.
+        if (this.tickCount - this.lastWhistleTick < 8) {
+            return;
+        }
+        this.lastWhistleTick = this.tickCount;
+
+        if (this.level() instanceof ServerLevel serverLevel) {
+            Vec3 whistlePos = this.getChimneyTop();
+            serverLevel.playSound(
+                    null, whistlePos.x, whistlePos.y, whistlePos.z,
+                    TCSounds.STEAM_HORN.get(), SoundSource.NEUTRAL,
+                    1.35F, 1.0F
+            );
+        }
+    }
+
+    public boolean isHandBrakeApplied() {
+        return this.level().isClientSide ? this.entityData.get(DATA_HAND_BRAKE) : this.handBrakeApplied;
+    }
+
+    public float getTrainFacingYaw() {
+        return this.trainFacingInitialized ? this.trainFacingYaw : this.getYRot();
+    }
+
+    private void applyDriverInput() {
+        if (!this.isOnRails()) {
+            return;
+        }
+
+        Vec3 motion = this.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+
+        if (this.handBrakeApplied) {
+            this.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
+        if (this.brakeInput || (this.forwardInput && this.reverseInput)) {
+            this.brakeTowardStop(motion, horizontalSpeed);
+            return;
+        }
+
+        if (!this.forwardInput && !this.reverseInput) {
+            return;
+        }
+
+        // No steam = no traction. W/S must never act like a powered minecart
+        // control when the boiler is empty. If the locomotive already has
+        // momentum, the attempted drive input only brings it toward a stop.
+        if (this.steamAmount <= 0) {
+            if (horizontalSpeed > STOP_EPSILON) {
+                this.brakeTowardStop(motion, horizontalSpeed);
+            } else {
+                this.setDeltaMovement(0.0D, motion.y, 0.0D);
+            }
+            return;
+        }
+
+        int requestedDirection = this.forwardInput ? 1 : -1;
+        double radians = Math.toRadians(this.getTrainFacingYaw());
+        double frontX = Math.sin(radians);
+        double frontZ = -Math.cos(radians);
+
+        if (horizontalSpeed > STOP_EPSILON) {
+            double motionDotFront = motion.x * frontX + motion.z * frontZ;
+            int currentDirection = motionDotFront >= 0.0D ? 1 : -1;
+            if (currentDirection != requestedDirection) {
+                this.brakeTowardStop(motion, horizontalSpeed);
+                return;
+            }
+        }
+
+        double directionX;
+        double directionZ;
+
+        if (horizontalSpeed > STOP_EPSILON) {
+            directionX = motion.x / horizontalSpeed;
+            directionZ = motion.z / horizontalSpeed;
+        } else {
+            directionX = frontX * requestedDirection;
+            directionZ = frontZ * requestedDirection;
+        }
+
+        double maxSpeed = requestedDirection > 0
+                ? MAX_SPEED_BLOCKS_PER_TICK
+                : MAX_REVERSE_SPEED_BLOCKS_PER_TICK;
+        double newSpeed = Math.min(maxSpeed, horizontalSpeed + ACCELERATION_PER_TICK);
+
+        /*
+         * Step 7.3.2n - reverse uphill crest anti-deadlock.
+         *
+         * The 7.3.2m crest recorder caught the locomotive with reverse held,
+         * steam still available and no governor limit, yet vanilla ascending-rail
+         * projection repeatedly reduced horizontal motion to about 0.00065 b/t.
+         * Normal Traincraft acceleration could not escape that equilibrium.
+         *
+         * While S is actively commanding reverse on an ascending rail, guarantee
+         * only enough speed to escape that numeric deadlock. Flat reverse and all
+         * forward movement remain unchanged.
+         */
+        RailShape driveRailShape = this.getCurrentRailShape();
+        boolean reverseUphill =
+                requestedDirection < 0
+                        && (driveRailShape == RailShape.ASCENDING_NORTH
+                        || driveRailShape == RailShape.ASCENDING_SOUTH
+                        || driveRailShape == RailShape.ASCENDING_EAST
+                        || driveRailShape == RailShape.ASCENDING_WEST);
+
+        if (reverseUphill && newSpeed < REVERSE_UPHILL_MIN_TRACTION_SPEED) {
+            newSpeed = REVERSE_UPHILL_MIN_TRACTION_SPEED;
+        }
+        this.setDeltaMovement(directionX * newSpeed, motion.y, directionZ * newSpeed);
+
+        // Powered movement consumes the boiler's buffered steam.
+        this.steamAmount = Math.max(0, this.steamAmount - 1);
+    }
+
+    /**
+     * Keep the locomotive from stretching a coupled tender out on fast downhill
+     * transitions. Instead of allowing the leader to keep accelerating while the
+     * follower is still resolving the previous slope/curve, progressively trim the
+     * locomotive speed until the tender closes the coupler gap again.
+     */
+    private void applyCoupledConsistGovernor() {
+        Entity linked = CouplingManager.resolve(this, this);
+        if (!(linked instanceof SteamTender tender) || linked.isRemoved()) {
+            return;
+        }
+
+        Vec3 motion = this.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        if (horizontalSpeed <= STOP_EPSILON) {
+            return;
+        }
+
+        /*
+         * Preserve the original Step 7.0.3 locomotive->first-tender governor.
+         * The control flow is written without an early return so the new chained
+         * tail governor can also be evaluated when tender #1 itself is healthy.
+         */
+        double allowedSpeed = horizontalSpeed;
+        double distance = this.position().distanceTo(tender.position());
+        boolean curveTransition = this.isOnSharpCurve() || tender.isOnSharpCurve();
+
+        /*
+         * Step 7.3.0: preserve every Step 7.2.1m tender threshold exactly, but
+         * shift the governor by the follower model's real coupler-touch target.
+         * The normal tender target is still 2.10 blocks, so its delta is zero.
+         */
+        double primaryTouchTarget = tender.getCouplerTouchTargetDistance(this);
+
+        // Step 7.3.2c diagnostic-only governor summary state.
+        String governorReason = "NONE";
+        int governorHop = 0;
+        double governorDistance = distance;
+        double governorTarget = primaryTouchTarget;
+        double governorCandidate = allowedSpeed;
+
+        double primaryTargetDelta = primaryTouchTarget - 2.10D;
+        double governorStart = (curveTransition
+                ? COUPLED_CURVE_GOVERNOR_START_DISTANCE
+                : COUPLED_GOVERNOR_START_DISTANCE) + primaryTargetDelta;
+        double governorFull = (curveTransition
+                ? COUPLED_CURVE_GOVERNOR_FULL_DISTANCE
+                : COUPLED_GOVERNOR_FULL_DISTANCE) + primaryTargetDelta;
+
+        /*
+         * Step 7.3.2k - forward stretch governors are pull-only.
+         * Reverse push uses the dedicated compression governor below;
+         * applying the forward stretch clamp in reverse can hard-brake
+         * the locomotive during a legitimate curve/handoff separation.
+         */
+        if (!this.isReverseConsistTravel() && distance > governorStart) {
+            Vec3 tenderMotion = tender.getDeltaMovement();
+            double tenderHorizontalSpeed = Math.sqrt(
+                    tenderMotion.x * tenderMotion.x + tenderMotion.z * tenderMotion.z);
+
+            double stretch = Mth.clamp(
+                    (distance - governorStart) / (governorFull - governorStart),
+                    0.0D, 1.0D);
+            double retainedFraction = 1.0D - stretch * (1.0D - COUPLED_GOVERNOR_MIN_RETAIN);
+            double distanceCap = MAX_SPEED_BLOCKS_PER_TICK * retainedFraction;
+            double partnerCap = tenderHorizontalSpeed + COUPLED_GOVERNOR_TENDER_MARGIN;
+            double firstTenderAllowed = Math.max(distanceCap, partnerCap);
+
+            if (distance >= governorFull) {
+                firstTenderAllowed = Math.max(0.08D, partnerCap);
+            }
+            if (firstTenderAllowed < allowedSpeed) {
+                governorReason = "PRIMARY_STRETCH";
+                governorHop = 0;
+                governorDistance = distance;
+                governorTarget = primaryTouchTarget;
+                governorCandidate = firstTenderAllowed;
+            }
+            allowedSpeed = Math.min(allowedSpeed, firstTenderAllowed);
+        }
+
+        /*
+         * Step 7.3.2b reverse push governor.  Pulling stretches a coupler;
+         * reversing compresses it.  If the first tender cannot clear a hill or
+         * corner as quickly as the locomotive, trim reverse power before the
+         * locomotive physically enters the tender model.
+         */
+        /*
+         * Step 7.3.2j - curve-aware reverse compression target.
+         *
+         * Straight primary touch target is 2.10 blocks, but opposite legs
+         * of a vanilla curve legitimately produce much shorter Euclidean
+         * center distance. Reuse the existing model-adjusted 1.48 curve
+         * governor reference so normal curve geometry is not classified as
+         * severe reverse compression.
+         */
+        double reverseCompressionTarget = curveTransition
+                ? COUPLED_CURVE_GOVERNOR_START_DISTANCE + primaryTargetDelta
+                : primaryTouchTarget;
+
+        if (this.isReverseConsistTravel()
+                && distance < reverseCompressionTarget - REVERSE_COMPRESSION_GOVERNOR_START) {
+            Vec3 tenderMotion = tender.getDeltaMovement();
+            double tenderHorizontalSpeed = Math.sqrt(
+                    tenderMotion.x * tenderMotion.x + tenderMotion.z * tenderMotion.z);
+            double compression = reverseCompressionTarget - distance;
+            double severity = Mth.clamp(
+                    (compression - REVERSE_COMPRESSION_GOVERNOR_START)
+                            / (REVERSE_COMPRESSION_GOVERNOR_FULL
+                            - REVERSE_COMPRESSION_GOVERNOR_START),
+                    0.0D, 1.0D);
+            double retainedFraction = 1.0D - severity * 0.90D;
+            double distanceCap = MAX_REVERSE_SPEED_BLOCKS_PER_TICK * retainedFraction;
+            double partnerCap = tenderHorizontalSpeed + REVERSE_COMPRESSION_PARTNER_MARGIN;
+            double compressionAllowed = Math.max(distanceCap, partnerCap);
+            if (severity >= 1.0D) {
+                compressionAllowed = Math.max(REVERSE_COMPRESSION_MIN_SPEED, partnerCap);
+            }
+            if (compressionAllowed < allowedSpeed) {
+                governorReason = "PRIMARY_REVERSE_COMPRESSION";
+                governorHop = 0;
+                governorDistance = distance;
+                governorTarget = reverseCompressionTarget;
+                governorCandidate = compressionAllowed;
+            }
+            allowedSpeed = Math.min(allowedSpeed, compressionAllowed);
+        }
+
+        /*
+         * Step 7.2.1f: walk the rear/secondary chain and watch every tender gap.
+         * Full power or downhill gravity can no longer let the locomotive keep
+         * accelerating merely because tender #1 is still close.  If any rear
+         * segment stretches, the locomotive eases down toward that follower's
+         * speed until the rail-owned catch-up controller closes the gap again.
+         */
+        SteamTender segmentLeader = tender;
+        for (int hop = 0; hop < CHAINED_GOVERNOR_MAX_HOPS; hop++) {
+            Entity rear = CouplingManager.resolveSecondary(segmentLeader, segmentLeader);
+            if (!(rear instanceof SteamTender follower) || follower.isRemoved()) {
+                break;
+            }
+
+            double segmentDistance = segmentLeader.position().distanceTo(follower.position());
+            double chainedTargetDelta =
+                    follower.getCouplerTouchTargetDistance(segmentLeader) - 2.05D;
+            double chainedGovernorStart =
+                    CHAINED_GOVERNOR_START_DISTANCE + chainedTargetDelta;
+            double chainedGovernorFull =
+                    CHAINED_GOVERNOR_FULL_DISTANCE + chainedTargetDelta;
+
+            if (!this.isReverseConsistTravel() && segmentDistance > chainedGovernorStart) {
+                Vec3 followerMotion = follower.getDeltaMovement();
+                double followerHorizontalSpeed = Math.sqrt(
+                        followerMotion.x * followerMotion.x
+                                + followerMotion.z * followerMotion.z);
+
+                double stretch = Mth.clamp(
+                        (segmentDistance - chainedGovernorStart)
+                                / (chainedGovernorFull - chainedGovernorStart),
+                        0.0D, 1.0D);
+                double retainedFraction = 1.0D
+                        - stretch * (1.0D - CHAINED_GOVERNOR_MIN_RETAIN);
+                double distanceCap = MAX_SPEED_BLOCKS_PER_TICK * retainedFraction;
+                double followerCap = followerHorizontalSpeed
+                        + CHAINED_GOVERNOR_FOLLOWER_MARGIN;
+                double segmentAllowed = Math.max(distanceCap, followerCap);
+
+                if (segmentDistance >= chainedGovernorFull) {
+                    segmentAllowed = Math.max(
+                            CHAINED_GOVERNOR_MIN_MOVING_SPEED,
+                            followerCap);
+                }
+
+                if (segmentAllowed < allowedSpeed) {
+                    governorReason = "CHAIN_STRETCH";
+                    governorHop = hop + 1;
+                    governorDistance = segmentDistance;
+                    governorTarget = follower.getCouplerTouchTargetDistance(segmentLeader);
+                    governorCandidate = segmentAllowed;
+                }
+                allowedSpeed = Math.min(allowedSpeed, segmentAllowed);
+            }
+
+            /*
+             * In reverse every later vehicle is being pushed.  Watch the exact
+             * model-aware touch target and slow the locomotive whenever any
+             * segment compresses instead of waiting for model collision.
+             */
+            if (this.isReverseConsistTravel()) {
+                double segmentTouchTarget =
+                        follower.getCouplerTouchTargetDistance(segmentLeader);
+                if (segmentDistance
+                        < segmentTouchTarget - REVERSE_COMPRESSION_GOVERNOR_START) {
+                    Vec3 followerMotion = follower.getDeltaMovement();
+                    double followerHorizontalSpeed = Math.sqrt(
+                            followerMotion.x * followerMotion.x
+                                    + followerMotion.z * followerMotion.z);
+                    double compression = segmentTouchTarget - segmentDistance;
+                    double severity = Mth.clamp(
+                            (compression - REVERSE_COMPRESSION_GOVERNOR_START)
+                                    / (REVERSE_COMPRESSION_GOVERNOR_FULL
+                                    - REVERSE_COMPRESSION_GOVERNOR_START),
+                            0.0D, 1.0D);
+                    double retainedFraction = 1.0D - severity * 0.90D;
+                    double distanceCap =
+                            MAX_REVERSE_SPEED_BLOCKS_PER_TICK * retainedFraction;
+                    double partnerCap =
+                            followerHorizontalSpeed + REVERSE_COMPRESSION_PARTNER_MARGIN;
+                    double compressionAllowed = Math.max(distanceCap, partnerCap);
+                    if (severity >= 1.0D) {
+                        compressionAllowed = Math.max(
+                                REVERSE_COMPRESSION_MIN_SPEED, partnerCap);
+                    }
+                    if (compressionAllowed < allowedSpeed) {
+                        governorReason = "CHAIN_REVERSE_COMPRESSION";
+                        governorHop = hop + 1;
+                        governorDistance = segmentDistance;
+                        governorTarget = segmentTouchTarget;
+                        governorCandidate = compressionAllowed;
+                    }
+                    allowedSpeed = Math.min(allowedSpeed, compressionAllowed);
+                }
+            }
+
+            segmentLeader = follower;
+        }
+
+        this.logLocomotiveGovernorDecision(
+                tender, horizontalSpeed, allowedSpeed,
+                governorReason, governorHop,
+                governorDistance, governorTarget, governorCandidate);
+
+        if (horizontalSpeed > allowedSpeed) {
+            double scale = allowedSpeed / horizontalSpeed;
+            this.setDeltaMovement(motion.x * scale, motion.y, motion.z * scale);
+        }
+    }
+
+
+    /**
+     * Step 7.3.2c diagnostic-only locomotive governor recorder.  One row is
+     * written per coupled server tick and identifies which segment, if any,
+     * actually limited locomotive speed.
+     */
+    private void logLocomotiveGovernorDecision(
+            SteamTender firstTender, double inputSpeed, double allowedSpeed,
+            String reason, int hop, double limitingDistance,
+            double limitingTarget, double candidateAllowed) {
+
+        Vec3 motion = this.getDeltaMovement();
+        Vec3 tenderMotion = firstTender.getDeltaMovement();
+        double firstDistance = this.position().distanceTo(firstTender.position());
+        double firstTarget = firstTender.getCouplerTouchTargetDistance(this);
+        double firstTenderSpeed = Math.sqrt(
+                tenderMotion.x * tenderMotion.x + tenderMotion.z * tenderMotion.z);
+
+        String header =
+                "gameTick,entityTick,locoId,forwardInput,reverseInput,reverseRequested,reverseTravel,brakeInput,handBrake,"
+                        + "steam,inputSpeedBpt,inputSpeedKmh,allowedSpeedBpt,allowedSpeedKmh,"
+                        + "reason,hop,limitingDistance,limitingTarget,limitingError,candidateAllowed,"
+                        + "firstTenderId,firstTenderType,firstDistance,firstTarget,firstError,firstTenderSpeedBpt,firstTenderSpeedKmh,"
+                        + "locoX,locoY,locoZ,locoDx,locoDy,locoDz,"
+                        + "tenderX,tenderY,tenderZ,tenderDx,tenderDy,tenderDz";
+
+        String row = String.format(java.util.Locale.ROOT,
+                "%d,%d,%d,%s,%s,%s,%s,%s,%s,"
+                        + "%d,%.6f,%.3f,%.6f,%.3f,"
+                        + "%s,%d,%.6f,%.6f,%.6f,%.6f,"
+                        + "%d,%s,%.6f,%.6f,%.6f,%.6f,%.3f,"
+                        + "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,"
+                        + "%.6f,%.6f,%.6f,%.6f,%.6f,%.6f",
+                this.level().getGameTime(), this.tickCount, this.getId(),
+                Boolean.toString(this.forwardInput), Boolean.toString(this.reverseInput),
+                Boolean.toString(this.isReverseDriveRequested()),
+                Boolean.toString(this.isReverseConsistTravel()),
+                Boolean.toString(this.brakeInput), Boolean.toString(this.handBrakeApplied),
+                this.steamAmount,
+                inputSpeed, inputSpeed * 72.0D,
+                allowedSpeed, allowedSpeed * 72.0D,
+                reason, hop,
+                limitingDistance, limitingTarget, limitingDistance - limitingTarget,
+                candidateAllowed,
+                firstTender.getId(), firstTender.getClass().getSimpleName(),
+                firstDistance, firstTarget, firstDistance - firstTarget,
+                firstTenderSpeed, firstTenderSpeed * 72.0D,
+                this.getX(), this.getY(), this.getZ(),
+                motion.x, motion.y, motion.z,
+                firstTender.getX(), firstTender.getY(), firstTender.getZ(),
+                tenderMotion.x, tenderMotion.y, tenderMotion.z);
+
+        TrainMovementDebug.append(TrainMovementDebug.GOVERNOR_FILE, header, row);
+    }
+
+    private void brakeTowardStop(Vec3 motion, double horizontalSpeed) {
+        if (horizontalSpeed <= BRAKE_PER_TICK + STOP_EPSILON) {
+            this.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
+        double newSpeed = Math.max(0.0D, horizontalSpeed - BRAKE_PER_TICK);
+        double scale = newSpeed / horizontalSpeed;
+        this.setDeltaMovement(motion.x * scale, motion.y, motion.z * scale);
+    }
+
+    private void updateTrainFacingFromRail() {
+        RailShape shape = this.getCurrentRailShape();
+        if (shape == null) {
+            return;
+        }
+
+        float axisYaw = switch (shape) {
+            case NORTH_SOUTH, ASCENDING_NORTH, ASCENDING_SOUTH -> 0.0F;
+            case EAST_WEST, ASCENDING_EAST, ASCENDING_WEST -> 90.0F;
+            case SOUTH_EAST, NORTH_WEST -> 45.0F;
+            case NORTH_EAST, SOUTH_WEST -> -45.0F;
+        };
+
+        float first = Mth.wrapDegrees(axisYaw);
+        float opposite = Mth.wrapDegrees(axisYaw + 180.0F);
+        float previous = this.getTrainFacingYaw();
+
+        Vec3 motion = this.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        float expectedFromMotion = previous;
+
+        if (horizontalSpeed > FACING_MOTION_EPSILON) {
+            double radians = Math.toRadians(previous);
+            double frontX = Math.sin(radians);
+            double frontZ = -Math.cos(radians);
+            double dot = motion.x * frontX + motion.z * frontZ;
+
+            // Remember whether the locomotive is travelling nose-first or in
+            // reverse. Around a curve the instantaneous motion can become nearly
+            // perpendicular to the previous body yaw, so keep the last reliable
+            // sign rather than interpreting that moment as a 180-degree reversal.
+            if (dot > horizontalSpeed * 0.20D) {
+                this.travelDirectionSign = 1;
+            } else if (dot < -horizontalSpeed * 0.20D) {
+                this.travelDirectionSign = -1;
+            }
+
+            float motionYaw = (float) Math.toDegrees(Math.atan2(motion.x, -motion.z));
+            expectedFromMotion = Mth.wrapDegrees(
+                    motionYaw + (this.travelDirectionSign < 0 ? 180.0F : 0.0F));
+        }
+
+        float firstDistance = Math.abs(Mth.wrapDegrees(first - previous));
+        float oppositeDistance = Math.abs(Mth.wrapDegrees(opposite - previous));
+
+        // Normally rail continuity is enough to choose the locomotive's nose.
+        // On a fast downhill transition Minecraft can move far enough in one tick
+        // that we effectively jump from one rail axis to another. That produces a
+        // 90/90 tie and the old code could pick the wrong end, visually flipping
+        // the locomotive on slopes or curves. Resolve only those ambiguous cases
+        // using actual travel direction; otherwise preserve the established nose.
+        if (horizontalSpeed > FACING_MOTION_EPSILON
+                && Math.abs(firstDistance - oppositeDistance) <= FACING_TIE_DEGREES) {
+            float firstMotionDistance = Math.abs(Mth.wrapDegrees(first - expectedFromMotion));
+            float oppositeMotionDistance = Math.abs(Mth.wrapDegrees(opposite - expectedFromMotion));
+            this.trainFacingYaw = firstMotionDistance <= oppositeMotionDistance ? first : opposite;
+        } else {
+            this.trainFacingYaw = firstDistance <= oppositeDistance ? first : opposite;
+        }
+
+        this.trainFacingInitialized = true;
+        this.setYRot(this.trainFacingYaw);
+        this.yRotO = this.trainFacingYaw;
+    }
+
+    /**
+     * The rail-facing value intentionally changes in 45-degree steps on vanilla
+     * curve blocks. Rendering that value directly makes a long locomotive snap
+     * sideways at speed. Keep physics on the exact rail axis, but let the visible
+     * body turn toward it over several ticks so a 90-degree bend reads as one
+     * continuous turn instead of a pair of instant rotations.
+     */
+    private void updateVisualTrainFacing() {
+        if (!this.visualFacingInitialized) {
+            this.visualFacingYaw = this.getTrainFacingYaw();
+            this.previousVisualFacingYaw = this.visualFacingYaw;
+            this.visualFacingInitialized = true;
+            return;
+        }
+
+        this.previousVisualFacingYaw = this.visualFacingYaw;
+        float delta = Mth.wrapDegrees(this.getTrainFacingYaw() - this.visualFacingYaw);
+        float step = Mth.clamp(delta,
+                -VISUAL_FACING_MAX_TURN_DEGREES,
+                VISUAL_FACING_MAX_TURN_DEGREES);
+        this.visualFacingYaw = Mth.wrapDegrees(this.visualFacingYaw + step);
+    }
+
+    public float getRenderTrainFacingYaw(float partialTicks) {
+        if (!this.visualFacingInitialized) {
+            return this.getTrainFacingYaw();
+        }
+        return Mth.rotLerp(partialTicks, this.previousVisualFacingYaw, this.visualFacingYaw);
+    }
+
+    public boolean isOnSharpCurve() {
+        return isSharpVanillaCurve(this.getCurrentRailShape());
+    }
+
+    private RailShape getCurrentRailShape() {
+        BlockPos railPos = this.blockPosition();
+        BlockState state = this.level().getBlockState(railPos);
+
+        if (!BaseRailBlock.isRail(state)) {
+            railPos = railPos.below();
+            state = this.level().getBlockState(railPos);
+        }
+
+        if (!BaseRailBlock.isRail(state)) {
+            return null;
+        }
+
+        BaseRailBlock rail = (BaseRailBlock) state.getBlock();
+        return rail.getRailDirection(state, this.level(), railPos, this);
+    }
+
+    /**
+     * Firebox hotspot for the legacy left-click GUI interaction. The hit is
+     * transformed onto the locomotive's longitudinal axis, so it follows rail
+     * orientation and does not depend on the player's camera direction.
+     */
+    public boolean isFireboxHit(Vec3 hitLocation) {
+        double dx = hitLocation.x - this.getX();
+        double dz = hitLocation.z - this.getZ();
+        double localY = hitLocation.y - this.getY();
+
+        double radians = Math.toRadians(this.getTrainFacingYaw());
+        double frontX = Math.sin(radians);
+        double frontZ = -Math.cos(radians);
+        double longitudinal = dx * frontX + dz * frontZ;
+
+        return longitudinal >= FIREBOX_REAR
+                && longitudinal <= FIREBOX_FRONT
+                && localY >= FIREBOX_MIN_Y
+                && localY <= FIREBOX_MAX_Y;
+    }
+
+    @Override
+    public InteractionResult interact(Player player, InteractionHand hand) {
+        if (player.getItemInHand(hand).getItem() instanceof ConnectorItem) {
+            return ConnectorItem.handleRollingStockClick(this, player, hand);
+        }
+        return super.interact(player, hand);
+    }
+
+    /**
+     * Heavy rolling stock collision handling. Living entities are shoved away
+     * from the locomotive instead of transferring their tiny collision impulse
+     * back into the train. Faster impacts also deal proportionally more damage.
+     */
+    @Override
+    public void push(Entity entity) {
+        // Coupled stock is kept at coupler spacing by the Step 7.0 constraint;
+        // vanilla minecart collision impulses would make the pair bounce apart.
+        if (this.isCoupledTo(entity.getUUID())) {
+            return;
+        }
+
+        if (entity instanceof LivingEntity living && !this.hasPassenger(entity)) {
+            if (!this.level().isClientSide) {
+                this.hitLivingEntity(living);
+            }
+            return;
+        }
+
+        super.push(entity);
+    }
+
+    private void hitLivingEntity(LivingEntity living) {
+        if (!living.isAlive() || living.isRemoved()) {
+            return;
+        }
+
+        Vec3 motion = this.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        if (horizontalSpeed <= 1.0E-5D) {
+            return;
+        }
+
+        double speedKmh = horizontalSpeed * 20.0D * 3.6D;
+        double directionX = motion.x / horizontalSpeed;
+        double directionZ = motion.z / horizontalSpeed;
+
+        // Even a slow-moving locomotive has enough mass to move an animal/mob
+        // out of the way instead of being stopped by it.
+        double pushStrength = 0.18D + Math.min(0.75D, speedKmh / 60.0D);
+        living.push(directionX * pushStrength, 0.12D + Math.min(0.18D, speedKmh / 150.0D), directionZ * pushStrength);
+        living.hurtMarked = true;
+
+        if (speedKmh < IMPACT_MIN_SPEED_KMH) {
+            return;
+        }
+
+        int lastImpact = this.lastImpactTicks.getOrDefault(living.getId(), -IMPACT_DAMAGE_COOLDOWN_TICKS);
+        if (this.tickCount - lastImpact < IMPACT_DAMAGE_COOLDOWN_TICKS) {
+            return;
+        }
+        this.lastImpactTicks.put(living.getId(), this.tickCount);
+
+        float damage;
+        if (speedKmh >= IMPACT_INSTANT_KILL_SPEED_KMH) {
+            damage = living.getMaxHealth() + living.getAbsorptionAmount() + 100.0F;
+        } else {
+            damage = Math.max(1.0F, (float)(speedKmh * 0.25D));
+        }
+
+        living.hurt(this.damageSources().generic(), damage);
+
+        // Keep the small cooldown map bounded during long sessions.
+        if (this.lastImpactTicks.size() > 64) {
+            this.lastImpactTicks.entrySet().removeIf(entry -> this.tickCount - entry.getValue() > 200);
+        }
+    }
+
+    @Override
+    protected void positionRider(Entity passenger, Entity.MoveFunction moveFunction) {
+        if (!this.hasPassenger(passenger)) {
+            return;
+        }
+
+        double radians = Math.toRadians(this.getTrainFacingYaw());
+        double frontX = Math.sin(radians);
+        double frontZ = -Math.cos(radians);
+
+        double seatX = this.getX() - frontX * DRIVER_SEAT_BACK_OFFSET;
+        double seatY = this.getY() + DRIVER_SEAT_Y_OFFSET + passenger.getMyRidingOffset();
+        double seatZ = this.getZ() - frontZ * DRIVER_SEAT_BACK_OFFSET;
+        moveFunction.accept(passenger, seatX, seatY, seatZ);
+    }
+
+    @Override
+    public void onPassengerTurned(Entity passenger) {
+        // Free-look while seated.
+    }
+
+    @Override
+    protected void applyNaturalSlowdown() {
+        Vec3 motion = this.getDeltaMovement();
+        if (this.handBrakeApplied) {
+            this.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
+        boolean powered = (this.forwardInput ^ this.reverseInput) && this.steamAmount > 0;
+        double resistance = powered && !this.brakeInput
+                ? POWERED_ROLLING_RESISTANCE
+                : COAST_ROLLING_RESISTANCE;
+        this.setDeltaMovement(motion.x * resistance, 0.0D, motion.z * resistance);
+    }
+
+    /**
+     * A vanilla minecart loses more speed to each ascending-rail step than this
+     * small locomotive's traction adds in one tick. That made a powered Traincraft
+     * engine stall and roll backward on even a normal one-block rail slope.
+     *
+     * While the driver is actively applying steam, neutralize vanilla's minecart
+     * slope penalty and let Traincraft's own acceleration provide the tractive
+     * effort. Release the throttle (or run out of steam) and normal gravity/slope
+     * behaviour returns, so an unsecured locomotive can still roll downhill.
+     */
+    @Override
+    public double getSlopeAdjustment() {
+        // Both brakes oppose gravity while they are actually being held/applied.
+        // Space is the active/service brake, so holding it on an incline should
+        // bring the locomotive to a stop rather than let vanilla slope gravity
+        // accelerate it backward. C is the parking brake and must hold absolutely.
+        if (this.handBrakeApplied || this.brakeInput || (this.forwardInput && this.reverseInput)) {
+            return 0.0D;
+        }
+
+        boolean applyingSteam = (this.forwardInput ^ this.reverseInput)
+                && this.steamAmount > 0;
+        return applyingSteam ? 0.0D : super.getSlopeAdjustment();
+    }
+
+    /**
+     * Traincraft locomotives provide their own traction. Vanilla powered rails
+     * must not add minecart propulsion, otherwise an unfired steam engine can
+     * move with 0% steam. Detector/Traincraft rail behaviour will be handled
+     * explicitly as the rail system is ported.
+     */
+    @Override
+    public boolean shouldDoRailFunctions() {
+        return false;
+    }
+
+    @Override
+    protected double getMaxSpeed() {
+        if (this.handBrakeApplied) {
+            return 0.0D;
+        }
+
+        RailShape shape = this.getCurrentRailShape();
+        if (isSharpVanillaCurve(shape)) {
+            return CURVE_MAX_SPEED_BLOCKS_PER_TICK;
+        }
+
+        return Math.max(MAX_SPEED_BLOCKS_PER_TICK, MAX_REVERSE_SPEED_BLOCKS_PER_TICK);
+    }
+
+    private static boolean isSharpVanillaCurve(@Nullable RailShape shape) {
+        return shape == RailShape.NORTH_EAST
+                || shape == RailShape.NORTH_WEST
+                || shape == RailShape.SOUTH_EAST
+                || shape == RailShape.SOUTH_WEST;
+    }
+
+    public double getSpeedKmh() {
+        Vec3 motion = this.getDeltaMovement();
+        double blocksPerTick = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        return blocksPerTick * 20.0D * 3.6D;
+    }
+
+    public IItemHandler getSteamInventory() {
+        return this.steamInventory;
+    }
+
+    public int getBurnTime() {
+        return this.level().isClientSide ? this.entityData.get(DATA_BURN_TIME) : this.burnTime;
+    }
+
+    public int getMaxBurnTime() {
+        return this.level().isClientSide ? this.entityData.get(DATA_MAX_BURN_TIME) : this.maxBurnTime;
+    }
+
+    public int getWaterAmount() {
+        return this.level().isClientSide ? this.entityData.get(DATA_WATER_AMOUNT) : this.waterAmount;
+    }
+
+    public int getSteamAmount() {
+        return this.level().isClientSide ? this.entityData.get(DATA_STEAM_AMOUNT) : this.steamAmount;
+    }
+
+    public double getBoilerTemperatureK() {
+        return this.level().isClientSide
+                ? this.entityData.get(DATA_BOILER_TEMPERATURE_K)
+                : this.boilerTemperatureK;
+    }
+
+    public double getBoilerTemperatureC() {
+        return this.getBoilerTemperatureK() - 273.15D;
+    }
+
+    public int getBoilerTemperatureTenthsC() {
+        return (int) Math.round(this.getBoilerTemperatureC() * 10.0D);
+    }
+
+    /** 0% at the classic 20 C resting temperature, 100% at 200 C overheat. */
+    public int getBoilerHeatPercent() {
+        double temperature = this.getBoilerTemperatureK();
+        double range = MAX_BOILER_TEMPERATURE_K - DEFAULT_BOILER_TEMPERATURE_K;
+        return Mth.clamp((int) Math.round(
+                (temperature - DEFAULT_BOILER_TEMPERATURE_K) * 100.0D / range), 0, 100);
+    }
+
+    public boolean isBoilerHot() {
+        return this.getBoilerTemperatureK() >= HOT_BOILER_TEMPERATURE_K;
+    }
+
+    public boolean isBoilerOverheating() {
+        return this.getBoilerTemperatureK() > MAX_BOILER_TEMPERATURE_K;
+    }
+
+    public boolean isBoilerCritical() {
+        return this.getBoilerTemperatureK() >= CRITICAL_BOILER_TEMPERATURE_K;
+    }
+
+    private static boolean isFuel(ItemStack stack) {
+        return !stack.isEmpty() && ForgeHooks.getBurnTime(stack, RecipeType.SMELTING) > 0;
+    }
+
+    private static boolean isWaterContainer(ItemStack stack) {
+        return stack.is(Items.WATER_BUCKET);
+    }
+
+    private void setChangedForSync() {
+        // Placeholder hook for later direct entity-data sync. Menu slot packets
+        // already synchronize inventory contents while the GUI is open.
+    }
+
+    public void openSteamMenu(ServerPlayer player) {
+        double distanceSqr = player.distanceToSqr(this);
+        if (distanceSqr > 64.0D) {
+            Traincraft.LOGGER.debug(
+                    "Traincraft steam GUI open rejected by distance check for {}: distanceSq={}",
+                    player.getGameProfile().getName(), distanceSqr);
+            return;
+        }
+
+        // Step 6.8.6 deliberately uses Minecraft's vanilla ServerPlayer menu
+        // opening path. The previous Forge extra-data path was accepting the R
+        // request server-side but the client never displayed the screen. Since R
+        // can only be used while riding this locomotive, the client can resolve
+        // the locomotive directly from its current vehicle and no extra buffer is
+        // required.
+        var opened = player.openMenu(this);
+        Traincraft.LOGGER.debug(
+                "Traincraft vanilla steam GUI open result for {}: opened={}, serverContainer={}",
+                player.getGameProfile().getName(), opened.isPresent(),
+                player.containerMenu == null ? "null" : player.containerMenu.getClass().getSimpleName());
+    }
+
+    @Override
+    public Component getDisplayName() {
+        return Component.translatable("container.traincraft.steam_locomotive");
+    }
+
+    @Nullable
+    @Override
+    public AbstractContainerMenu createMenu(int containerId, Inventory inventory, Player player) {
+        return new SteamLocomotiveMenu(containerId, inventory, this);
+    }
+
+    @Override
+    protected void addAdditionalSaveData(CompoundTag tag) {
+        super.addAdditionalSaveData(tag);
+        tag.put("SteamInventory", this.steamInventory.serializeNBT());
+        tag.putInt("BurnTime", this.burnTime);
+        tag.putInt("MaxBurnTime", this.maxBurnTime);
+        tag.putInt("WaterAmount", this.waterAmount);
+        tag.putInt("SteamAmount", this.steamAmount);
+        tag.putDouble("BoilerTemperatureK", this.boilerTemperatureK);
+        tag.putInt("BoilerFailureTicks", this.boilerFailureTicks);
+        tag.putBoolean("HandBrakeApplied", this.handBrakeApplied);
+        if (this.coupledRollingStockUuid != null) {
+            tag.putUUID("CoupledRollingStock", this.coupledRollingStockUuid);
+        }
+        if (this.secondaryCoupledRollingStockUuid != null) {
+            tag.putUUID("SecondaryCoupledRollingStock", this.secondaryCoupledRollingStockUuid);
+        }
+        tag.putFloat("TrainFacingYaw", this.getTrainFacingYaw());
+        tag.putBoolean("TrainFacingInitialized", this.trainFacingInitialized);
+    }
+
+    @Override
+    protected void readAdditionalSaveData(CompoundTag tag) {
+        super.readAdditionalSaveData(tag);
+        if (tag.contains("SteamInventory")) {
+            this.steamInventory.deserializeNBT(tag.getCompound("SteamInventory"));
+        }
+        this.burnTime = Math.max(0, tag.getInt("BurnTime"));
+        this.maxBurnTime = Math.max(0, tag.getInt("MaxBurnTime"));
+        this.waterAmount = Mth.clamp(tag.getInt("WaterAmount"), 0, WATER_CAPACITY_MB);
+        this.steamAmount = Mth.clamp(tag.getInt("SteamAmount"), 0, STEAM_CAPACITY);
+        this.boilerTemperatureK = tag.contains("BoilerTemperatureK")
+                ? Mth.clamp(tag.getDouble("BoilerTemperatureK"),
+                        MIN_BOILER_TEMPERATURE_K, ABSOLUTE_BOILER_TEMPERATURE_K)
+                : DEFAULT_BOILER_TEMPERATURE_K;
+        this.boilerFailureTicks = Mth.clamp(
+                tag.getInt("BoilerFailureTicks"), 0, BOILER_FAILURE_LIMIT_TICKS);
+        this.handBrakeApplied = tag.getBoolean("HandBrakeApplied");
+        this.coupledRollingStockUuid = tag.hasUUID("CoupledRollingStock")
+                ? tag.getUUID("CoupledRollingStock")
+                : null;
+        this.secondaryCoupledRollingStockUuid = tag.hasUUID("SecondaryCoupledRollingStock")
+                ? tag.getUUID("SecondaryCoupledRollingStock")
+                : null;
+        this.syncTelemetryToClient();
+        if (tag.contains("TrainFacingYaw")) {
+            this.trainFacingYaw = tag.getFloat("TrainFacingYaw");
+            this.trainFacingInitialized = tag.getBoolean("TrainFacingInitialized");
+        }
+    }
+
+    @Nullable
+    @Override
+    public UUID getCoupledRollingStockUuid() {
+        return this.coupledRollingStockUuid;
+    }
+
+    @Override
+    public void setCoupledRollingStockUuid(@Nullable UUID uuid) {
+        this.coupledRollingStockUuid = uuid;
+    }
+
+    @Nullable
+    @Override
+    public UUID getSecondaryCoupledRollingStockUuid() {
+        return this.secondaryCoupledRollingStockUuid;
+    }
+
+    @Override
+    public void setSecondaryCoupledRollingStockUuid(@Nullable UUID uuid) {
+        this.secondaryCoupledRollingStockUuid = uuid;
+    }
+
+    @Override
+    protected Item getDropItem() {
+        return TCItems.LOCOMOTIVE_STEAM_SMALL.get();
+    }
+
+    @Override
+    public ItemStack getPickResult() {
+        return new ItemStack(TCItems.LOCOMOTIVE_STEAM_SMALL.get());
+    }
+}

@@ -1,0 +1,89 @@
+{
+    "multipart":  [
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "north",
+                                       "original_visual_root":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_diagonal_straight_small",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "east",
+                                       "original_visual_root":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_diagonal_straight_small",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "south",
+                                       "original_visual_root":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_diagonal_straight_small",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "west",
+                                       "original_visual_root":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_diagonal_straight_small"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "north",
+                                       "original_visual_root":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_diagonal_straight_small",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "east",
+                                       "original_visual_root":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_diagonal_straight_small"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "south",
+                                       "original_visual_root":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_diagonal_straight_small",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "west",
+                                       "original_visual_root":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_diagonal_straight_small"
+                                    }
+                      }
+                  ]
+}

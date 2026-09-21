@@ -1,0 +1,523 @@
+/*
+ * Traincraft 1.20.1 basic steam tender.
+ * Step 7.0 establishes physical locomotive/tender coupling; fuel/water transfer
+ * is intentionally left for Step 7.1.
+ * Distributed under LGPL-v3.0.
+ */
+package traincraft.entity.train.tender;
+
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.util.Mth;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.entity.vehicle.Minecart;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.BaseRailBlock;
+import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.RailShape;
+import net.minecraft.world.phys.Vec3;
+import org.jetbrains.annotations.Nullable;
+import traincraft.entity.train.CoupleableRollingStock;
+import traincraft.entity.train.CouplingManager;
+import traincraft.entity.train.steam.small.SmallSteamLocomotive;
+import traincraft.item.ConnectorItem;
+import traincraft.registry.TCItems;
+
+import java.util.UUID;
+
+/** Classic Traincraft steam tender with the first modern coupling constraint. */
+public class SteamTender extends Minecart implements CoupleableRollingStock {
+    /**
+     * Classic couplers have a little slack. Keeping a small dead band prevents a
+     * freshly connected tender from receiving a large sideways/longitudinal snap
+     * the first tick the locomotive starts moving.
+     */
+    private static final double COUPLING_MIN_DISTANCE = 1.34D;
+    private static final double COUPLING_MAX_DISTANCE = 1.52D;
+    private static final double CURVE_COUPLING_MIN_DISTANCE = 1.26D;
+    private static final double CURVE_COUPLING_MAX_DISTANCE = 1.44D;
+    /*
+     * A normal hill/curve transition must never be able to tear a consist apart.
+     * This is only an emergency sanity limit for teleports or truly invalid links.
+     */
+    private static final double COUPLING_BREAK_DISTANCE = 32.0D;
+
+    /*
+     * The follower must be allowed to run a little faster than the locomotive.
+     * If both vehicles share exactly the same speed cap, any distance lost while
+     * one vehicle is on a curve/slope can never be recovered, which is what caused
+     * the large visible gap reported in Step 7.0.1.
+     */
+    private static final double COUPLING_CORRECTION = 0.40D;
+    private static final double COUPLING_MAX_CORRECTION = 0.48D;
+    private static final double COUPLING_VELOCITY_BLEND = 0.75D;
+    private static final double COUPLED_ROLLING_RESISTANCE = 0.999D;
+    private static final double CURVE_MAX_SPEED_BLOCKS_PER_TICK = 0.30D;
+    private static final double MAX_SPEED_BLOCKS_PER_TICK = 0.625D;
+    private static final double COUPLED_CURVE_CATCHUP_SPEED = 0.75D;
+    private static final double COUPLED_STRAIGHT_CATCHUP_SPEED = 1.25D;
+    private static final double POST_MOVE_GAP_THRESHOLD = 1.62D;
+    private static final double CURVE_POST_MOVE_GAP_THRESHOLD = 1.50D;
+    private static final double POST_MOVE_CATCHUP_PER_BLOCK = 0.30D;
+    private static final float VISUAL_FACING_MAX_TURN_DEGREES = 18.0F;
+    private static final double FACING_MOTION_EPSILON = 0.01D;
+    private static final float FACING_TIE_DEGREES = 12.0F;
+    private static final int SURVIVAL_REMOVAL_HITS = 3;
+    private static final int SURVIVAL_REMOVAL_RESET_TICKS = 100;
+
+    private UUID coupledRollingStockUuid;
+    private float trainFacingYaw;
+    private boolean trainFacingInitialized;
+    private int travelDirectionSign = 1;
+    private float visualFacingYaw;
+    private float previousVisualFacingYaw;
+    private boolean visualFacingInitialized;
+    private int survivalRemovalHits;
+    private int lastSurvivalRemovalHitTick = -SURVIVAL_REMOVAL_RESET_TICKS;
+
+    public SteamTender(EntityType<? extends SteamTender> type, Level level) {
+        super(type, level);
+    }
+
+    @Override
+    public void tick() {
+        if (!this.trainFacingInitialized) {
+            this.trainFacingYaw = this.getYRot();
+            this.trainFacingInitialized = true;
+        }
+
+        if (!this.level().isClientSide) {
+            this.applyCouplingConstraint();
+        }
+
+        super.tick();
+
+        if (!this.level().isClientSide) {
+            this.applyPostMoveCouplingCatchup();
+        }
+
+        this.updateTrainFacingFromRail();
+        this.updateVisualTrainFacing();
+    }
+
+    private void applyCouplingConstraint() {
+        Entity linked = CouplingManager.resolve(this, this);
+        if (!(linked instanceof SmallSteamLocomotive locomotive) || linked.isRemoved()) {
+            return;
+        }
+
+        Vec3 offset = locomotive.position().subtract(this.position());
+        double distance = offset.length();
+        if (distance > COUPLING_BREAK_DISTANCE) {
+            CouplingManager.unlink(this, this);
+            if (locomotive.getFirstPassenger() instanceof ServerPlayer driver) {
+                driver.displayClientMessage(
+                        net.minecraft.network.chat.Component.translatable("message.traincraft.connector.broken"),
+                        true);
+            }
+            return;
+        }
+
+        if (locomotive.isHandBrakeApplied()) {
+            this.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
+        if (distance < 1.0E-5D) {
+            return;
+        }
+
+        Vec3 tenderMotion = this.getDeltaMovement();
+        Vec3 locomotiveMotion = locomotive.getDeltaMovement();
+
+        /*
+         * Never pull the tender directly through world X/Z toward the locomotive:
+         * that cuts across the inside of curves. Use the tender's current rail
+         * tangent instead. While already moving, its velocity is the best tangent
+         * available and avoids a one-tick stale facing value at rail transitions.
+         */
+        double tenderHorizontalSpeed = Math.sqrt(
+                tenderMotion.x * tenderMotion.x + tenderMotion.z * tenderMotion.z);
+        double axisX;
+        double axisZ;
+        if (tenderHorizontalSpeed > 1.0E-4D) {
+            axisX = tenderMotion.x / tenderHorizontalSpeed;
+            axisZ = tenderMotion.z / tenderHorizontalSpeed;
+        } else {
+            double radians = Math.toRadians(this.getTrainFacingYaw());
+            axisX = Math.sin(radians);
+            axisZ = -Math.cos(radians);
+        }
+
+        double toLocomotiveDot = offset.x * axisX + offset.z * axisZ;
+        double towardLocomotiveSign = toLocomotiveDot >= 0.0D ? 1.0D : -1.0D;
+
+        /*
+         * Use true 3-D center distance. On ascending rails the old horizontal-only
+         * distance understated the visible separation and allowed the tender to
+         * remain too far behind.
+         */
+        boolean curveTransition = this.isOnSharpCurve() || locomotive.isOnSharpCurve();
+        double minimumSpacing = curveTransition
+                ? CURVE_COUPLING_MIN_DISTANCE
+                : COUPLING_MIN_DISTANCE;
+        double maximumSpacing = curveTransition
+                ? CURVE_COUPLING_MAX_DISTANCE
+                : COUPLING_MAX_DISTANCE;
+
+        double spacingError = 0.0D;
+        if (distance > maximumSpacing) {
+            spacingError = distance - maximumSpacing;
+        } else if (distance < minimumSpacing) {
+            spacingError = distance - minimumSpacing;
+        }
+        double correction = Mth.clamp(
+                spacingError * COUPLING_CORRECTION,
+                -COUPLING_MAX_CORRECTION,
+                COUPLING_MAX_CORRECTION);
+
+        double currentAlongRail = tenderMotion.x * axisX + tenderMotion.z * axisZ;
+        double locomotiveAlongRail = locomotiveMotion.x * axisX + locomotiveMotion.z * axisZ;
+
+        /*
+         * Match the locomotive's true track-speed magnitude, not just horizontal
+         * X/Z speed. The horizontal magnitude drops while the engine is climbing,
+         * which previously made the tender permanently lose ground on hills.
+         */
+        double locomotiveTrackSpeed = locomotiveMotion.length();
+
+        // Around a curve the locomotive's tangent can be nearly perpendicular to
+        // the tender's current tangent. Preserve train speed and choose the tender
+        // direction from projected motion when possible.
+        double driveSign;
+        if (Math.abs(locomotiveAlongRail) > 0.01D) {
+            driveSign = Math.signum(locomotiveAlongRail);
+        } else if (Math.abs(currentAlongRail) > 0.01D) {
+            driveSign = Math.signum(currentAlongRail);
+        } else {
+            driveSign = towardLocomotiveSign;
+        }
+        double targetAlongRail = locomotiveTrackSpeed * driveSign;
+
+        double newAlongRail = currentAlongRail * (1.0D - COUPLING_VELOCITY_BLEND)
+                + targetAlongRail * COUPLING_VELOCITY_BLEND
+                + towardLocomotiveSign * correction;
+
+        /*
+         * A coupled tender gets a private catch-up allowance. It only uses the
+         * extra speed when the constraint requests it; normal cruising still
+         * follows the locomotive. This lets a gap created by a hill/90-degree bend
+         * close again instead of becoming permanent.
+         */
+        RailShape currentShape = this.getCurrentRailShape();
+        double cap = isSharpVanillaCurve(currentShape)
+                ? COUPLED_CURVE_CATCHUP_SPEED
+                : COUPLED_STRAIGHT_CATCHUP_SPEED;
+        newAlongRail = Mth.clamp(newAlongRail, -cap, cap);
+
+        this.setDeltaMovement(axisX * newAlongRail, tenderMotion.y, axisZ * newAlongRail);
+    }
+
+    /**
+     * Vanilla minecart motion is resolved independently for each vehicle. On a
+     * descending rail or the first tick of a curve that can consume part of the
+     * tender's commanded speed after the pre-move coupling constraint has already
+     * run. Reinforce the follower velocity after movement so the next tick starts
+     * with enough speed to close the couplers instead of letting the gap compound.
+     */
+    private void applyPostMoveCouplingCatchup() {
+        Entity linked = CouplingManager.resolve(this, this);
+        if (!(linked instanceof SmallSteamLocomotive locomotive) || linked.isRemoved()) {
+            return;
+        }
+
+        if (locomotive.isHandBrakeApplied()) {
+            this.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
+        Vec3 offset = locomotive.position().subtract(this.position());
+        double distance = offset.length();
+        boolean curveTransition = this.isOnSharpCurve() || locomotive.isOnSharpCurve();
+        double postMoveGapThreshold = curveTransition
+                ? CURVE_POST_MOVE_GAP_THRESHOLD
+                : POST_MOVE_GAP_THRESHOLD;
+        if (distance <= postMoveGapThreshold || distance < 1.0E-5D) {
+            return;
+        }
+
+        Vec3 motion = this.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        double axisX;
+        double axisZ;
+        if (horizontalSpeed > 1.0E-4D) {
+            axisX = motion.x / horizontalSpeed;
+            axisZ = motion.z / horizontalSpeed;
+        } else {
+            double radians = Math.toRadians(this.getTrainFacingYaw());
+            axisX = Math.sin(radians);
+            axisZ = -Math.cos(radians);
+        }
+
+        double towardDot = offset.x * axisX + offset.z * axisZ;
+        double towardSign = towardDot >= 0.0D ? 1.0D : -1.0D;
+        double locomotiveSpeed = locomotive.getDeltaMovement().length();
+        double requestedCatchup = locomotiveSpeed
+                + (distance - postMoveGapThreshold) * POST_MOVE_CATCHUP_PER_BLOCK;
+
+        RailShape shape = this.getCurrentRailShape();
+        double cap = isSharpVanillaCurve(shape)
+                ? COUPLED_CURVE_CATCHUP_SPEED
+                : COUPLED_STRAIGHT_CATCHUP_SPEED;
+        double catchupSpeed = Mth.clamp(requestedCatchup, 0.0D, cap);
+
+        double currentAlongRail = motion.x * axisX + motion.z * axisZ;
+        double desiredAlongRail = towardSign * catchupSpeed;
+        if (Math.signum(desiredAlongRail) != Math.signum(currentAlongRail)
+                || Math.abs(desiredAlongRail) > Math.abs(currentAlongRail)) {
+            this.setDeltaMovement(axisX * desiredAlongRail, motion.y, axisZ * desiredAlongRail);
+        }
+    }
+
+    @Override
+    public InteractionResult interact(Player player, InteractionHand hand) {
+        if (player.getItemInHand(hand).getItem() instanceof ConnectorItem) {
+            return ConnectorItem.handleRollingStockClick(this, player, hand);
+        }
+        // The Step 7.0 tender is cargo rolling stock, not a passenger seat.
+        return InteractionResult.PASS;
+    }
+
+    @Override
+    public void push(Entity entity) {
+        if (this.coupledRollingStockUuid != null && this.coupledRollingStockUuid.equals(entity.getUUID())) {
+            return;
+        }
+        super.push(entity);
+    }
+
+    @Override
+    public boolean hurt(DamageSource damageSource, float amount) {
+        boolean handled = super.hurt(damageSource, amount);
+        if (!handled || this.level().isClientSide || this.isRemoved()) {
+            return handled;
+        }
+
+        Entity attacker = damageSource.getEntity();
+        if (!(attacker instanceof Player player) || player.getAbilities().instabuild) {
+            return handled;
+        }
+
+        if (this.tickCount - this.lastSurvivalRemovalHitTick > SURVIVAL_REMOVAL_RESET_TICKS) {
+            this.survivalRemovalHits = 0;
+        }
+        this.lastSurvivalRemovalHitTick = this.tickCount;
+        this.survivalRemovalHits++;
+        if (this.survivalRemovalHits >= SURVIVAL_REMOVAL_HITS) {
+            this.destroy(damageSource);
+        }
+        return true;
+    }
+
+    @Override
+    public void destroy(DamageSource damageSource) {
+        CouplingManager.unlink(this, this);
+        super.destroy(damageSource);
+    }
+
+    @Override
+    protected void applyNaturalSlowdown() {
+        if (this.hasCoupledRollingStock()) {
+            Vec3 motion = this.getDeltaMovement();
+            this.setDeltaMovement(
+                    motion.x * COUPLED_ROLLING_RESISTANCE,
+                    motion.y,
+                    motion.z * COUPLED_ROLLING_RESISTANCE);
+            return;
+        }
+        super.applyNaturalSlowdown();
+    }
+
+    @Override
+    public double getSlopeAdjustment() {
+        // While attached, the locomotive owns the train's tractive/gravity state.
+        // This keeps the tender from independently rolling downhill and stretching
+        // the coupling on a normal one-block rail incline.
+        return this.hasCoupledRollingStock() ? 0.0D : super.getSlopeAdjustment();
+    }
+
+    @Override
+    public boolean shouldDoRailFunctions() {
+        return false;
+    }
+
+    @Override
+    protected double getMaxSpeed() {
+        RailShape shape = this.getCurrentRailShape();
+        if (this.hasCoupledRollingStock()) {
+            return isSharpVanillaCurve(shape)
+                    ? COUPLED_CURVE_CATCHUP_SPEED
+                    : COUPLED_STRAIGHT_CATCHUP_SPEED;
+        }
+        if (isSharpVanillaCurve(shape)) {
+            return CURVE_MAX_SPEED_BLOCKS_PER_TICK;
+        }
+        return MAX_SPEED_BLOCKS_PER_TICK;
+    }
+
+    private static boolean isSharpVanillaCurve(@Nullable RailShape shape) {
+        return shape == RailShape.NORTH_EAST
+                || shape == RailShape.NORTH_WEST
+                || shape == RailShape.SOUTH_EAST
+                || shape == RailShape.SOUTH_WEST;
+    }
+
+    private void updateTrainFacingFromRail() {
+        RailShape shape = this.getCurrentRailShape();
+        if (shape == null) {
+            return;
+        }
+
+        float axisYaw = switch (shape) {
+            case NORTH_SOUTH, ASCENDING_NORTH, ASCENDING_SOUTH -> 0.0F;
+            case EAST_WEST, ASCENDING_EAST, ASCENDING_WEST -> 90.0F;
+            case SOUTH_EAST, NORTH_WEST -> 45.0F;
+            case NORTH_EAST, SOUTH_WEST -> -45.0F;
+        };
+
+        float first = Mth.wrapDegrees(axisYaw);
+        float opposite = Mth.wrapDegrees(axisYaw + 180.0F);
+        float previous = this.getTrainFacingYaw();
+        Vec3 motion = this.getDeltaMovement();
+        double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
+        float expectedFromMotion = previous;
+
+        if (horizontalSpeed > FACING_MOTION_EPSILON) {
+            double radians = Math.toRadians(previous);
+            double frontX = Math.sin(radians);
+            double frontZ = -Math.cos(radians);
+            double dot = motion.x * frontX + motion.z * frontZ;
+            if (dot > horizontalSpeed * 0.20D) {
+                this.travelDirectionSign = 1;
+            } else if (dot < -horizontalSpeed * 0.20D) {
+                this.travelDirectionSign = -1;
+            }
+            float motionYaw = (float) Math.toDegrees(Math.atan2(motion.x, -motion.z));
+            expectedFromMotion = Mth.wrapDegrees(
+                    motionYaw + (this.travelDirectionSign < 0 ? 180.0F : 0.0F));
+        }
+
+        float firstDistance = Math.abs(Mth.wrapDegrees(first - previous));
+        float oppositeDistance = Math.abs(Mth.wrapDegrees(opposite - previous));
+        if (horizontalSpeed > FACING_MOTION_EPSILON
+                && Math.abs(firstDistance - oppositeDistance) <= FACING_TIE_DEGREES) {
+            float firstMotionDistance = Math.abs(Mth.wrapDegrees(first - expectedFromMotion));
+            float oppositeMotionDistance = Math.abs(Mth.wrapDegrees(opposite - expectedFromMotion));
+            this.trainFacingYaw = firstMotionDistance <= oppositeMotionDistance ? first : opposite;
+        } else {
+            this.trainFacingYaw = firstDistance <= oppositeDistance ? first : opposite;
+        }
+
+        this.trainFacingInitialized = true;
+        this.setYRot(this.trainFacingYaw);
+        this.yRotO = this.trainFacingYaw;
+    }
+
+    /** Render-only yaw smoothing; the rail physics still uses the exact shape. */
+    private void updateVisualTrainFacing() {
+        if (!this.visualFacingInitialized) {
+            this.visualFacingYaw = this.getTrainFacingYaw();
+            this.previousVisualFacingYaw = this.visualFacingYaw;
+            this.visualFacingInitialized = true;
+            return;
+        }
+
+        this.previousVisualFacingYaw = this.visualFacingYaw;
+        float delta = Mth.wrapDegrees(this.getTrainFacingYaw() - this.visualFacingYaw);
+        float step = Mth.clamp(delta,
+                -VISUAL_FACING_MAX_TURN_DEGREES,
+                VISUAL_FACING_MAX_TURN_DEGREES);
+        this.visualFacingYaw = Mth.wrapDegrees(this.visualFacingYaw + step);
+    }
+
+    public float getRenderTrainFacingYaw(float partialTicks) {
+        if (!this.visualFacingInitialized) {
+            return this.getTrainFacingYaw();
+        }
+        return Mth.rotLerp(partialTicks, this.previousVisualFacingYaw, this.visualFacingYaw);
+    }
+
+    public boolean isOnSharpCurve() {
+        return isSharpVanillaCurve(this.getCurrentRailShape());
+    }
+
+    @Nullable
+    private RailShape getCurrentRailShape() {
+        BlockPos railPos = this.blockPosition();
+        BlockState state = this.level().getBlockState(railPos);
+        if (!BaseRailBlock.isRail(state)) {
+            railPos = railPos.below();
+            state = this.level().getBlockState(railPos);
+        }
+        if (!BaseRailBlock.isRail(state)) {
+            return null;
+        }
+        BaseRailBlock rail = (BaseRailBlock) state.getBlock();
+        return rail.getRailDirection(state, this.level(), railPos, this);
+    }
+
+    public float getTrainFacingYaw() {
+        return this.trainFacingInitialized ? this.trainFacingYaw : this.getYRot();
+    }
+
+    @Nullable
+    @Override
+    public UUID getCoupledRollingStockUuid() {
+        return this.coupledRollingStockUuid;
+    }
+
+    @Override
+    public void setCoupledRollingStockUuid(@Nullable UUID uuid) {
+        this.coupledRollingStockUuid = uuid;
+    }
+
+    @Override
+    protected void addAdditionalSaveData(CompoundTag tag) {
+        super.addAdditionalSaveData(tag);
+        if (this.coupledRollingStockUuid != null) {
+            tag.putUUID("CoupledRollingStock", this.coupledRollingStockUuid);
+        }
+        tag.putFloat("TrainFacingYaw", this.getTrainFacingYaw());
+        tag.putBoolean("TrainFacingInitialized", this.trainFacingInitialized);
+    }
+
+    @Override
+    protected void readAdditionalSaveData(CompoundTag tag) {
+        super.readAdditionalSaveData(tag);
+        this.coupledRollingStockUuid = tag.hasUUID("CoupledRollingStock")
+                ? tag.getUUID("CoupledRollingStock")
+                : null;
+        if (tag.contains("TrainFacingYaw")) {
+            this.trainFacingYaw = tag.getFloat("TrainFacingYaw");
+            this.trainFacingInitialized = tag.getBoolean("TrainFacingInitialized");
+        }
+    }
+
+    @Override
+    protected Item getDropItem() {
+        return TCItems.STEAM_TENDER.get();
+    }
+
+    @Override
+    public ItemStack getPickResult() {
+        return new ItemStack(TCItems.STEAM_TENDER.get());
+    }
+}

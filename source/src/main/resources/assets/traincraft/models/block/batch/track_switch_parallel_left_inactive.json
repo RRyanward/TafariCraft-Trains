@@ -1,0 +1,13 @@
+{
+  "ambientocclusion": false,
+  "loader": "forge:obj",
+  "model": "traincraft:models/block/batch/track_switch_parallel_left_inactive.obj",
+  "automatic_culling": false,
+  "shade_quads": false,
+  "emissive_ambient": false,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "texture0": "traincraft:block/legacy_track_normal",
+    "particle": "traincraft:block/legacy_track_normal"
+  }
+}

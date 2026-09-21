@@ -1,0 +1,130 @@
+{
+    "multipart":  [
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "north",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_small_right_inactive"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "north",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_small_right_active"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "east",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_small_right_inactive",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "east",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_small_right_active",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "south",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_small_right_inactive",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "south",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_small_right_active",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "west",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_small_right_inactive",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "west",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_small_right_active",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal",
+                                        "y":  180
+                                    }
+                      }
+                  ]
+}

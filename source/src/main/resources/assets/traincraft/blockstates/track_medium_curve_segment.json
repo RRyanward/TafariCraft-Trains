@@ -1,0 +1,8 @@
+{
+  "multipart": [
+    { "when": { "assembly_part": "0", "facing": "north" }, "apply": { "model": "traincraft:block/legacy_track_curve_medium_north" } },
+    { "when": { "assembly_part": "0", "facing": "east"  }, "apply": { "model": "traincraft:block/legacy_track_curve_medium_east" } },
+    { "when": { "assembly_part": "0", "facing": "south" }, "apply": { "model": "traincraft:block/legacy_track_curve_medium_south" } },
+    { "when": { "assembly_part": "0", "facing": "west"  }, "apply": { "model": "traincraft:block/legacy_track_curve_medium_west" } }
+  ]
+}
