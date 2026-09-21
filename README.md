@@ -5,7 +5,7 @@
 </div>
 
 <div align="center">
-
+  
 # 🚂 TafariCraft - Trains
 
 ### Bringing the spirit of classic Traincraft into modern Minecraft.
@@ -85,7 +85,7 @@ The project includes extensive rewrites, fixes, compatibility work, new mechanic
 | Mod Loader | **Forge** |
 | Forge | **47.3.22** |
 | Java | **17** |
-| Status | 🚧 **Active Development** |
+| Status 95% | 🚧 **Active Development** |
 
 ---
 
