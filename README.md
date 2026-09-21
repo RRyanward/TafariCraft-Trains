@@ -171,7 +171,7 @@ Minecraft is a trademark/property of Mojang Studios / Microsoft.
 ## 🔗 Project Links
 
 - 🚂 **CurseForge:** Coming Soon
-- 💻 **GitHub:** `RRyanward/TafariCraft---Trains`
+- 💻 **GitHub:** `RRyanward/TafariCraft-Trains`
 - 🐛 **Issues / Bug Reports:** GitHub Issues
 - 📖 **Documentation:** In development
 
