@@ -445,6 +445,9 @@ private String realismEnvironmentFluidClass = "NONE";
 
     @Override
     public void tick() {
+        // STEP_9_3G_T4_R8M_REVERSE_POSTRAIL_TRACTION
+        Vec3 r8mReversePreRailMotion = Vec3.ZERO;
+        boolean r8mReversePostRailArmed = false;
         if (!this.trainFacingInitialized) {
             this.trainFacingYaw = this.getYRot();
             this.trainFacingInitialized = true;
@@ -479,7 +482,68 @@ private String realismEnvironmentFluidClass = "NONE";
         }
 
         Vec3 tcStep93bPreRailMotion = this.getDeltaMovement();
+        // STEP_9_3G_T4_R8M_REVERSE_POSTRAIL_TRACTION_PRE
+        // Capture the already-throttled/already-governed Traincraft velocity.
+        // Do this only on plain Traincraft flat rail so grades, curves and
+        // every turnout family remain completely outside this experiment.
+        if (!this.level().isClientSide) {
+            RailShape r8mPreRailShape = this.getCurrentRailShape();
+            r8mReversePreRailMotion = this.getDeltaMovement();
+            double r8mPreRailSpeed = Math.sqrt(
+                    r8mReversePreRailMotion.x * r8mReversePreRailMotion.x
+                            + r8mReversePreRailMotion.z * r8mReversePreRailMotion.z);
+
+            r8mReversePostRailArmed =
+                    this.isReverseDriveRequested()
+                            && this.isReverseConsistTravel()
+                            && this.steamAmount > 0
+                            && !this.brakeInput
+                            && !this.handBrakeApplied
+                            && r8mPreRailSpeed > STOP_EPSILON
+                            && (r8mPreRailShape == RailShape.NORTH_SOUTH
+                                    || r8mPreRailShape == RailShape.EAST_WEST)
+                            && this.isR8mPlainTraincraftNormalRail();
+        }
+
         super.tick();
+
+        // STEP_9_3G_T4_R8M_REVERSE_POSTRAIL_TRACTION_POST
+        // On this one proven flat/live-reverse case, Traincraft owns propulsion.
+        // Keep its intended powered rolling resistance, but do not let vanilla
+        // rider/rail logic add an extra boost or an extra drag to the stored
+        // horizontal velocity after super.tick().
+        if (!this.level().isClientSide && r8mReversePostRailArmed) {
+            RailShape r8mPostRailShape = this.getCurrentRailShape();
+            if ((r8mPostRailShape == RailShape.NORTH_SOUTH
+                    || r8mPostRailShape == RailShape.EAST_WEST)
+                    && this.isR8mPlainTraincraftNormalRail()) {
+                Vec3 r8mPostRailMotion = this.getDeltaMovement();
+                double r8mPreRailSpeed = Math.sqrt(
+                        r8mReversePreRailMotion.x * r8mReversePreRailMotion.x
+                                + r8mReversePreRailMotion.z * r8mReversePreRailMotion.z);
+                double r8mTargetSpeed =
+                        r8mPreRailSpeed * POWERED_ROLLING_RESISTANCE;
+
+                if (r8mPreRailSpeed > 1.0E-9D) {
+                    double r8mDirX = r8mReversePreRailMotion.x / r8mPreRailSpeed;
+                    double r8mDirZ = r8mReversePreRailMotion.z / r8mPreRailSpeed;
+                    double r8mPostRailSpeed = Math.sqrt(
+                            r8mPostRailMotion.x * r8mPostRailMotion.x
+                                    + r8mPostRailMotion.z * r8mPostRailMotion.z);
+                    double r8mPostAlongPre =
+                            r8mPostRailMotion.x * r8mDirX
+                                    + r8mPostRailMotion.z * r8mDirZ;
+
+                    if (Math.abs(r8mPostRailSpeed - r8mTargetSpeed) > 1.0E-9D
+                            || r8mPostAlongPre < 0.0D) {
+                        this.setDeltaMovement(
+                                r8mDirX * r8mTargetSpeed,
+                                r8mPostRailMotion.y,
+                                r8mDirZ * r8mTargetSpeed);
+                    }
+                }
+            }
+        }
         if (!this.level().isClientSide) {
             int tcStep93cRequestedDirection =
                     this.forwardInput ^ this.reverseInput
@@ -629,6 +693,31 @@ private String realismEnvironmentFluidClass = "NONE";
      * curve cap, so the useful operating number is the last speed observed while
      * the locomotive was still on non-curve rail immediately before entry.
      */
+    /**
+     * Step 9.3g-t4-r8m safety gate.
+     * True only on the ordinary Traincraft normal-rail block beneath the
+     * locomotive. Turnout assembly/segment rails deliberately return false.
+     */
+    private boolean isR8mPlainTraincraftNormalRail() {
+        BlockPos railPos = this.blockPosition();
+        BlockState railState = this.level().getBlockState(railPos);
+
+        if (!(railState.getBlock() instanceof BaseRailBlock)) {
+            railPos = railPos.below();
+            railState = this.level().getBlockState(railPos);
+        }
+
+        if (!(railState.getBlock() instanceof BaseRailBlock)) {
+            return false;
+        }
+
+        net.minecraft.resources.ResourceLocation railId =
+                net.minecraft.core.registries.BuiltInRegistries.BLOCK
+                        .getKey(railState.getBlock());
+        return "traincraft".equals(railId.getNamespace())
+                && "track_normal".equals(railId.getPath());
+    }
+
     private void tickCurveOverspeedTelemetry() {
         if (this.realismCurveMessageCooldown > 0) {
             this.realismCurveMessageCooldown--;

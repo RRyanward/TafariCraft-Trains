@@ -84,27 +84,43 @@ public final class LegacyBatchTrackSpecs {
     public static final LegacyBatchTrackSpec SLOPE_CURVE_SUPER_LARGE_LEFT =
             LegacyBatchTrackSpec.oneRoute("track_slope_curve_super_large_left", gradualRiseGuide(quarter(15, -1)));
 
-    // Crossings. Dynamic routing selects whichever canonical path best aligns
-    // with the cart's incoming horizontal motion.
+    // Crossings.
+    //
+    // Step 9.3g-t5-s4c restores the exact TC4.5 owner/proxy footprints and route sets
+    // instead of stretching these models across generic 2x2/4x4 Manhattan
+    // guide footprints. The regular Diagonal Crossing was already
+    // restored earlier and remains unchanged.
     public static final LegacyBatchTrackSpec CROSSING_X =
             LegacyBatchTrackSpec.singleDynamic("track_crossing_x",
                     RailShape.NORTH_SOUTH, RailShape.EAST_WEST);
     public static final LegacyBatchTrackSpec DIAMOND_CROSSING =
-            crossing("track_diamond_crossing", 4);
+            LegacyBatchTrackSpec.originalTraincraftCrossing(
+                    "track_diamond_crossing",
+                    true, false, true, false);
     public static final LegacyBatchTrackSpec DIAMOND_CROSSING_LEFT =
-            crossing("track_diamond_crossing_left", 4);
+            LegacyBatchTrackSpec.originalTraincraftCrossing(
+                    "track_diamond_crossing_left",
+                    true, false, false, true);
     public static final LegacyBatchTrackSpec DOUBLE_DIAMOND_CROSSING =
-            crossing("track_double_diamond_crossing", 4);
-    // TC4.5 DIAGONAL_TWO_WAYS_CROSSING: one centered owner/model rail plus
-    // eight linked Small-Diagonal proxy/gag rails in a 3x3 footprint.
+            LegacyBatchTrackSpec.originalTraincraftCrossing(
+                    "track_double_diamond_crossing",
+                    true, false, true, true);
+
     public static final LegacyBatchTrackSpec DIAGONAL_CROSSING =
             LegacyBatchTrackSpec.originalDiagonalCrossing("track_diagonal_crossing");
+
     public static final LegacyBatchTrackSpec DIAGONAL_TWO_WAYS_CROSSING =
-            crossing("track_diagonal_two_ways_crossing", 2);
+            LegacyBatchTrackSpec.originalTraincraftCrossing(
+                    "track_diagonal_two_ways_crossing",
+                    false, false, true, true);
     public static final LegacyBatchTrackSpec DIAGONAL_FOUR_WAYS_CROSSING =
-            crossing("track_diagonal_four_ways_crossing", 2);
+            LegacyBatchTrackSpec.originalTraincraftCrossing(
+                    "track_diagonal_four_ways_crossing",
+                    true, true, true, true);
     public static final LegacyBatchTrackSpec UNIVERSAL_CROSSING =
-            crossing("track_universal_crossing", 4);
+            LegacyBatchTrackSpec.originalTraincraftCrossing(
+                    "track_universal_crossing",
+                    true, true, true, true);
 
     // Toggleable switches/turnouts: inactive = straight route,
     // active = diverging route. Empty-hand right click toggles the assembly.

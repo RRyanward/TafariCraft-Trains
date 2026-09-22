@@ -1,7 +1,7 @@
 {
   "ambientocclusion": false,
   "loader": "forge:obj",
-  "model": "traincraft:models/block/batch/track_diagonal_two_ways_crossing.obj",
+  "model": "traincraft:models/block/batch/track_diagonal_crossing.obj",
   "automatic_culling": false,
   "shade_quads": false,
   "emissive_ambient": false,

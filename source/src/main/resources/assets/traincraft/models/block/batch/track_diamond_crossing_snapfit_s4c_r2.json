@@ -1,7 +1,7 @@
 {
   "ambientocclusion": false,
   "loader": "forge:obj",
-  "model": "traincraft:models/block/batch/track_universal_crossing.obj",
+  "model": "traincraft:models/block/batch/track_diamond_crossing_snapfit_s4c_r2.obj",
   "automatic_culling": false,
   "shade_quads": false,
   "emissive_ambient": false,

@@ -14,6 +14,8 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.RailBlock;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.world.level.block.state.properties.BooleanProperty;
+import net.minecraft.world.level.block.state.properties.Property;
 import net.minecraft.world.level.block.state.properties.RailShape;
 import net.minecraft.world.phys.Vec3;
 import traincraft.block.track.AbstractLegacyBatchRailBlock;
@@ -137,17 +139,20 @@ public final class LegacyBatchTrackItem extends Item {
         private final RouteHeading8 routeHeading;
         private final double distanceSq;
         private final String sourceId;
+        private final int sourceEndpointPart;
 
         private Connector(BlockPos segment,
                           Direction outward,
                           RouteHeading8 routeHeading,
                           double distanceSq,
-                          String sourceId) {
+                          String sourceId,
+                          int sourceEndpointPart) {
             this.segment = segment;
             this.outward = outward;
             this.routeHeading = routeHeading;
             this.distanceSq = distanceSq;
             this.sourceId = sourceId;
+            this.sourceEndpointPart = sourceEndpointPart;
         }
     }
 
@@ -234,50 +239,29 @@ public final class LegacyBatchTrackItem extends Item {
 
         BlockState clickedPlacementState =
                 level.getBlockState(context.getClickedPos());
-        boolean clickedOgSmallRail =
-                "track_diagonal_straight_small".equals(spec.id())
-                        && clickedPlacementState.getBlock()
-                                instanceof AbstractLegacyBatchRailBlock clickedBatch
-                        && "track_diagonal_straight_small".equals(
-                                clickedBatch.getSpec().id());
 
-        Candidate chosen = findOgSmallLogicalExtensionCandidate(
-                level, context, player, stack, oneShot);
-
-        // Step 9.3e-t5-r6: a click on an existing Small rail is an extension
-        // request, never a free/manual placement request.  If neither route end
-        // can accept another Small, fail cleanly instead of using player yaw and
-        // trying to build one block above or sideways from the clicked rail.
-        if (chosen == null && clickedOgSmallRail) {
-            String failure = "OG_SMALL_EXTENSION_NO_OPEN_END";
-            if (oneShot != null) {
-                oneShot.add("OUTCOME=FAIL reason=" + failure
-                        + " clickedPos=" + context.getClickedPos());
-                BatchTrackDiagnostics.finishPlacementDebug(
-                        player, debugCenter, oneShot);
-            }
-            writePlacementFailure(level, player, stack, root, facing, failure);
-            return InteractionResult.FAIL;
-        }
-
-        Connector connector = chosen == null
-                ? findConnector(level, context, oneShot)
-                : null;
+        // STEP_9_3G_T6_S1_ONE_CORE_PLACEMENT
+        // Small Diagonal no longer has a virtual endpoint or a private
+        // extension path. Every batch-track connection now enters the same
+        // connector/candidate pipeline.
+        Candidate chosen = null;
+        Connector connector = findConnector(level, context, oneShot);
 
         // STEP_9_3G_T2_WHOLE_SWITCH_FAMILY_DIRECT_RAIL_SNAP
         //
-        // Project-wide switch placement contract:
+        // Project-wide direct-rail snap contract:
         //   - clicking an existing rail means SNAP, never free-yaw placement;
         //   - no valid/open connector means fail cleanly;
         //   - orientation comes from connector/tangent geometry, not player yaw.
         //
-        // This now covers the whole classic turnout family while preserving the
-        // already-accepted Small-switch p5-specific topology below.
+        // t6 adds Small Diagonal to the same contract now that both exposed
+        // route ends are real physical endpoint cores.
         boolean directRailSnapRequest =
-                isWholeSwitchFamilySnapSpec(spec.id())
+                (isWholeSwitchFamilySnapSpec(spec.id())
+                        || "track_diagonal_straight_small".equals(spec.id()))
                 && BaseRailBlock.isRail(clickedPlacementState);
         if (chosen == null && directRailSnapRequest && connector == null) {
-            String failure = "SWITCH_FAMILY_DIRECT_RAIL_SNAP_NO_OPEN_CONNECTOR";
+            String failure = "DIRECT_RAIL_SNAP_NO_OPEN_CONNECTOR";
             if (oneShot != null) {
                 oneShot.add("OUTCOME=FAIL reason=" + failure
                         + " clickedPos=" + context.getClickedPos()
@@ -287,16 +271,6 @@ public final class LegacyBatchTrackItem extends Item {
             }
             writePlacementFailure(level, player, stack, root, facing, failure);
             return InteractionResult.FAIL;
-        }
-
-        if (chosen != null) {
-            root = chosen.root;
-            facing = chosen.facing;
-            if (oneShot != null) {
-                oneShot.add("OG_SMALL_EXTENSION_SNAP root=" + root
-                        + " facing=" + facing
-                        + " endpointPart=" + chosen.endpointPart);
-            }
         }
 
         if (oneShot != null) {
@@ -450,6 +424,11 @@ public final class LegacyBatchTrackItem extends Item {
             }
         }
 
+        // STEP_9_3G_T5_S2B_SYMMETRIC_CONNECTED_DIAGONAL_VISUAL
+        // The source may itself be a previously-manually-placed diagonal.
+        // Retag only that exact connector-owning assembly.
+        promoteSourceDiagonalVisualOwnership(level, connector, oneShot);
+
         if (!player.getAbilities().instabuild) {
             stack.shrink(1);
         }
@@ -491,172 +470,10 @@ public final class LegacyBatchTrackItem extends Item {
         return InteractionResult.CONSUME;
     }
 
-    // STEP_9_3E_T5_R6_OG_SMALL_TERMINAL_CLICK_CAPTURE
-    //
-    // OG Traincraft 4.5 Small Diagonal:
-    // physical L footprint = root + two gag cells
-    // logical continuation = the EMPTY diagonal cell.
-    //
-    // t5-r2 restored that logical endpoint. This placement-only gate makes
-    // extending a Small use that empty logical cell as the NEXT Small root,
-    // and inherits the owning Small's facing so player yaw cannot kick the
-    // extension sideways. All other track families keep the existing snap path.
-    private Candidate findOgSmallLogicalExtensionCandidate(Level level,
-                                                            UseOnContext context,
-                                                            Player player,
-                                                            ItemStack stack,
-                                                            List<String> oneShot) {
-        if (!"track_diagonal_straight_small".equals(spec.id())) {
-            return null;
-        }
-
-        BlockPos clicked = context.getClickedPos();
-        BlockState clickedState = level.getBlockState(clicked);
-        boolean railClick = BaseRailBlock.isRail(clickedState);
-        BlockPos requestedCell = railClick ? null : clicked.above();
-        Vec3 click = context.getClickLocation();
-
-        BlockPos clickedSmallRoot = null;
-        Direction clickedSmallFacing = null;
-        if (railClick
-                && clickedState.getBlock() instanceof AbstractLegacyBatchRailBlock clickedBatch
-                && "track_diagonal_straight_small".equals(clickedBatch.getSpec().id())) {
-            clickedSmallRoot = clickedBatch.getAssemblyRoot(clicked, clickedState);
-            clickedSmallFacing = clickedBatch.getAssemblyFacing(clickedState);
-        }
-
-        Candidate best = null;
-        double bestDistanceSq = Double.POSITIVE_INFINITY;
-        List<String> seenAssemblies = new ArrayList<>();
-
-        // Step 9.3e-t5-r5:
-        // OG Small has TWO usable route ends even though only its far endpoint
-        // carries a logicalOffset in the compatibility spec.
-        //
-        //   start = physical/root cell
-        //   end   = empty diagonal logical cell
-        //
-        // t5-r3 handled only the logicalOffset/end side.  That made the first
-        // extension work on one orientation, but the next exposed end could be
-        // the physical/root side and then fell back to manual/player-facing
-        // placement.  Resolve the full logical diagonal step once and mirror it
-        // across the source root for the start-side extension.
-        for (int dy = -1; dy <= 1; dy++) {
-            for (int dx = -2; dx <= 2; dx++) {
-                for (int dz = -2; dz <= 2; dz++) {
-                    BlockPos probe = clicked.offset(dx, dy, dz);
-                    BlockState state = level.getBlockState(probe);
-                    if (!(state.getBlock() instanceof AbstractLegacyBatchRailBlock batch)) {
-                        continue;
-                    }
-                    if (!"track_diagonal_straight_small".equals(batch.getSpec().id())) {
-                        continue;
-                    }
-
-                    BlockPos sourceRoot = batch.getAssemblyRoot(probe, state);
-                    Direction sourceFacing = batch.getAssemblyFacing(state);
-                    String key = sourceRoot.asLong() + "|" + sourceFacing.ordinal();
-                    if (seenAssemblies.contains(key)) {
-                        continue;
-                    }
-                    seenAssemblies.add(key);
-
-                    BlockPos logicalStep = null;
-                    for (LegacyBatchTrackSpec.Endpoint candidateEndpoint
-                            : batch.getSpec().endpoints()) {
-                        if (!candidateEndpoint.hasLogicalOffset()) {
-                            continue;
-                        }
-                        BlockPos farLogical = batch.getSpec().endpointPosition(
-                                sourceRoot, sourceFacing, candidateEndpoint);
-                        BlockPos step = farLogical.subtract(sourceRoot);
-                        if (step.getX() != 0 || step.getZ() != 0) {
-                            logicalStep = step;
-                            break;
-                        }
-                    }
-                    if (logicalStep == null) {
-                        continue;
-                    }
-
-                    for (LegacyBatchTrackSpec.Endpoint endpoint : batch.getSpec().endpoints()) {
-                        BlockPos physicalEndpoint = batch.getSpec().offsetForPart(
-                                sourceRoot, sourceFacing, endpoint.part());
-                        BlockPos logicalEndpoint = batch.getSpec().endpointPosition(
-                                sourceRoot, sourceFacing, endpoint);
-
-                        // Far/logical side: next root IS the empty logical end.
-                        // Start/root side: mirror one full diagonal step backward
-                        // so the new piece's far logical end terminates at this root.
-                        BlockPos candidateRoot = endpoint.hasLogicalOffset()
-                                ? logicalEndpoint
-                                : sourceRoot.subtract(logicalStep);
-
-                        boolean selectedEnd;
-                        double distanceSq;
-
-                        if (railClick) {
-                            // Step 9.3e-t5-r6:
-                            // Clicking ANY rail cell of the terminal Small assembly
-                            // is enough to request an extension.  Pick the open end
-                            // nearest the actual hit point; placement validity below
-                            // naturally rejects the already-connected inner end.
-                            selectedEnd = clickedSmallRoot != null
-                                    && clickedSmallRoot.equals(sourceRoot)
-                                    && clickedSmallFacing == sourceFacing;
-                            double px = physicalEndpoint.getX() + 0.5D;
-                            double pz = physicalEndpoint.getZ() + 0.5D;
-                            double ddx = click.x - px;
-                            double ddz = click.z - pz;
-                            distanceSq = ddx * ddx + ddz * ddz;
-                        } else {
-                            // Ground placement remains exact: point at the center
-                            // support block where the next Small should begin.
-                            selectedEnd = candidateRoot.equals(requestedCell);
-                            double cx = candidateRoot.getX() + 0.5D;
-                            double cz = candidateRoot.getZ() + 0.5D;
-                            double ddx = click.x - cx;
-                            double ddz = click.z - cz;
-                            distanceSq = ddx * ddx + ddz * ddz;
-                        }
-                        if (!selectedEnd) {
-                            continue;
-                        }
-
-                        String reject = placementRejectReason(
-                                level, player, stack, candidateRoot, sourceFacing);
-
-                        if (oneShot != null) {
-                            oneShot.add("OG_SMALL_EXTENSION_PROBE sourceRoot=" + sourceRoot
-                                    + " sourceFacing=" + sourceFacing
-                                    + " sourceEndpointPart=" + endpoint.part()
-                                    + " physicalEndpoint=" + physicalEndpoint
-                                    + " logicalEndpoint=" + logicalEndpoint
-                                    + " logicalStep=" + logicalStep
-                                    + " candidateRoot=" + candidateRoot
-                                    + " side=" + (endpoint.hasLogicalOffset()
-                                            ? "LOGICAL_END" : "ROOT_END")
-                                    + " railClick=" + railClick
-                                    + " requestedCell=" + requestedCell
-                                    + " placeable=" + (reject == null)
-                                    + " reject=" + (reject == null ? "NONE" : reject)
-                                    + " clickDistance=" + Math.sqrt(distanceSq));
-                        }
-
-                        if (reject != null || distanceSq >= bestDistanceSq) {
-                            continue;
-                        }
-
-                        best = new Candidate(
-                                candidateRoot, sourceFacing, endpoint.part(), 0);
-                        bestDistanceSq = distanceSq;
-                    }
-                }
-            }
-        }
-
-        return best;
-    }
+    // STEP_9_3G_T6_S1_ONE_CORE_PLACEMENT
+    // The former Small-only virtual extension path is intentionally removed.
+    // Small Diagonal now uses the same physical-core connector/candidate
+    // pipeline as every other batch track.
     private List<Candidate> candidatesFor(Level level,
                                           Player player,
                                           ItemStack stack,
@@ -783,8 +600,30 @@ public final class LegacyBatchTrackItem extends Item {
                             endpoint.part() == 0 ? 0 : 8;
                 }
 
+                // STEP_9_3G_T5_S4C_R2_TC45_MEDIUM_P6_VISUAL_PRIORITY
+                //
+                // d6/d7/d9/d10 proved that the visually continuous TC4.5
+                // crossing-to-Medium-Diagonal handoff uses Medium endpoint p6
+                // for every diagonal route and every crossing facing. p0 is
+                // logically tangent-equivalent but places the accepted Medium
+                // mesh on the wrong side of the crossing rail head.
+                //
+                // Scope this priority only to a Medium Diagonal being snapped
+                // onto one of the six s4c-restored crossing families. Existing
+                // diagonal/switch placement behavior stays untouched.
+                int crossingMediumEndpointPenalty = 0;
+                boolean s4cCrossingMediumPair =
+                        connector.routeHeading.isDiagonal()
+                        && "track_diagonal_straight_medium".equals(spec.id())
+                        && isS4cRestoredCrossingFamily(connector.sourceId);
+                if (s4cCrossingMediumPair) {
+                    crossingMediumEndpointPenalty =
+                            endpoint.part() == 6 ? 0 : 32;
+                }
+
                 int totalPenalty = connectorPenalty
                         + switchEndpointPenalty
+                        + crossingMediumEndpointPenalty
                         + facingPenalty(candidateFacing, player.getDirection());
 
                 if (oneShot != null) {
@@ -798,6 +637,9 @@ public final class LegacyBatchTrackItem extends Item {
                             + " originalTraincraftCrossingPair=" + originalCrossingPair
                             + " originalCrossingSmallRoot=" + originalCrossingSmallRoot
                             + " correctOriginalSmallRoot=" + correctOriginalSmallRoot
+                            + " s4cCrossingMediumPair=" + s4cCrossingMediumPair
+                            + " crossingMediumEndpointPenalty="
+                            + crossingMediumEndpointPenalty
                             + " tangentFaceToFace=" + tangentFaceToFace
                             + " faceToFace=" + faceToFace
                             + " cornerHandoff=" + cornerHandoff
@@ -1087,7 +929,9 @@ public final class LegacyBatchTrackItem extends Item {
 
             Direction outward = placementEndpointOutward(
                     batch.getSpec(), facing, endpoint);
-            if (hasRailNeighbor(level, segment, outward)) {
+            RouteHeading8 endpointHeading = routeHeadingForEndpoint(
+                    batch.getSpec(), root, facing, endpoint);
+            if (hasRouteNeighbor(level, segment, outward, endpointHeading)) {
                 if (oneShot != null) {
                     oneShot.add("ROUTE_SEMANTIC_CANDIDATE endpointPart=" + endpoint.part()
                             + " segment=" + segment + " outward=" + outward
@@ -1115,7 +959,7 @@ public final class LegacyBatchTrackItem extends Item {
                     segment, outward,
                     routeHeadingForEndpoint(
                             batch.getSpec(), root, facing, endpoint),
-                    click, selected.sourceId);
+                    click, selected.sourceId, endpoint.part());
             if (bestDiagonal == null
                     || manhattan < bestManhattan
                     || (manhattan == bestManhattan
@@ -1239,7 +1083,7 @@ public final class LegacyBatchTrackItem extends Item {
             Connector centeredCrossing = null;
             int centeredCrossingCount = 0;
             for (Connector candidate : local) {
-                if (TARGET_DIAGONAL_CROSSING.equals(candidate.sourceId)) {
+                if (isDiagonalCrossingSnapFamily(candidate.sourceId)) {
                     centeredCrossing = candidate;
                     centeredCrossingCount++;
                 }
@@ -1262,7 +1106,7 @@ public final class LegacyBatchTrackItem extends Item {
         // and accept ONLY one unique diagonal-route connector from those two
         // explicitly supported source families. This stays local and does not
         // restore any broad/remote crossing ownership search.
-        if (isDiagonalStraightFamily(spec.id())) {
+        if (isEightWaySnapFamily(spec.id())) {
             List<Connector> diagonalLocal = new ArrayList<>();
             for (int dx : new int[]{-1, 1}) {
                 for (int dz : new int[]{-1, 1}) {
@@ -1277,8 +1121,7 @@ public final class LegacyBatchTrackItem extends Item {
                     }
                     boolean acceptedDiagonalCornerSource =
                             candidate != null
-                            && (isMedium45SwitchSource(candidate.sourceId)
-                                || TARGET_DIAGONAL_CROSSING.equals(candidate.sourceId));
+                            && isEightWaySnapFamily(candidate.sourceId);
                     if (!acceptedDiagonalCornerSource
                             || !candidate.routeHeading.isDiagonal()) {
                         continue;
@@ -1413,15 +1256,17 @@ public final class LegacyBatchTrackItem extends Item {
                         if (!required.equals(requestedCell)) {
                             continue;
                         }
-                        if (hasRailNeighbor(level, logicalSegment, outward)) {
+                        RouteHeading8 endpointHeading = routeHeadingForEndpoint(
+                                batch.getSpec(), root, facing, endpoint);
+                        if (hasRouteNeighbor(
+                                level, logicalSegment, outward, endpointHeading)) {
                             continue;
                         }
 
                         Connector candidate = connectorAt(
                                 logicalSegment, outward,
-                                routeHeadingForEndpoint(
-                                        batch.getSpec(), root, facing, endpoint),
-                                click, batch.getSpec().id());
+                                endpointHeading,
+                                click, batch.getSpec().id(), endpoint.part());
                         best = nearerConnector(best, candidate);
                         if (oneShot != null) {
                             oneShot.add("VIRTUAL_SOURCE_PROBE sourceId="
@@ -1457,13 +1302,15 @@ public final class LegacyBatchTrackItem extends Item {
                         root, facing, endpoint);
                 Direction outward = placementEndpointOutward(
                         batch.getSpec(), facing, endpoint);
+                RouteHeading8 endpointHeading = routeHeadingForEndpoint(
+                        batch.getSpec(), root, facing, endpoint);
 
-                if (!hasRailNeighbor(level, segment, outward)) {
+                if (!hasRouteNeighbor(
+                        level, segment, outward, endpointHeading)) {
                     Connector candidate = connectorAt(
                             segment, outward,
-                            routeHeadingForEndpoint(
-                                    batch.getSpec(), root, facing, endpoint),
-                            click, batch.getSpec().id());
+                            endpointHeading,
+                            click, batch.getSpec().id(), endpoint.part());
                     if (segment.equals(clicked)) {
                         return candidate;
                     }
@@ -1629,11 +1476,13 @@ public final class LegacyBatchTrackItem extends Item {
         return endpointSpec.rotateDirection(facing, endpoint.outward());
     }
 
+    // STEP_9_3G_T5_S1_UNIFIED_DIAGONAL_SNAP
     private static RouteHeading8 routeHeadingForEndpoint(
             LegacyBatchTrackSpec endpointSpec,
             BlockPos root,
             Direction facing,
             LegacyBatchTrackSpec.Endpoint endpoint) {
+        // Medium-45 switch branch endpoints.
         if (endpoint.part() == 4) {
             if (TARGET_45_MEDIUM_LEFT_SWITCH.equals(endpointSpec.id())) {
                 return rotateRouteHeading(
@@ -1645,26 +1494,31 @@ public final class LegacyBatchTrackItem extends Item {
             }
         }
 
-        if (TARGET_DIAGONAL_CROSSING.equals(endpointSpec.id())) {
-            RouteHeading8 crossingHeading = originalDiagonalCrossingEndpointHeading(
-                    endpointSpec, root, facing, endpoint);
+        // Every classic 45-degree curve starts cardinal at p0 and leaves its
+        // far endpoint on a true 45-degree tangent. The guide endpoint outward
+        // remains cardinal only because the assembly footprint is Manhattan.
+        if (isFortyFiveCurveSnapFamily(endpointSpec.id())
+                && endpoint.part() == endpointSpec.partCount() - 1) {
+            RouteHeading8 canonical = endpointSpec.id().endsWith("_left")
+                    ? RouteHeading8.NORTH_WEST
+                    : RouteHeading8.NORTH_EAST;
+            return rotateRouteHeading(canonical, facing);
+        }
+
+        // STEP_9_3G_T5_S4C_EXACT_CROSSING_ROUTE_TANGENTS
+        // TC4.5 crossings expose an explicit mixture of cardinal and diagonal
+        // route pairs. Preserve the proven s1 eight-way matcher, but derive the
+        // endpoint tangent from the crossing spec's consecutive route pair.
+        if (isDiagonalCrossingSnapFamily(endpointSpec.id())) {
+            RouteHeading8 crossingHeading =
+                    originalDiagonalCrossingEndpointHeading(
+                            endpointSpec, root, facing, endpoint);
             if (crossingHeading != null) {
                 return crossingHeading;
             }
         }
 
-        // STEP_9_3E_T4_R4_OG_SMALL_LOGICAL_ROUTE_HEADING
-        //
-        // t4-r3 restored the actual TC4.5 Small-Diagonal L footprint:
-        //   p0 owner (0,0), p1 gag (0,-1), p2 gag (1,0),
-        // while the visible/movement diagonal still runs to the EMPTY
-        // logical corner (1,-1).
-        //
-        // Therefore p0/p2 PHYSICAL positions are no longer allowed to define
-        // the placement tangent.  Keep the original logical diagonal:
-        //   p0 outward = SOUTH_WEST
-        //   p2 outward = NORTH_EAST
-        // then rotate that 8-way heading with the assembly facing.
+        // Restored OG Small-Diagonal logical tangent.
         if ("track_diagonal_straight_small".equals(endpointSpec.id())) {
             if (endpoint.part() == 0) {
                 return rotateRouteHeading(RouteHeading8.SOUTH_WEST, facing);
@@ -1674,6 +1528,8 @@ public final class LegacyBatchTrackItem extends Item {
             }
         }
 
+        // Medium diagonal (and any future two-end diagonal straight using the
+        // same spec contract) derives its route directly from logical ends.
         if (isDiagonalStraightFamily(endpointSpec.id())
                 && endpointSpec.endpoints().size() == 2) {
             LegacyBatchTrackSpec.Endpoint other = endpointSpec.endpoints().get(0);
@@ -1693,9 +1549,8 @@ public final class LegacyBatchTrackItem extends Item {
         }
 
         return RouteHeading8.fromDirection(
-                placementEndpointOutward(endpointSpec, facing, endpoint));
+                endpointSpec.rotateDirection(facing, endpoint.outward()));
     }
-
     private static RouteHeading8 originalDiagonalCrossingEndpointHeading(
             LegacyBatchTrackSpec crossingSpec,
             BlockPos root,
@@ -1707,18 +1562,21 @@ public final class LegacyBatchTrackItem extends Item {
             return null;
         }
 
-        LegacyBatchTrackSpec.Endpoint partner = null;
-        for (LegacyBatchTrackSpec.Endpoint candidate : crossingSpec.endpoints()) {
-            if (candidate.part() == endpoint.part()) {
-                continue;
-            }
-            if (originalDiagonalCrossingRouteIndex(
-                    crossingSpec, candidate.part()) == routeIndex) {
-                partner = candidate;
-                break;
-            }
+        List<LegacyBatchTrackSpec.Endpoint> endpoints = crossingSpec.endpoints();
+        int firstIndex = routeIndex * 2;
+        int secondIndex = firstIndex + 1;
+        if (secondIndex >= endpoints.size()) {
+            return null;
         }
-        if (partner == null) {
+
+        LegacyBatchTrackSpec.Endpoint first = endpoints.get(firstIndex);
+        LegacyBatchTrackSpec.Endpoint second = endpoints.get(secondIndex);
+        LegacyBatchTrackSpec.Endpoint partner;
+        if (first.part() == endpoint.part()) {
+            partner = second;
+        } else if (second.part() == endpoint.part()) {
+            partner = first;
+        } else {
             return null;
         }
 
@@ -1726,7 +1584,7 @@ public final class LegacyBatchTrackItem extends Item {
         BlockPos opposite = crossingSpec.endpointPosition(root, facing, partner);
         int dx = current.getX() - opposite.getX();
         int dz = current.getZ() - opposite.getZ();
-        if (dx == 0 || dz == 0) {
+        if (dx == 0 && dz == 0) {
             return null;
         }
         return RouteHeading8.fromStep(dx, dz);
@@ -1734,26 +1592,11 @@ public final class LegacyBatchTrackItem extends Item {
 
     private static int originalDiagonalCrossingRouteIndex(
             LegacyBatchTrackSpec crossingSpec, int endpointPart) {
-        int minX = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        int maxZ = Integer.MIN_VALUE;
-        for (int part = 0; part < crossingSpec.partCount(); part++) {
-            LegacyBatchTrackSpec.Point point = crossingSpec.pointForPart(part);
-            minX = Math.min(minX, point.x);
-            maxX = Math.max(maxX, point.x);
-            minZ = Math.min(minZ, point.z);
-            maxZ = Math.max(maxZ, point.z);
-        }
-
-        LegacyBatchTrackSpec.Point point = crossingSpec.pointForPart(endpointPart);
-        if ((point.x == minX && point.z == maxZ)
-                || (point.x == maxX && point.z == minZ)) {
-            return 0;
-        }
-        if ((point.x == maxX && point.z == maxZ)
-                || (point.x == minX && point.z == minZ)) {
-            return 1;
+        List<LegacyBatchTrackSpec.Endpoint> endpoints = crossingSpec.endpoints();
+        for (int index = 0; index < endpoints.size(); index++) {
+            if (endpoints.get(index).part() == endpointPart) {
+                return index / 2;
+            }
         }
         return -1;
     }
@@ -1796,6 +1639,7 @@ public final class LegacyBatchTrackItem extends Item {
     // physical footprint untouched. For crossing -> Small only, the visible
     // mesh is shifted to Small part 2 because that gag cell is the actual
     // diagonal continuation cell. Medium45 ownership remains unchanged.
+    // STEP_9_3G_T5_S2B_SYMMETRIC_CONNECTED_DIAGONAL_VISUAL
     private boolean isOriginalDiagonalVisualOwnership(Connector connector,
                                                        Candidate chosen) {
         if (!isDiagonalStraightFamily(spec.id())
@@ -1805,37 +1649,137 @@ public final class LegacyBatchTrackItem extends Item {
             return false;
         }
 
-        // STEP_9_3E_T4_R5_CROSSING_SMALL_DIAGONAL_VISUAL_OWNER
-        //
-        // t4-r4 now places the restored TC4.5 Small L-footprint correctly:
-        // the crossing-adjacent real/root cell is p0, while p2 is the second
-        // invisible gag cell at the actual DIAGONAL continuation location.
-        //
-        // The F3 proof on the west side was:
-        //   p0 = (127,137,-430)
-        //   p2 = (127,137,-431)
-        // The crossing route continues through the p2 diagonal cell, so keep
-        // every placement/movement cell exactly where r4 put it, but render
-        // the full Small OBJ from p2 via the already-existing
-        // original_visual_root blockstate.
-        if (TARGET_DIAGONAL_CROSSING.equals(connector.sourceId)
-                && "track_diagonal_straight_small".equals(spec.id())) {
-            return chosen.endpointPart == 0;
+        if (!isEightWaySnapFamily(connector.sourceId)) {
+            return false;
         }
 
-        // Preserve the already-accepted Medium-Diagonal shared-gag visual-root
-        // behavior for Medium45 unchanged. Small/Medium45 remains exactly as
-        // frozen by t4-r3; this patch is crossing -> Small only.
-        if (isMedium45SwitchSource(connector.sourceId)) {
-            if ("track_diagonal_straight_small".equals(spec.id())) {
-                return false;
+        // Preserve the confirmed-good historical Small <-> Medium45 SWITCH
+        // shared-gag exception exactly. Curves/crossings/other diagonals are
+        // intentionally not part of this exception.
+        if ("track_diagonal_straight_small".equals(spec.id())
+                && isMedium45SwitchSource(connector.sourceId)) {
+            return false;
+        }
+
+        // d2 proved two legitimate matched-end shapes:
+        //   - p0 when the incoming logical owner starts at the junction;
+        //   - the classic physical visual owner itself (Small p2 / Medium p6)
+        //     when a crossing/diamond attaches to the opposite end.
+        int visualPart = originalDiagonalVisualPart();
+        return chosen.endpointPart == 0
+                || chosen.endpointPart == visualPart;
+    }
+
+    /**
+     * When the diagonal was placed FIRST, s2a cannot affect it because it is
+     * the source connector rather than the incoming item. Promote ONLY the
+     * exact source assembly that owns this connector, and mutate ONLY the
+     * existing original_visual_root property. All shape/facing/part and
+     * waterlogged state values remain untouched.
+     */
+    private void promoteSourceDiagonalVisualOwnership(
+            Level level, Connector connector, List<String> oneShot) {
+        if (connector == null
+                || !isDiagonalStraightFamily(connector.sourceId)
+                || !connector.routeHeading.isDiagonal()) {
+            return;
+        }
+
+        // Preserve the accepted Small -> Medium45 SWITCH exception in the
+        // reverse placement order as well.
+        if ("track_diagonal_straight_small".equals(connector.sourceId)
+                && isMedium45SwitchSource(spec.id())) {
+            return;
+        }
+
+        List<String> seenAssemblies = new ArrayList<>();
+        for (int dx = -4; dx <= 4; dx++) {
+            for (int dz = -4; dz <= 4; dz++) {
+                for (int dy = -1; dy <= 1; dy++) {
+                    BlockPos probe = connector.segment.offset(dx, dy, dz);
+                    BlockState probeState = level.getBlockState(probe);
+                    if (!(probeState.getBlock()
+                            instanceof AbstractLegacyBatchRailBlock batch)) {
+                        continue;
+                    }
+                    if (!connector.sourceId.equals(batch.getSpec().id())) {
+                        continue;
+                    }
+
+                    BlockPos sourceRoot = batch.getAssemblyRoot(
+                            probe, probeState);
+                    Direction sourceFacing = batch.getAssemblyFacing(
+                            probeState);
+                    String key = sourceRoot.asLong() + "|"
+                            + sourceFacing.ordinal();
+                    if (seenAssemblies.contains(key)) {
+                        continue;
+                    }
+                    seenAssemblies.add(key);
+
+                    boolean ownsConnector = false;
+                    for (LegacyBatchTrackSpec.Endpoint endpoint
+                            : batch.getSpec().endpoints()) {
+                        BlockPos logical = batch.getSpec().endpointPosition(
+                                sourceRoot, sourceFacing, endpoint);
+                        Direction outward = batch.getSpec().rotateDirection(
+                                sourceFacing, endpoint.outward());
+                        if (logical.equals(connector.segment)
+                                && outward == connector.outward) {
+                            ownsConnector = true;
+                            break;
+                        }
+                    }
+                    if (!ownsConnector) {
+                        continue;
+                    }
+
+                    int changed = 0;
+                    for (int part = 0;
+                         part < batch.getSpec().partCount(); part++) {
+                        BlockPos railPos = batch.getSpec().offsetForPart(
+                                sourceRoot, sourceFacing, part);
+                        BlockState current = level.getBlockState(railPos);
+                        if (current.getBlock() != batch) {
+                            continue;
+                        }
+                        BlockState promoted = withOriginalVisualRoot(
+                                current, true);
+                        if (promoted != current) {
+                            level.setBlock(railPos, promoted, 2);
+                            changed++;
+                        }
+                    }
+
+                    if (oneShot != null) {
+                        oneShot.add("SOURCE_DIAGONAL_VISUAL_PROMOTION source="
+                                + connector.sourceId
+                                + " root=" + sourceRoot
+                                + " facing=" + sourceFacing
+                                + " changedStates=" + changed);
+                    }
+                    return;
+                }
             }
-            return chosen.endpointPart == 0
-                    && chosen.root.equals(
-                            connector.segment.relative(connector.outward));
         }
 
-        return false;
+        if (oneShot != null) {
+            oneShot.add("SOURCE_DIAGONAL_VISUAL_PROMOTION_MISS source="
+                    + connector.sourceId
+                    + " segment=" + connector.segment
+                    + " outward=" + connector.outward);
+        }
+    }
+
+    private static BlockState withOriginalVisualRoot(
+            BlockState state, boolean value) {
+        for (Property<?> property : state.getProperties()) {
+            if ("original_visual_root".equals(property.getName())
+                    && property instanceof BooleanProperty booleanProperty) {
+                return state.setValue(booleanProperty, value);
+            }
+        }
+        return state;
     }
 
     private int originalDiagonalVisualPart() {
@@ -1959,21 +1903,44 @@ public final class LegacyBatchTrackItem extends Item {
         return result;
     }
 
+    // STEP_9_3G_T6_S1_ONE_CORE_REQUIRED_CELL
+    //
+    // The t6 placement contract is route-owned instead of visual-exception-
+    // owned. Cardinal routes advance one cardinal block. True 45-degree routes
+    // advance one RouteHeading8 diagonal block. This single rule replaces the
+    // old Small-p2/crossing correction and the s4c crossing-family-only branch.
     private static BlockPos requiredEndpointCellFor(String incomingId,
                                                      Connector connector) {
-        if (isOriginalEightWaySnapPair(incomingId, connector.sourceId)
-                && connector.routeHeading.isDiagonal()) {
-            return connector.segment.relative(connector.outward);
+        if (connector.routeHeading.isDiagonal()) {
+            return connector.segment.offset(
+                    connector.routeHeading.dx, 0, connector.routeHeading.dz);
         }
         return connector.segment.relative(connector.outward);
     }
 
-    private static boolean isOriginalEightWaySnapPair(String incomingId,
-                                                       String sourceId) {
-        return isMedium45SwitchSource(sourceId)
-                && isDiagonalStraightFamily(incomingId);
+    private static boolean isS4cRestoredCrossingFamily(String id) {
+        if (id == null) {
+            return false;
+        }
+        return switch (id) {
+            case "track_diagonal_two_ways_crossing",
+                 "track_diagonal_four_ways_crossing",
+                 "track_diamond_crossing",
+                 "track_diamond_crossing_left",
+                 "track_double_diamond_crossing",
+                 "track_universal_crossing" -> true;
+            default -> false;
+        };
     }
 
+    // STEP_9_3G_T5_S1_UNIFIED_DIAGONAL_SNAP
+    // Historical method name retained. The exact 8-way tangent gate now
+    // covers the complete diagonal placement network in BOTH directions.
+    private static boolean isOriginalEightWaySnapPair(String incomingId,
+                                                       String sourceId) {
+        return isEightWaySnapFamily(incomingId)
+                && isEightWaySnapFamily(sourceId);
+    }
     private static boolean isOriginalDiagonalCrossingSnapPair(
             String incomingId, String sourceId) {
         if (TARGET_DIAGONAL_CROSSING.equals(sourceId)) {
@@ -2003,7 +1970,7 @@ public final class LegacyBatchTrackItem extends Item {
                                          String sourceId) {
         return connectorAt(
                 segment, outward, RouteHeading8.fromDirection(outward),
-                click, sourceId);
+                click, sourceId, -1);
     }
 
     private static Connector connectorAt(BlockPos segment,
@@ -2011,6 +1978,16 @@ public final class LegacyBatchTrackItem extends Item {
                                          RouteHeading8 routeHeading,
                                          Vec3 click,
                                          String sourceId) {
+        return connectorAt(
+                segment, outward, routeHeading, click, sourceId, -1);
+    }
+
+    private static Connector connectorAt(BlockPos segment,
+                                         Direction outward,
+                                         RouteHeading8 routeHeading,
+                                         Vec3 click,
+                                         String sourceId,
+                                         int sourceEndpointPart) {
         double connectorX =
                 segment.getX() + 0.5D + outward.getStepX() * 0.5D;
         double connectorY =
@@ -2022,7 +1999,7 @@ public final class LegacyBatchTrackItem extends Item {
         double dz = click.z - connectorZ;
         return new Connector(
                 segment, outward, routeHeading,
-                dx * dx + dz * dz, sourceId);
+                dx * dx + dz * dz, sourceId, sourceEndpointPart);
     }
 
     private static String formatConnector(Connector connector) {
@@ -2030,6 +2007,7 @@ public final class LegacyBatchTrackItem extends Item {
             return "NONE";
         }
         return "sourceId=" + connector.sourceId
+                + ",sourceEndpointPart=" + connector.sourceEndpointPart
                 + ",segment=" + connector.segment
                 + ",outward=" + connector.outward
                 + ",routeHeading=" + connector.routeHeading
@@ -2053,6 +2031,36 @@ public final class LegacyBatchTrackItem extends Item {
      * therefore meet a perpendicular endpoint one cell away. Ordinary track
      * keeps the stricter face-to-face rule.
      */
+    // STEP_9_3G_T5_S1_UNIFIED_DIAGONAL_SNAP
+    private static boolean isFortyFiveCurveSnapFamily(String id) {
+        return id != null
+                && id.startsWith("track_curve_45_")
+                && (id.endsWith("_left") || id.endsWith("_right"));
+    }
+
+    private static boolean isDiagonalCrossingSnapFamily(String id) {
+        if (id == null) {
+            return false;
+        }
+        return switch (id) {
+            case "track_diagonal_crossing",
+                 "track_diagonal_two_ways_crossing",
+                 "track_diagonal_four_ways_crossing",
+                 "track_diamond_crossing",
+                 "track_diamond_crossing_left",
+                 "track_double_diamond_crossing",
+                 "track_universal_crossing" -> true;
+            default -> false;
+        };
+    }
+
+    private static boolean isEightWaySnapFamily(String id) {
+        return isDiagonalStraightFamily(id)
+                || isMedium45SwitchSource(id)
+                || isFortyFiveCurveSnapFamily(id)
+                || isDiagonalCrossingSnapFamily(id);
+    }
+
     private static boolean isDiagonalConnectorFamily(String id) {
         if (id == null) {
             return false;
@@ -2105,7 +2113,10 @@ public final class LegacyBatchTrackItem extends Item {
                 Direction outward =
                         placementEndpointOutward(
                                 batch.getSpec(), facing, endpoint);
-                if (!hasRailNeighbor(level, logicalSegment, outward)) {
+                RouteHeading8 endpointHeading = routeHeadingForEndpoint(
+                        batch.getSpec(), root, facing, endpoint);
+                if (!hasRouteNeighbor(
+                        level, logicalSegment, outward, endpointHeading)) {
                     out.add(outward);
                 }
             }
@@ -2188,6 +2199,49 @@ public final class LegacyBatchTrackItem extends Item {
             case SOUTH_WEST ->
                     List.of(Direction.SOUTH, Direction.WEST);
         };
+    }
+
+    // STEP_9_3G_T6_S1_ONE_CORE_NEIGHBOR
+    // A physical endpoint is closed only by an actual compatible endpoint core
+    // one route step away. Cardinal routes retain the vanilla cardinal probe;
+    // diagonal batch routes require a real batch endpoint at the RouteHeading8
+    // diagonal cell with the opposite route heading.
+    private static boolean hasRouteNeighbor(Level level,
+                                            BlockPos segment,
+                                            Direction outward,
+                                            RouteHeading8 routeHeading) {
+        if (routeHeading == null || !routeHeading.isDiagonal()) {
+            return hasRailNeighbor(level, segment, outward);
+        }
+
+        BlockPos routeNeighbor = segment.offset(
+                routeHeading.dx, 0, routeHeading.dz);
+        BlockState neighborState = level.getBlockState(routeNeighbor);
+        if (!(neighborState.getBlock()
+                instanceof AbstractLegacyBatchRailBlock neighborBatch)) {
+            return false;
+        }
+
+        BlockPos neighborRoot = neighborBatch.getAssemblyRoot(
+                routeNeighbor, neighborState);
+        Direction neighborFacing = neighborBatch.getAssemblyFacing(
+                neighborState);
+        for (LegacyBatchTrackSpec.Endpoint neighborEndpoint
+                : neighborBatch.getSpec().endpoints()) {
+            BlockPos neighborLogical = neighborBatch.getSpec().endpointPosition(
+                    neighborRoot, neighborFacing, neighborEndpoint);
+            if (!routeNeighbor.equals(neighborLogical)) {
+                continue;
+            }
+
+            RouteHeading8 neighborHeading = routeHeadingForEndpoint(
+                    neighborBatch.getSpec(), neighborRoot,
+                    neighborFacing, neighborEndpoint);
+            if (neighborHeading == routeHeading.opposite()) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private static boolean hasRailNeighbor(Level level,

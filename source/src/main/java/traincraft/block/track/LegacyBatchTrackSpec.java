@@ -424,22 +424,24 @@ public final class LegacyBatchTrackSpec {
     }
 
     /**
-     * TC4.5 SMALL_DIAGONAL_STRAIGHT physical footprint.
+     * Step 9.3g-t6-s1 canonical one-core Small Diagonal.
      *
-     * Original ItemTCRail.smallDiagonalStraight() placed one real TileTCRail at
-     * the visual/root cell and two invisible gag rails on the CARDINAL side
-     * cells. The diagonal corner itself was intentionally left empty:
+     * The old compatibility topology kept physical p2 at (1,0) and exposed a
+     * virtual logical endpoint at (1,-1). t6 makes the physical endpoint core
+     * authoritative instead: p2 now occupies the actual diagonal route end.
      *
      *   canonical NORTH
      *
-     *     p1 gag (0,-1) ---- logical continuation (1,-1), EMPTY
+     *     p1 guide (0,-1) ---- p2 core/end (1,-1)
      *          |                         ^
-     *          |                         | endpoint outward NORTH
-     *     p0 owner (0,0) ---- p2 gag (1,0)
+     *          |                         | true route NORTH_EAST
+     *     p0 core (0,0)
      *
-     * The continuous 45-degree centerline is still p0 -> (1,-1); the two
-     * physical gag cells only keep vanilla rail detection/stability around it.
+     * p0 -> p2 remains the exact (+1,-1) diagonal route. The assembly remains
+     * three parts and the existing p2 NORTH_WEST guide shape still joins p1
+     * from the west while leaving its north arm available for rail support.
      */
+    // STEP_9_3G_T6_S1_SMALL_DIAGONAL_PHYSICAL_P2_CORE
     public static LegacyBatchTrackSpec originalSmallDiagonal(String id) {
         List<Cell> cells = List.of(
                 new Cell(
@@ -451,26 +453,13 @@ public final class LegacyBatchTrackSpec {
                         RailShape.SOUTH_EAST,
                         RailShape.SOUTH_EAST),
                 new Cell(
-                        new Point(1, 0, 0),
+                        new Point(1, 0, -1),
                         RailShape.NORTH_WEST,
                         RailShape.NORTH_WEST));
 
         List<Endpoint> endpoints = List.of(
                 new Endpoint(0, Direction.SOUTH),
-
-                // STEP_9_3E_T5_R2_OG_SMALL_LOGICAL_ENDPOINT
-                //
-                // TC4.5's second physical gag is at (1,0), but the actual
-                // diagonal continuation is the deliberately EMPTY corner
-                // (1,-1). Keep part 2 as the physical endpoint owner while
-                // exposing its logical connector one canonical block north.
-                //
-                // This is exactly what Endpoint.logicalOffset exists for:
-                // physical p2 (1,0) + logicalOffset (0,-1) = logical (1,-1).
-                new Endpoint(
-                        2,
-                        Direction.NORTH,
-                        new Point(0, 0, -1)));
+                new Endpoint(2, Direction.NORTH));
 
         return new LegacyBatchTrackSpec(id, cells, endpoints, false);
     }
@@ -567,6 +556,140 @@ public final class LegacyBatchTrackSpec {
         }
 
         return new LegacyBatchTrackSpec(id, cells, endpoints, true);
+    }
+
+    /**
+     * Step 9.3g-t5-s4c: exact TC4.5 crossing owner/proxy topology.
+     *
+     * Every family keeps one real/model owner at canonical (0,0). Only cells
+     * that TC4.5 actually placed are retained:
+     *
+     *   Right Diamond   = owner + N/S + SW/NE                 (5 cells)
+     *   Left Diamond    = owner + N/S + SE/NW                 (5 cells)
+     *   Double Diamond  = owner + N/S + both diagonal pairs   (7 cells)
+     *   Diagonal 2-Way  = complete 3x3 proxy square           (9 cells)
+     *   Four-Way        = complete 3x3 proxy square           (9 cells)
+     *   Universal       = complete 3x3 proxy square           (9 cells)
+     *
+     * The Diagonal 2-Way is the one special case whose four cardinal cells
+     * are gags/proxies rather than exposed routes. This matches TC4.5's
+     * diagonalTwoWaysCrossing() placement routine.
+     *
+     * Endpoint order is route-paired. LegacyContinuousTrackPath and the s1
+     * eight-way snap classifier consume each consecutive pair as one route.
+     */
+    public static LegacyBatchTrackSpec originalTraincraftCrossing(
+            String id,
+            boolean northSouth,
+            boolean eastWest,
+            boolean southWestNorthEast,
+            boolean southEastNorthWest) {
+        LegacyBatchTrackSpec proxyBase = originalDiagonalCrossing(id);
+
+        Point center = new Point(0, 0, 0);
+        Point north = new Point(0, 0, -1);
+        Point south = new Point(0, 0, 1);
+        Point west = new Point(-1, 0, 0);
+        Point east = new Point(1, 0, 0);
+        Point northWest = new Point(-1, 0, -1);
+        Point northEast = new Point(1, 0, -1);
+        Point southWest = new Point(-1, 0, 1);
+        Point southEast = new Point(1, 0, 1);
+
+        Set<Point> occupied = new LinkedHashSet<>();
+        occupied.add(center);
+
+        if (southWestNorthEast) {
+            occupied.add(southWest);
+            occupied.add(northEast);
+        }
+        if (southEastNorthWest) {
+            occupied.add(southEast);
+            occupied.add(northWest);
+        }
+        if (northSouth) {
+            occupied.add(north);
+            occupied.add(south);
+        }
+        if (eastWest) {
+            occupied.add(west);
+            occupied.add(east);
+        }
+
+        // TC4.5 Diagonal Two-Ways places four additional cardinal gag cells
+        // even though only the two diagonal routes are externally connectable.
+        if ("track_diagonal_two_ways_crossing".equals(id)) {
+            occupied.add(north);
+            occupied.add(south);
+            occupied.add(west);
+            occupied.add(east);
+        }
+
+        List<Cell> cells = new ArrayList<>();
+        Map<Point, Integer> partByPoint = new LinkedHashMap<>();
+        for (Cell cell : proxyBase.cells) {
+            if (!occupied.contains(cell.point())) {
+                continue;
+            }
+            partByPoint.put(cell.point(), cells.size());
+            cells.add(cell);
+        }
+
+        List<Endpoint> endpoints = new ArrayList<>();
+        if (southWestNorthEast) {
+            addOriginalCrossingRoute(
+                    endpoints, partByPoint,
+                    southWest, Direction.SOUTH,
+                    northEast, Direction.NORTH,
+                    id);
+        }
+        if (southEastNorthWest) {
+            addOriginalCrossingRoute(
+                    endpoints, partByPoint,
+                    southEast, Direction.EAST,
+                    northWest, Direction.WEST,
+                    id);
+        }
+        if (northSouth) {
+            addOriginalCrossingRoute(
+                    endpoints, partByPoint,
+                    north, Direction.NORTH,
+                    south, Direction.SOUTH,
+                    id);
+        }
+        if (eastWest) {
+            addOriginalCrossingRoute(
+                    endpoints, partByPoint,
+                    west, Direction.WEST,
+                    east, Direction.EAST,
+                    id);
+        }
+
+        if (endpoints.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "Original crossing must expose at least one route: " + id);
+        }
+
+        return new LegacyBatchTrackSpec(id, cells, endpoints, true);
+    }
+
+    private static void addOriginalCrossingRoute(
+            List<Endpoint> endpoints,
+            Map<Point, Integer> partByPoint,
+            Point first,
+            Direction firstOutward,
+            Point second,
+            Direction secondOutward,
+            String id) {
+        Integer firstPart = partByPoint.get(first);
+        Integer secondPart = partByPoint.get(second);
+        if (firstPart == null || secondPart == null) {
+            throw new IllegalStateException(
+                    "Missing original crossing route cell: " + id
+                            + " first=" + first + " second=" + second);
+        }
+        endpoints.add(new Endpoint(firstPart, firstOutward));
+        endpoints.add(new Endpoint(secondPart, secondOutward));
     }
 
     public static LegacyBatchTrackSpec singleDynamic(String id,

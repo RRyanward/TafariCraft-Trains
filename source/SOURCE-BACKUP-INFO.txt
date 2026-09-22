@@ -1,0 +1,13 @@
+﻿TafariCraft - Trains â€” GitHub Source Backup
+Date: 2026-09-22
+Local project: D:\TafariCraft - Reborn Development\Traincraft
+GitHub branch: backup/2026-09-22-step9.3g-t7-d2-diagnostic
+Current development phase: Step 9.3g-t7-d2 fixed traversal/follower-routing diagnostic (runtime sweep currently FAIL)
+Frozen production rail baseline: Step 9.3g-t6-s3c
+Frozen baseline JAR reference SHA256: EA782B3CC2A0680E3699A1D8D40DDEF691A35969C96CA3814971BC7DD0167DF5
+t7-d2 diagnostic installed: True
+t7-d2 fixed diagnostic SHA256: BCDCA0804402CD046F5BDECFA0712CCF383F5BB729574A3AA2A494055399F46E
+Current build/libs JAR SHA256: 9A2952B7660E24E5593C04291AD6333FA079E2AA42B3F952019CA02846D92A5A
+
+This source backup intentionally excludes generated .gradle/build/run/log/IDE data
+and historical step-by-step patch folders from the buildable source tree.

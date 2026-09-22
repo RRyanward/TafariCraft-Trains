@@ -644,7 +644,16 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
          * the local rail tangent, so a backwards-placed or closely placed cart
          * cannot be fired diagonally across a corner.
          */
-        if (referenceHorizontalSpeed <= CHAINED_CURVE_MIN_REFERENCE_SPEED) {
+        // STEP_9_3G_T4_R8J_ACTIVE_REVERSE_OWNS_CHAINED_CRAWL
+        // A live S/reverse command must not fall into generic stationary settle
+        // merely because the lead/reference speed briefly dips below 0.003 b/t.
+        SmallSteamLocomotive r8jReverseLead = CouplingManager.findLeadLocomotive(leader);
+        boolean r8jLiveReverseInput = r8jReverseLead != null
+                && !r8jReverseLead.isRemoved()
+                && r8jReverseLead.isReverseDriveRequested();
+
+        if (referenceHorizontalSpeed <= CHAINED_CURVE_MIN_REFERENCE_SPEED
+                && !r8jLiveReverseInput) {
             if (!cornerHandoff && Math.abs(couplingDistance - nearDistance) > 0.04D) {
                 Vec3 offset = leader.position().subtract(this.position());
                 double towardLeaderDot = offset.x * directedTangent.x
@@ -1275,7 +1284,11 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
             if (distance < nearDistance && currentSpeed < desiredSpeed) {
                 safeSpeed = desiredSpeed;
                 intervene = true;
-            } else if (distance > reverseSafetyFarDistance && currentSpeed > desiredSpeed) {
+            // STEP_9_3G_T4_R8J_NO_STRETCHED_REVERSE_HARD_ZERO
+            // While reverse input is live, applyChainedRailPathSpeed() already
+            // performs rate-controlled STRETCHED_REVERSE correction. Do not
+            // hard-clamp the follower to the immediate leader's speed here.
+            } else if (!reverseSafetyInput && distance > reverseSafetyFarDistance && currentSpeed > desiredSpeed) {
                 safeSpeed = desiredSpeed;
                 intervene = true;
             }
@@ -1512,11 +1525,14 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
     @Nullable
     private Vec3 getCurrentRailHorizontalAxis() {
         // STEP_9_3G_T4_R8I_MEDIUM_READ_ONLY_COUPLING_AXIS
+        // STEP_9_3G_T5_R1_SMALL_LARGE_CONSIST_ROUTE_TANGENT
+        // Small and Large now share the same read-only root-route tangent rule.
+        // No switch geometry or route state is changed here.
         // Standard Medium compatibility guide shapes are not the physical route.
         // Read the already-latched continuous route yaw without repositioning
         // the vehicle or running follower movement before vanilla.
         Float mediumRouteYaw = traincraft.block.track.LegacyContinuousTrackPath
-                .continuousStandardMediumFacingYaw(
+                .continuousSmallMediumLargeFacingYaw(
                         this, this.getTrainFacingYaw());
         if (mediumRouteYaw != null) {
             double radians = Math.toRadians(mediumRouteYaw);
@@ -1692,6 +1708,64 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
         double postMoveGapThreshold = curveTransition
                 ? this.getPrimaryCurvePostMoveGapThreshold(leader)
                 : this.getPrimaryPostMoveGapThreshold(leader);
+
+        // STEP_9_3G_T4_R8K_PRIMARY_REVERSE_POSTMOVE_DIRECTION
+        // The 192557 recorder proved the pre-move primary controller commands
+        // the correct reverse direction, but vanilla minecart movement can
+        // occasionally leave the first tender moving physically TOWARD the
+        // locomotive on the same tick. The old post-move early-return then
+        // preserved that wrong-way velocity whenever spacing was still inside
+        // the normal gap threshold, producing the visible 0-2 km/h pulse.
+        //
+        // During established + live reverse only, correct DIRECTION after
+        // vanilla movement. Preserve the measured horizontal speed magnitude;
+        // do not add energy, teleport, or alter spacing/topology.
+        SmallSteamLocomotive r8kReverseLead =
+                leader instanceof SmallSteamLocomotive directReverseLead
+                        ? directReverseLead
+                        : CouplingManager.findLeadLocomotive(leader);
+        boolean r8kLiveEstablishedReverse =
+                r8kReverseLead != null
+                        && !r8kReverseLead.isRemoved()
+                        && r8kReverseLead.isReverseDriveRequested()
+                        && r8kReverseLead.isReverseConsistTravel();
+
+        if (r8kLiveEstablishedReverse) {
+            Vec3 r8kMotion = this.getDeltaMovement();
+            double r8kHorizontalSpeed = Math.sqrt(
+                    r8kMotion.x * r8kMotion.x
+                            + r8kMotion.z * r8kMotion.z);
+            Vec3 r8kAxis = this.getCurrentRailHorizontalAxis();
+
+            if (r8kAxis != null && r8kHorizontalSpeed > 1.0E-5D) {
+                double r8kTowardDot =
+                        offset.x * r8kAxis.x + offset.z * r8kAxis.z;
+                double r8kTowardSign = r8kTowardDot >= 0.0D ? 1.0D : -1.0D;
+                double r8kMotionAlong =
+                        r8kMotion.x * r8kAxis.x + r8kMotion.z * r8kAxis.z;
+
+                // Positive product means the tender is physically moving
+                // toward its locomotive. Reverse push must move away instead.
+                if (r8kMotionAlong * r8kTowardSign > 1.0E-5D) {
+                    double r8kAwaySign = -r8kTowardSign;
+                    this.setDeltaMovement(
+                            r8kAxis.x * r8kAwaySign * r8kHorizontalSpeed,
+                            r8kMotion.y,
+                            r8kAxis.z * r8kAwaySign * r8kHorizontalSpeed);
+                }
+            }
+        }
+
+        // STEP_9_3G_T4_R8L_BYPASS_FORWARD_POSTMOVE_CATCHUP
+        // r8k already corrected any wrong-way vanilla result above. During
+        // established live reverse, do not continue into the legacy primary
+        // post-move catchup below: that code always aims TOWARD the locomotive
+        // and was measured flipping the first tender +Z whenever the primary
+        // gap barely exceeded the forward post-move threshold.
+        if (r8kLiveEstablishedReverse) {
+            return;
+        }
+
         if (distance <= postMoveGapThreshold || distance < 1.0E-5D) {
             return;
         }
@@ -1964,7 +2038,7 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
         // Use the root-owned Medium session for body yaw. This ignores the
         // compatibility guide shapes such as p4=east_west.
         Float mediumYaw = traincraft.block.track.LegacyContinuousTrackPath
-                .continuousStandardMediumFacingYaw(this, previous);
+                .continuousSmallMediumLargeFacingYaw(this, previous);
         if (mediumYaw != null) {
             this.trainFacingYaw = mediumYaw;
             this.trainFacingInitialized = true;
@@ -2105,7 +2179,7 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
         // root-owned. Do not let those hidden shapes switch the coupling
         // controller into its vanilla 90-degree-corner spacing mode.
         Float mediumRouteYaw = traincraft.block.track.LegacyContinuousTrackPath
-                .continuousStandardMediumFacingYaw(
+                .continuousSmallMediumLargeFacingYaw(
                         this, this.getTrainFacingYaw());
         if (mediumRouteYaw != null) {
             return false;

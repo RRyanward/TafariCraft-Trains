@@ -8,6 +8,8 @@ import net.minecraft.world.level.block.BaseRailBlock;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.phys.Vec3;
 
+import java.util.List;
+
 /**
  * Step 9.3d-t10-r2 runtime path adapter for classic Traincraft pieces whose visible
  * geometry cannot be represented by vanilla RailShape alone.
@@ -34,8 +36,9 @@ import net.minecraft.world.phys.Vec3;
  *   medium switches so an adjacent diagonal crossing can take ownership before
  *   vanilla snaps to the crossing's staircase endpoint.
  *
- * The hidden guide rails, specs, placement, switch toggles, OBJ resources and
- * Dedicated RC remain untouched.
+ * Step 9.3g-t5-s4c restores exact crossing specs and consumes their explicit
+ * route pairs here. Hidden segment rendering, switch toggles, OBJ resources,
+ * rolling-stock tuning, and the Dedicated RC remain untouched.
  */
 public final class LegacyContinuousTrackPath {
     private static final double RAIL_SURFACE_Y = 0.0625D;
@@ -628,8 +631,12 @@ public final class LegacyContinuousTrackPath {
         }
 
         if (isTargetSmallSwitch(context)) {
+            // STEP_9_3G_T5_R1_SMALL_FOLLOWER_ROOT_SPEED
+            // Small turnout gag-cell RailShapes are compatibility data only.
+            // Preserve the coupling-selected follower speed while the existing
+            // Small root-owned centerline supplies position/tangent ownership.
             applySmallSwitch(cart, context, preRailMotion, false,
-                    false, false, Double.POSITIVE_INFINITY, false);
+                    false, false, Double.POSITIVE_INFINITY, true);
             return;
         }
 
@@ -644,7 +651,10 @@ public final class LegacyContinuousTrackPath {
             // tangent. Other family turnouts retain the frozen r8 behavior
             // until they are tested individually.
             boolean retainFollowerSpeed =
-                    isTargetStandardMediumFamilySwitch(context);
+                    isTargetStandardMediumFamilySwitch(context)
+                            || isTargetLargeFamilySwitch(context)
+                            || isTargetVeryLargeFamilySwitch(context)
+                            || isTarget45MediumFamilySwitch(context);
             applyFamilySwitch(cart, context, preRailMotion, false,
                     false, false, Double.POSITIVE_INFINITY,
                     retainFollowerSpeed);
@@ -756,6 +766,34 @@ public final class LegacyContinuousTrackPath {
     }
 
     /**
+     * Step 9.3g-t5-r1: consist-facing ownership for the switch families being
+     * runtime-revalidated now: Small, Standard Medium and Large.
+     *
+     * This is read-only. It does not move the cart. SteamTender and all rolling
+     * stock derived from it use the returned yaw as their coupling/body tangent
+     * instead of trusting hidden compatibility RailShapes inside the assembly.
+     */
+    public static Float continuousSmallMediumLargeFacingYaw(
+            AbstractMinecart cart,
+            float currentBodyYaw) {
+        // STEP_9_3G_T5_R2_VERY_LARGE_CONSIST_ROUTE_TANGENT
+        // STEP_9_3G_T5_R3_45_MEDIUM_CONSIST_ROUTE_TANGENT
+        // Historical method name retained to keep SteamTender byte-for-byte
+        // frozen. The read-only root tangent now covers Very Large and 45
+        // Medium in addition to the previously confirmed families.
+        Context context = findPoseContext(cart, cart.getDeltaMovement());
+        if (context == null
+                || !(isTargetSmallSwitch(context)
+                        || isTargetStandardMediumFamilySwitch(context)
+                        || isTargetLargeFamilySwitch(context)
+                        || isTargetVeryLargeFamilySwitch(context)
+                        || isTarget45MediumFamilySwitch(context))) {
+            return null;
+        }
+        return continuousFacingYaw(cart, currentBodyYaw);
+    }
+
+    /**
      * STEP_9_3E_T5_R1_SMALL_DIAGONAL_PRESPAWN_ALIGNMENT
      *
      * RollingStockItem historically spawns every vehicle at the center of the
@@ -860,7 +898,7 @@ public final class LegacyContinuousTrackPath {
         // Original Traincraft's lastTrack owner would never rotate the vehicle
         // because a gag cell changed. Use the body-side latched when this exact
         // crossing session began; travel may reverse without changing it.
-        if (TARGET_DIAGONAL_CROSSING.equals(context.spec.id())) {
+        if (isCrossingDiagonalFamily(context.spec.id())) {
             var data = cart.getPersistentData();
             String contextKey = linearContextKey(context);
             if (data.contains(LINEAR_CONTEXT_KEY)
@@ -1184,6 +1222,50 @@ public final class LegacyContinuousTrackPath {
                     cart, context, sample.routeIndex, atEnd);
 
             if (hasExternal) {
+                // STEP_9_3G_T4_R8Q_MEDIUM_ATOMIC_EXTERNAL_HANDOFF
+                //
+                // r8p proved that waiting for Standard Medium's generic 0.60
+                // endpoint bridge can leave a chained follower route-owned at
+                // the old endpoint while its leader is already on ordinary
+                // external rail. The follower then keeps the Medium tangent /
+                // handoff state and can race away from the consist.
+                //
+                // For Standard Medium only, once the analytic endpoint itself
+                // has been reached and the connected rail is a REAL non-batch
+                // external rail, advance atomically to the already-proven 0.60
+                // bridge-release point and clear the family session in the same
+                // tick. Direct p0<->p0 turnout handoff is intentionally excluded
+                // because the connected rail there is another batch rail.
+                if (isTargetStandardMediumFamilySwitch(context)
+                        && hasNonBatchExternalRailAtFamilySwitchEndpoint(
+                                cart, context, sample.routeIndex, atEnd)) {
+                    boolean r8qReachedEndpoint = atEnd
+                            ? sample.progress >= sample.length
+                            : sample.progress <= 0.0D;
+                    if (r8qReachedEndpoint) {
+                        double r8qHandoffProgress = atEnd
+                                ? sample.length
+                                        + FAMILY_SWITCH_ENDPOINT_BRIDGE_RELEASE
+                                : -FAMILY_SWITCH_ENDPOINT_BRIDGE_RELEASE;
+                        FamilySwitchSample r8qHandoff =
+                                sampleFamilySwitchBridgeAtProgress(
+                                        context, sample.routeIndex,
+                                        r8qHandoffProgress);
+                        if (r8qHandoff != null) {
+                            cart.setPos(
+                                    r8qHandoff.targetHorizontal.x,
+                                    context.root.getY() + RAIL_SURFACE_Y,
+                                    r8qHandoff.targetHorizontal.z);
+                            cart.setDeltaMovement(
+                                    r8qHandoff.tangent.x * sign * speed,
+                                    postRailMotion.y,
+                                    r8qHandoff.tangent.z * sign * speed);
+                            clearFamilySwitchSession(cart, context);
+                            return;
+                        }
+                    }
+                }
+
                 // Medium-45 keeps the already-proven TC4.5 branch handoff. Its
                 // mathematical 3.75-radius endpoint lives beyond the short gag
                 // footprint, so arm the attached diagonal at the exact analytic
@@ -2052,6 +2134,77 @@ public final class LegacyContinuousTrackPath {
                 pos.getX() + 0.5D, pos.getZ() + 0.5D);
     }
 
+    /**
+     * Step 9.3g-t4-r8q: true only when the selected Standard Medium endpoint
+     * connects directly to an ordinary/non-batch rail. This deliberately rejects
+     * direct family-switch connections such as paired p0<->p0, which must keep
+     * using the existing reciprocal family handoff logic.
+     */
+    private static boolean hasNonBatchExternalRailAtFamilySwitchEndpoint(
+            AbstractMinecart cart,
+            Context context,
+            int routeIndex,
+            boolean atEnd) {
+        if (!isTargetStandardMediumFamilySwitch(context)) {
+            return false;
+        }
+
+        FamilySwitchEndpoints endpoints = familySwitchEndpoints(context);
+        if (endpoints == null) {
+            return false;
+        }
+
+        LegacyBatchTrackSpec.Endpoint endpoint = atEnd
+                ? (routeIndex == FAMILY_SWITCH_ROUTE_BRANCH
+                        ? endpoints.branch : endpoints.straight)
+                : endpoints.common;
+        BlockPos endpointPos = context.spec.endpointPosition(
+                context.root, context.facing, endpoint);
+        Direction outward;
+
+        if (atEnd && routeIndex == FAMILY_SWITCH_ROUTE_STRAIGHT) {
+            FamilySwitchSample routeStart = sampleFamilySwitchAtProgress(
+                    context, routeIndex, 0.0D);
+            FamilySwitchSample routeEnd = routeStart == null
+                    ? null
+                    : sampleFamilySwitchAtProgress(
+                            context, routeIndex, routeStart.length);
+            if (routeEnd == null
+                    || routeEnd.tangent.horizontalDistanceSqr()
+                            <= MOTION_EPSILON) {
+                return false;
+            }
+
+            double tx = routeEnd.tangent.x;
+            double tz = routeEnd.tangent.z;
+            if (Math.abs(tx) >= Math.abs(tz)) {
+                outward = tx >= 0.0D
+                        ? Direction.EAST
+                        : Direction.WEST;
+            } else {
+                outward = tz >= 0.0D
+                        ? Direction.SOUTH
+                        : Direction.NORTH;
+            }
+        } else {
+            outward = context.spec.rotateDirection(
+                    context.facing, endpoint.outward());
+        }
+
+        BlockPos next = endpointPos.relative(outward);
+        BlockState state = cart.level().getBlockState(next);
+        if (BaseRailBlock.isRail(state)
+                && !(state.getBlock()
+                        instanceof AbstractLegacyBatchRailBlock)) {
+            return true;
+        }
+
+        BlockState below = cart.level().getBlockState(next.below());
+        return BaseRailBlock.isRail(below)
+                && !(below.getBlock()
+                        instanceof AbstractLegacyBatchRailBlock);
+    }
+
     private static boolean hasExternalRailAtFamilySwitchEndpoint(
             AbstractMinecart cart,
             Context context,
@@ -2411,6 +2564,59 @@ public final class LegacyContinuousTrackPath {
         }
 
         return null;
+    }
+
+    /**
+     * Step 9.3g-t4-r8r: preserve the topology-proven branch route when one
+     * Standard Medium p0 endpoint hands directly to the reciprocal p0 endpoint
+     * of another Standard Medium. p0 is the branch/crossover endpoint, so the
+     * destination session must begin on BRANCH at route-end progress.
+     */
+    private static void seedStandardMediumPairedBranchHandoffSession(
+            AbstractMinecart cart,
+            Context destination) {
+        if (!isTargetStandardMediumFamilySwitch(destination)) {
+            return;
+        }
+
+        FamilySwitchEndpoints endpoints = familySwitchEndpoints(destination);
+        if (endpoints == null) {
+            return;
+        }
+
+        BlockPos branchPos = destination.spec.endpointPosition(
+                destination.root, destination.facing, endpoints.branch);
+        if (!destination.railPos.equals(branchPos)) {
+            return;
+        }
+
+        FamilySwitchSample routeStart = sampleFamilySwitchAtProgress(
+                destination, FAMILY_SWITCH_ROUTE_BRANCH, 0.0D);
+        if (routeStart == null) {
+            return;
+        }
+        FamilySwitchSample branchEndpoint = sampleFamilySwitchAtProgress(
+                destination, FAMILY_SWITCH_ROUTE_BRANCH,
+                routeStart.length);
+        if (branchEndpoint == null) {
+            return;
+        }
+
+        var data = cart.getPersistentData();
+        data.putString(
+                FAMILY_SWITCH_CONTEXT_KEY, linearContextKey(destination));
+        data.putInt(
+                FAMILY_SWITCH_ROUTE_KEY, FAMILY_SWITCH_ROUTE_BRANCH);
+        data.putDouble(FAMILY_SWITCH_PROGRESS_KEY, routeStart.length);
+        data.putLong(
+                FAMILY_SWITCH_TICK_KEY, cart.level().getGameTime());
+        if (branchEndpoint.tangent.horizontalDistanceSqr()
+                > MOTION_EPSILON) {
+            data.putDouble(
+                    FAMILY_SWITCH_BODY_SIGN_KEY,
+                    bodySignRelativeToTangent(
+                            cart.getYRot(), branchEndpoint.tangent));
+        }
     }
 
     private static Context findLatchedFamilySwitchContext(
@@ -3876,7 +4082,7 @@ public final class LegacyContinuousTrackPath {
                 // sessions therefore advance only from their latched progress and
                 // real horizontal speed. Other diagonal families keep the proven
                 // correction behavior.
-                if (TARGET_DIAGONAL_CROSSING.equals(context.spec.id())) {
+                if (isCrossingDiagonalFamily(context.spec.id())) {
                     progress = predicted;
                 } else if (Math.abs(projected - predicted)
                         <= LINEAR_PROGRESS_CORRECTION_LIMIT) {
@@ -3921,7 +4127,7 @@ public final class LegacyContinuousTrackPath {
         // crossing diagonal. Do not recompute this from vanilla RailShape yaw
         // while inside the crossing: reversing travel must make the locomotive
         // back through the crossing, not rotate the body 180 degrees.
-        if (TARGET_DIAGONAL_CROSSING.equals(context.spec.id())
+        if (isCrossingDiagonalFamily(context.spec.id())
                 && (!sameSession || !data.contains(LINEAR_BODY_SIGN_KEY))) {
             double yaw = Math.toRadians(fallbackYaw);
             double bodyForwardX = Math.sin(yaw);
@@ -4255,7 +4461,7 @@ public final class LegacyContinuousTrackPath {
             return atEnd ? context.spec.partCount() - 1 : 0;
         }
 
-        if (TARGET_DIAGONAL_CROSSING.equals(id)) {
+        if (isCrossingDiagonalFamily(id)) {
             return originalDiagonalCrossingEndpointPart(
                     context, routeIndex, atEnd);
         }
@@ -4431,25 +4637,51 @@ public final class LegacyContinuousTrackPath {
         String id = context.spec.id();
 
         if (isCrossingDiagonalFamily(id)) {
-            int minX = Integer.MAX_VALUE;
-            int maxX = Integer.MIN_VALUE;
-            int minZ = Integer.MAX_VALUE;
-            int maxZ = Integer.MIN_VALUE;
-
-            for (int part = 0; part < context.spec.partCount(); part++) {
-                LegacyBatchTrackSpec.Point point = context.spec.pointForPart(part);
-                minX = Math.min(minX, point.x);
-                maxX = Math.max(maxX, point.x);
-                minZ = Math.min(minZ, point.z);
-                maxZ = Math.max(maxZ, point.z);
+            // STEP_9_3G_T5_S4C_TC45_CROSSING_ROUTE_PAIRS
+            //
+            // Crossing endpoint order is route-paired. The regular restored
+            // Diagonal Crossing already emits its two diagonal pairs this way,
+            // and the s4c TC4.5 family specs do the same for their exact
+            // straight/diagonal route set.
+            //
+            // Do not infer routes from the hidden guide bounding box: that old
+            // shortcut is what turned every Diamond/Universal variant into two
+            // generic corner diagonals even when the visible model exposes
+            // cardinal routes or only one handed diagonal.
+            List<LegacyBatchTrackSpec.Endpoint> endpoints =
+                    context.spec.endpoints();
+            if (endpoints.isEmpty() || (endpoints.size() & 1) != 0) {
+                return new LinearRoute[0];
             }
 
-            LinearRoute first = makeLinearRoute(
-                    context, minX, maxZ, maxX, minZ, 0);
+            LinearRoute[] routes =
+                    new LinearRoute[endpoints.size() / 2];
+            for (int routeIndex = 0;
+                    routeIndex < routes.length;
+                    routeIndex++) {
+                LegacyBatchTrackSpec.Endpoint startEndpoint =
+                        endpoints.get(routeIndex * 2);
+                LegacyBatchTrackSpec.Endpoint endEndpoint =
+                        endpoints.get(routeIndex * 2 + 1);
 
-            LinearRoute second = makeLinearRoute(
-                    context, maxX, maxZ, minX, minZ, 1);
-            return new LinearRoute[] { first, second };
+                LegacyBatchTrackSpec.Point startPhysical =
+                        context.spec.pointForPart(startEndpoint.part());
+                LegacyBatchTrackSpec.Point startLogical =
+                        startEndpoint.logicalOffset();
+                LegacyBatchTrackSpec.Point endPhysical =
+                        context.spec.pointForPart(endEndpoint.part());
+                LegacyBatchTrackSpec.Point endLogical =
+                        endEndpoint.logicalOffset();
+
+                routes[routeIndex] = makeLinearRoute(
+                        context,
+                        startPhysical.x + startLogical.x,
+                        startPhysical.z + startLogical.z,
+                        endPhysical.x + endLogical.x,
+                        endPhysical.z + endLogical.z,
+                        routeIndex);
+            }
+            return routes;
         }
 
         if ("track_diagonal_straight_small".equals(id)) {
@@ -5563,6 +5795,32 @@ public final class LegacyContinuousTrackPath {
         // actually crossed an external connector.
         Context latchedFamily = findLatchedFamilySwitchContext(cart, base);
         if (latchedFamily != null) {
+            // STEP_9_3G_T4_R8P_MEDIUM_EXTERNAL_RAIL_RELEASE
+            // Standard Medium remains authoritative while the vehicle is inside
+            // its batch assembly, including direct p0<->p0 turnout handoff.
+            // Once a real external non-batch rail is physically under the cart,
+            // that rail must own movement immediately. Otherwise the still-live
+            // family endpoint bridge can pull a rear follower back onto the old
+            // analytic Medium route after it has already exited the turnout.
+            if (isTargetStandardMediumFamilySwitch(latchedFamily)) {
+                boolean r8pDirectBatchRail = false;
+                boolean r8pDirectExternalRail = false;
+                for (BlockPos directPos : direct) {
+                    BlockState directState = cart.level().getBlockState(directPos);
+                    if (directState.getBlock()
+                            instanceof AbstractLegacyBatchRailBlock) {
+                        r8pDirectBatchRail = true;
+                    } else if (directState.getBlock() instanceof BaseRailBlock) {
+                        r8pDirectExternalRail = true;
+                    }
+                }
+
+                if (!r8pDirectBatchRail && r8pDirectExternalRail) {
+                    clearFamilySwitchSession(cart, latchedFamily);
+                    return null;
+                }
+            }
+
             // STEP_9_3G_T4_R4_CONNECTED_FAMILY_HANDOFF
             //
             // The frozen Small r11 behavior allows a directly connected second
@@ -5576,7 +5834,23 @@ public final class LegacyContinuousTrackPath {
             Context connectedFamily = findConnectedFamilySwitchHandoff(
                     cart, direct, latchedFamily, handoffMotion);
             if (connectedFamily != null) {
+                // STEP_9_3G_T4_R8R_MEDIUM_P0_PAIR_ROUTE_RESEED
+                // A reciprocal Standard Medium p0<->p0 handoff has already
+                // topology-proved the destination endpoint. Do not throw that
+                // information away and ask freshFamilySwitchEntryRoute() to
+                // infer the route again from transient motion after a reverse
+                // -> stop -> forward change. Runtime r8q showed that ambiguity
+                // can reseed the follower with the wrong Medium tangent, after
+                // which chained spacing accelerates it away from its leader.
+                boolean r8rStandardMediumPair =
+                        isTargetStandardMediumFamilySwitch(latchedFamily)
+                                && isTargetStandardMediumFamilySwitch(
+                                        connectedFamily);
                 clearFamilySwitchSession(cart, latchedFamily);
+                if (r8rStandardMediumPair) {
+                    seedStandardMediumPairedBranchHandoffSession(
+                            cart, connectedFamily);
+                }
                 return connectedFamily;
             }
             return latchedFamily;
@@ -6072,9 +6346,9 @@ public final class LegacyContinuousTrackPath {
      * route that the bogie is actually leaving. A Small Diagonal may hand into
      * the crossing only while moving toward the Small endpoint connected to it.
      *
-     * The method is intentionally a no-op except for handoffs involving
-     * track_diagonal_crossing or a Small-Diagonal-to-Small-Diagonal pair,
-     * preserving the accepted Medium-45 and all other diagonal behavior.
+     * The method is intentionally a no-op except for handoffs involving the
+     * restored TC4.5 crossing family or a Small-Diagonal-to-Small-Diagonal
+     * pair, preserving the accepted Medium-45 and other diagonal behavior.
      */
     private static boolean crossingHandoffDirectionMatches(
             AbstractMinecart cart,
@@ -6082,9 +6356,9 @@ public final class LegacyContinuousTrackPath {
             Context candidate,
             Vec3 handoffMotion) {
         boolean sourceCrossing =
-                TARGET_DIAGONAL_CROSSING.equals(source.spec.id());
+                isCrossingDiagonalFamily(source.spec.id());
         boolean candidateCrossing =
-                TARGET_DIAGONAL_CROSSING.equals(candidate.spec.id());
+                isCrossingDiagonalFamily(candidate.spec.id());
         boolean sourceSmall =
                 "track_diagonal_straight_small".equals(source.spec.id());
         boolean candidateSmall =
@@ -6372,31 +6646,18 @@ public final class LegacyContinuousTrackPath {
             return -1;
         }
 
-        // Step 9.3e-t1: no endpoint is remapped by a visual-anchor exception.
-        // TC4.5 keeps the incoming diagonal owner through the crossing, so each
-        // endpoint belongs to the geometric corner-to-corner diagonal that
-        // actually contains it.
-
-        int minX = Integer.MAX_VALUE;
-        int maxX = Integer.MIN_VALUE;
-        int minZ = Integer.MAX_VALUE;
-        int maxZ = Integer.MIN_VALUE;
-        for (int part = 0; part < context.spec.partCount(); part++) {
-            LegacyBatchTrackSpec.Point point = context.spec.pointForPart(part);
-            minX = Math.min(minX, point.x);
-            maxX = Math.max(maxX, point.x);
-            minZ = Math.min(minZ, point.z);
-            maxZ = Math.max(maxZ, point.z);
-        }
-
-        LegacyBatchTrackSpec.Point endpoint = context.spec.pointForPart(endpointPart);
-        if ((endpoint.x == minX && endpoint.z == maxZ)
-                || (endpoint.x == maxX && endpoint.z == minZ)) {
-            return 0;
-        }
-        if ((endpoint.x == maxX && endpoint.z == maxZ)
-                || (endpoint.x == minX && endpoint.z == minZ)) {
-            return 1;
+        // STEP_9_3G_T5_S4C_TC45_CROSSING_ROUTE_PAIRS
+        //
+        // The crossing spec owns route identity explicitly: every consecutive
+        // endpoint pair is one route. This preserves the already-accepted
+        // Diagonal Crossing order while allowing Diamond/Double/Universal
+        // families to expose their real cardinal + handed-diagonal routes.
+        List<LegacyBatchTrackSpec.Endpoint> endpoints =
+                context.spec.endpoints();
+        for (int index = 0; index < endpoints.size(); index++) {
+            if (endpoints.get(index).part() == endpointPart) {
+                return index / 2;
+            }
         }
         return -1;
     }
@@ -6614,6 +6875,36 @@ public final class LegacyContinuousTrackPath {
     private static boolean isTargetStandardMediumFamilySwitch(String id) {
         return "track_switch_medium_left".equals(id)
                 || "track_switch_medium_right".equals(id);
+    }
+
+    private static boolean isTargetLargeFamilySwitch(Context context) {
+        return context != null
+                && isTargetLargeFamilySwitch(context.spec.id());
+    }
+
+    private static boolean isTargetLargeFamilySwitch(String id) {
+        return "track_switch_large_left".equals(id)
+                || "track_switch_large_right".equals(id);
+    }
+
+    private static boolean isTargetVeryLargeFamilySwitch(Context context) {
+        return context != null
+                && isTargetVeryLargeFamilySwitch(context.spec.id());
+    }
+
+    private static boolean isTargetVeryLargeFamilySwitch(String id) {
+        return "track_switch_very_large_left".equals(id)
+                || "track_switch_very_large_right".equals(id);
+    }
+
+    private static boolean isTarget45MediumFamilySwitch(Context context) {
+        return context != null
+                && isTarget45MediumFamilySwitch(context.spec.id());
+    }
+
+    private static boolean isTarget45MediumFamilySwitch(String id) {
+        return "track_switch_45_medium_left".equals(id)
+                || "track_switch_45_medium_right".equals(id);
     }
 
     private static boolean isTargetClassicFamilySwitch(Context context) {
