@@ -104,6 +104,8 @@ Public builds will be distributed through the project's approved release pages.
 ## 🚧 Development Status
 
 **TafariCraft - Trains is under active development.**
+The project is on the final runtime test phase I will be releasing this soon on cruse and pushing the build to github in the next few
+day!  ;)
 
 The project is not simply a compatibility wrapper for old Traincraft builds. Systems are being actively repaired, rewritten, modernized, tested, and expanded for Minecraft 1.20.1.
 
