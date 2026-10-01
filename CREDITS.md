@@ -6,8 +6,8 @@ This project would not exist without the work of the original Traincraft creator
 
 ## Original Traincraft Authors
 
-- **Spitfire4466** — Original founder and creator of Traincraft, originally released as the Train and Zeppelin Mod.
-- **Mrbrutal / Mr. Brutal** — Original co-developer and longtime Traincraft maintainer.
+- **Spitfire4466** — Original founder and creator of the Train and Zeppelin Mod / Traincraft.
+- **Mrbrutal / Mr. Brutal** — Original co-creator, developer, and longtime Traincraft maintainer.
 
 ## Original Artwork and Models
 
@@ -27,13 +27,17 @@ This project would not exist without the work of the original Traincraft creator
 - **Hagrud** — 1.7.10 port contributor.
 - **canitzp** — Later Traincraft project owner/developer.
 
+Additional contributors remain credited where identified in the legacy source and assets.
+
 ## TafariCraft - Trains
 
-TafariCraft - Trains is a community-made modernization and port of legacy Traincraft content to **Minecraft 1.20.1 using Minecraft Forge**.
+- **RRyanward** — Current TafariCraft - Trains maintainer; Minecraft 1.20.1 modernization/port development, integration, testing, restoration, and release work.
 
-Significant portions of the original Traincraft code, concepts, models, textures, sounds, gameplay systems, and other assets remain the work of their respective original authors and contributors.
+TafariCraft - Trains is a community-made modernization and port of legacy Traincraft content to **Minecraft 1.20.1 using Forge 47.3.22 and Java 17**.
 
-TafariCraft - Trains contains substantial modifications, rewrites, compatibility work, bug fixes, new systems, and modernization for newer versions of Minecraft and Forge.
+The current project includes substantial rewrites and modernization covering locomotive operation, coupling, consist physics, track placement, track geometry integration, steam systems, diesel/electric operation, Energy Track, the Tracks Builder/Blueprint system, GUIs/HUDs, rendering, rolling stock, and testing infrastructure.
+
+Significant portions of the original Traincraft concepts, models, textures, sounds, code history, gameplay systems, and other assets remain the work of their respective original authors and contributors.
 
 TafariCraft - Trains is not presented as an official release of the original Traincraft project and should not be interpreted as being endorsed by the original Traincraft authors unless such permission or endorsement is explicitly granted.
 
