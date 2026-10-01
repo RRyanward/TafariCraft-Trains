@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "C C",
+    "C C",
+    "C C"
+  ],
+  "key": {
+    "C": {
+      "item": "traincraft:copper_ingot"
+    }
+  },
+  "result": {
+    "item": "traincraft:rail_copper",
+    "count": 16
+  }
+}

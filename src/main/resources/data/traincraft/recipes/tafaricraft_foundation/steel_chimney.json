@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "S S",
+    "S S",
+    "S S"
+  ],
+  "key": {
+    "S": {
+      "item": "traincraft:steel_ingot"
+    }
+  },
+  "result": {
+    "item": "traincraft:steel_chimney",
+    "count": 2
+  }
+}

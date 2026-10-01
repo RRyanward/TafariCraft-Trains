@@ -1,0 +1,14 @@
+{
+  "ambientocclusion": false,
+  "loader": "forge:obj",
+  "model": "traincraft:models/block/machines/legacy_wind_mill.obj",
+  "automatic_culling": false,
+  "shade_quads": false,
+  "emissive_ambient": false,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "tower": "traincraft:block/machines/classic_wind_tower",
+    "rotor": "traincraft:block/machines/classic_wind_rotor",
+    "particle": "traincraft:block/machines/classic_wind_tower"
+  }
+}

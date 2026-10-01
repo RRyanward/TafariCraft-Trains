@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "SSS",
+    "SFS",
+    "SSS"
+  ],
+  "key": {
+    "S": {
+      "item": "traincraft:steel_ingot"
+    },
+    "F": {
+      "item": "traincraft:steel_firebox"
+    }
+  },
+  "result": {
+    "item": "traincraft:distillery"
+  }
+}

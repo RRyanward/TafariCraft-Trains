@@ -1,0 +1,355 @@
+{
+    "multipart":  [
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p00"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p07"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "14",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p14"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "21",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p21"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "28",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p28"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "35",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p35"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "42",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p42"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "49",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p49"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "56",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p56"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p00",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p07",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "14",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p14",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "21",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p21",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "28",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p28",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "35",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p35",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "42",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p42",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "49",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p49",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "56",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p56",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p00",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p07",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "14",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p14",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "21",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p21",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "28",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p28",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "35",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p35",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "42",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p42",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "49",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p49",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "56",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p56",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p00",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p07",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "14",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p14",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "21",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p21",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "28",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p28",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "35",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p35",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "42",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p42",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "49",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p49",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "56",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_29x_cullfix_s4_s2_p56",
+                                        "y":  270
+                                    }
+                      }
+                  ]
+}

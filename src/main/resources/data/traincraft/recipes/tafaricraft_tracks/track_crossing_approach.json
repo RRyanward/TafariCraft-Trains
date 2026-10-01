@@ -1,0 +1,17 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "RER",
+    "PPP",
+    "RER"
+  ],
+  "key": {
+    "R": { "item": "traincraft:rail_steel" },
+    "E": { "item": "minecraft:redstone" },
+    "P": { "item": "minecraft:oak_planks" }
+  },
+  "result": {
+    "item": "traincraft:track_crossing_approach",
+    "count": 4
+  }
+}

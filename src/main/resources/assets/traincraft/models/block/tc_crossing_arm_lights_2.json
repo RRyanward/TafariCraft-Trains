@@ -1,0 +1,13 @@
+{
+  "ambientocclusion": false,
+  "loader": "forge:obj",
+  "model": "traincraft:models/block/tc_crossing/tc_crossing_arm_lights_2.obj",
+  "automatic_culling": false,
+  "shade_quads": true,
+  "emissive_ambient": true,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "lit": "traincraft:block/tc_crossing/lit_red",
+    "particle": "traincraft:block/tc_crossing/lit_red"
+  }
+}

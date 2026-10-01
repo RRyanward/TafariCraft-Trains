@@ -1,0 +1,56 @@
+{
+    "parent":  "traincraft:block/modular_crossing/crossing_gate_crossbuck",
+    "display":  {
+                    "gui":  {
+                                "rotation":  [
+                                                 30,
+                                                 45,
+                                                 0
+                                             ],
+                                "translation":  [
+                                                    0,
+                                                    0,
+                                                    0
+                                                ],
+                                "scale":  [
+                                              0.78,
+                                              0.78,
+                                              0.78
+                                          ]
+                            },
+                    "ground":  {
+                                   "rotation":  [
+                                                    0,
+                                                    180,
+                                                    0
+                                                ],
+                                   "translation":  [
+                                                       0,
+                                                       3,
+                                                       0
+                                                   ],
+                                   "scale":  [
+                                                 0.48,
+                                                 0.48,
+                                                 0.48
+                                             ]
+                               },
+                    "fixed":  {
+                                  "rotation":  [
+                                                   0,
+                                                   0,
+                                                   0
+                                               ],
+                                  "translation":  [
+                                                      0,
+                                                      0,
+                                                      -1.5
+                                                  ],
+                                  "scale":  [
+                                                0.82,
+                                                0.82,
+                                                0.82
+                                            ]
+                              }
+                }
+}

@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "III",
+    "BFB",
+    "III"
+  ],
+  "key": {
+    "I": {
+      "item": "minecraft:iron_bars"
+    },
+    "B": {
+      "item": "traincraft:bogie_iron"
+    },
+    "F": {
+      "item": "traincraft:frame_iron"
+    }
+  },
+  "result": {
+    "item": "traincraft:mob_transport_car"
+  }
+}

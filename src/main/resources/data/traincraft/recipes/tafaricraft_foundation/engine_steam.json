@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "C  ",
+    "BF ",
+    "   "
+  ],
+  "key": {
+    "C": {
+      "item": "traincraft:steel_chimney"
+    },
+    "B": {
+      "item": "traincraft:boiler_steel"
+    },
+    "F": {
+      "item": "traincraft:steel_firebox"
+    }
+  },
+  "result": {
+    "item": "traincraft:engine_steam"
+  }
+}

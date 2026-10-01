@@ -1,0 +1,16 @@
+{
+  "ambientocclusion": false,
+  "loader": "forge:obj",
+  "model": "traincraft:models/block/modular_crossing/gate_arm_1.obj",
+  "automatic_culling": false,
+  "shade_quads": true,
+  "emissive_ambient": false,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "texture0": "traincraft:block/modular_crossing/gate_arm",
+    "texture1": "traincraft:block/modular_crossing/gate_cap",
+    "texture2": "traincraft:block/modular_crossing/gate_cap",
+    "texture3": "traincraft:block/modular_crossing/gate_cap",
+    "particle": "traincraft:block/modular_crossing/gate_arm"
+  }
+}

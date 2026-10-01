@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "S S",
+    "RCR",
+    "SSS"
+  ],
+  "key": {
+    "S": {
+      "item": "traincraft:steel_ingot"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    },
+    "C": {
+      "item": "traincraft:circuit"
+    }
+  },
+  "result": {
+    "item": "traincraft:transformer"
+  }
+}

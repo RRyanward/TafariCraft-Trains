@@ -1,0 +1,529 @@
+{
+    "multipart":  [
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "north",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a00"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "north",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a04"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "north",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a12"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "north",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a16"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "17",
+                                       "facing":  "north",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a17"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "north",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a00"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "north",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a04"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "north",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a12"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "north",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a16"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "17",
+                                       "facing":  "north",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a17"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "east",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a00",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "east",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a04",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "east",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a12",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "east",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a16",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "17",
+                                       "facing":  "east",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a17",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "east",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a00",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "east",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a04",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "east",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a12",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "east",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a16",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "17",
+                                       "facing":  "east",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a17",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "south",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a00",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "south",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a04",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "south",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a12",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "south",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a16",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "17",
+                                       "facing":  "south",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a17",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "south",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a00",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "south",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a04",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "south",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a12",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "south",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a16",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "17",
+                                       "facing":  "south",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a17",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "west",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a00",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "west",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a04",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "west",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a12",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "west",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a16",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "17",
+                                       "facing":  "west",
+                                       "active":  "false"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_inactive_op00_a17",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "west",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a00",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "west",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a04",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "west",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a12",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "west",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a16",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "17",
+                                       "facing":  "west",
+                                       "active":  "true"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_switch_parallel_right_cullfix_s4_s5_traincraft_block_batch_track_switch_parallel_right_active_op00_a17",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "shape":  "north_south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "shape":  "east_west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "5",
+                                       "shape":  "north_south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "5",
+                                       "shape":  "east_west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "6",
+                                       "shape":  "north_south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "6",
+                                       "shape":  "east_west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "shape":  "north_south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "shape":  "east_west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "8",
+                                       "shape":  "north_south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "8",
+                                       "shape":  "east_west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/legacy_track_normal",
+                                        "y":  90
+                                    }
+                      }
+                  ]
+}

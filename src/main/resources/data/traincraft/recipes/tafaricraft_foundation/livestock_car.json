@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "FFF",
+    "BWB",
+    "FFF"
+  ],
+  "key": {
+    "F": {
+      "item": "minecraft:oak_fence"
+    },
+    "B": {
+      "item": "traincraft:bogie_iron"
+    },
+    "W": {
+      "item": "traincraft:frame_wood"
+    }
+  },
+  "result": {
+    "item": "traincraft:livestock_car"
+  }
+}

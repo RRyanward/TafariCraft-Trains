@@ -1,0 +1,31 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PRP",
+    "FEF",
+    "TCT"
+  ],
+  "key": {
+    "P": {
+      "item": "traincraft:reinforced_plate"
+    },
+    "R": {
+      "item": "traincraft:steel_bogie"
+    },
+    "F": {
+      "item": "traincraft:steel_frame"
+    },
+    "E": {
+      "item": "traincraft:engine_electric"
+    },
+    "T": {
+      "item": "traincraft:transformer"
+    },
+    "C": {
+      "item": "traincraft:circuit"
+    }
+  },
+  "result": {
+    "item": "traincraft:locomotive_electric_high_speed_zeroed"
+  }
+}

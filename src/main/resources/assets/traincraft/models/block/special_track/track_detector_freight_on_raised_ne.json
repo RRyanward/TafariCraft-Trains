@@ -1,0 +1,4 @@
+{
+  "parent": "minecraft:block/rail_raised_ne",
+  "textures": { "rail": "traincraft:block/tracks/special_3d/track_detector_freight_on" }
+}

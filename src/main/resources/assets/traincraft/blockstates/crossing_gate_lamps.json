@@ -1,0 +1,176 @@
+{
+  "multipart": [
+    {
+      "when": {
+        "facing": "north",
+        "active": "false",
+        "flash": "false"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_off"
+      }
+    },
+    {
+      "when": {
+        "facing": "north",
+        "active": "false",
+        "flash": "true"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_off"
+      }
+    },
+    {
+      "when": {
+        "facing": "north",
+        "active": "true",
+        "flash": "false"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_left"
+      }
+    },
+    {
+      "when": {
+        "facing": "north",
+        "active": "true",
+        "flash": "true"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_right"
+      }
+    },
+    {
+      "when": {
+        "facing": "east",
+        "active": "false",
+        "flash": "false"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_off",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "east",
+        "active": "false",
+        "flash": "true"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_off",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "east",
+        "active": "true",
+        "flash": "false"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_left",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "east",
+        "active": "true",
+        "flash": "true"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_right",
+        "y": 90
+      }
+    },
+    {
+      "when": {
+        "facing": "south",
+        "active": "false",
+        "flash": "false"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_off",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "south",
+        "active": "false",
+        "flash": "true"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_off",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "south",
+        "active": "true",
+        "flash": "false"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_left",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "south",
+        "active": "true",
+        "flash": "true"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_right",
+        "y": 180
+      }
+    },
+    {
+      "when": {
+        "facing": "west",
+        "active": "false",
+        "flash": "false"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_off",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "west",
+        "active": "false",
+        "flash": "true"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_off",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "west",
+        "active": "true",
+        "flash": "false"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_left",
+        "y": 270
+      }
+    },
+    {
+      "when": {
+        "facing": "west",
+        "active": "true",
+        "flash": "true"
+      },
+      "apply": {
+        "model": "traincraft:block/modular_crossing/crossing_gate_lamps_right",
+        "y": 270
+      }
+    }
+  ]
+}

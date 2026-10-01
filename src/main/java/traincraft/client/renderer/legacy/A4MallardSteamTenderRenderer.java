@@ -1,0 +1,26 @@
+/* Step 8.4.2 Batch B3 legacy renderer; debug intentionally enabled. */
+package traincraft.client.renderer.legacy;
+
+import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.resources.ResourceLocation;
+import traincraft.Traincraft;
+import traincraft.entity.train.tender.A4MallardSteamTender;
+
+public final class A4MallardSteamTenderRenderer extends LegacyMeshRenderer<A4MallardSteamTender> {
+    private static final ResourceLocation MESH =
+            new ResourceLocation(Traincraft.MOD_ID, "legacy_meshes/steam_tender_a4_mallard.tcm");
+    private static final ResourceLocation TEXTURE =
+            new ResourceLocation(Traincraft.MOD_ID, "textures/trains/legacy/steam_tender_a4_mallard.png");
+
+    public A4MallardSteamTenderRenderer(EntityRendererProvider.Context context) {
+        super(context, "A4 Mallard Tender", MESH, TEXTURE,
+                -0.200000D, 0.625000D, 0.000000D,
+                0.000000F, 180.000000F, 180.000000F,
+                1.000000F, 1.000000F, 1.000000F, 1.10F);
+    }
+
+    @Override
+    protected float trainYaw(A4MallardSteamTender entity, float partialTicks) {
+        return entity.getRenderTrainFacingYaw(partialTicks);
+    }
+}

@@ -1,0 +1,940 @@
+{
+    "multipart":  [
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p00"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p00",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p00",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p00",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "1",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p01"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "1",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p01",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "1",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p01",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "1",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p01",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p02"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p02",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p02",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "2",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p02",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "3",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p03"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "3",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p03",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "3",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p03",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "3",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p03",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "5",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p05"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "5",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p05",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "5",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p05",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "5",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p05",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "6",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p06"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "6",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p06",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "6",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p06",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "6",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p06",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p07"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p07",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p07",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p07",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "9",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p09"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "9",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p09",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "9",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p09",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "9",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p09",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "10",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p10"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "10",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p10",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "10",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p10",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "10",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p10",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "11",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p11"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "11",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p11",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "11",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p11",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "11",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p11",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p12"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p12",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p12",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "12",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p12",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "14",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p14"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "14",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p14",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "14",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p14",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "14",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p14",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p16"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p16",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p16",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "16",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p16",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "18",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p18"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "18",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p18",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "18",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p18",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "18",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p18",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "19",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p19"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "19",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p19",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "19",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p19",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "19",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p19",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "20",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p20"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "20",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p20",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "20",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p20",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "20",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p20",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "21",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p21"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "21",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p21",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "21",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p21",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "21",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p21",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "23",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p23"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "23",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p23",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "23",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p23",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "23",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p23",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "24",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p24"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "24",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p24",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "24",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p24",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "24",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p24",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "25",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p25"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "25",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p25",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "25",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p25",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "25",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p25",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "27",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p27"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "27",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p27",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "27",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p27",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "27",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p27",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "28",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p28"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "28",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p28",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "28",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p28",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "28",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p28",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "29",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p29"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "29",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p29",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "29",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p29",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "29",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p29",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "30",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p30"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "30",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p30",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "30",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p30",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "30",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_slope_curve_super_large_right_rootlocal_r2e9e_p30",
+                                        "y":  270
+                                    }
+                      }
+                  ]
+}

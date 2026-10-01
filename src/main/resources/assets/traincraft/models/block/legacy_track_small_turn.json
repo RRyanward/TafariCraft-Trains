@@ -1,0 +1,20 @@
+{
+  "ambientocclusion": false,
+  "textures": {
+    "rail": "traincraft:block/tracks/rail_normal_turned",
+    "particle": "traincraft:block/tracks/rail_normal_turned"
+  },
+  "elements": [
+    {
+      "from": [0, 0.02, 0],
+      "to": [16, 0.03, 16],
+      "shade": false,
+      "faces": {
+        "up": {
+          "texture": "#rail",
+          "cullface": "up"
+        }
+      }
+    }
+  ]
+}

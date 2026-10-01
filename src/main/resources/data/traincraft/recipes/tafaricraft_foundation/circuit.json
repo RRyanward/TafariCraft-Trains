@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "WWW",
+    "RPR",
+    "WWW"
+  ],
+  "key": {
+    "W": {
+      "item": "traincraft:fine_copper_wire"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    },
+    "P": {
+      "item": "traincraft:plastic"
+    }
+  },
+  "result": {
+    "item": "traincraft:circuit"
+  }
+}

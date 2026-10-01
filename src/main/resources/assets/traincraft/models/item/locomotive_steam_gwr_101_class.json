@@ -1,0 +1,6 @@
+{
+  "parent": "minecraft:item/generated",
+  "textures": {
+    "layer0": "traincraft:item/legacy/locomotive_steam_gwr_101_class"
+  }
+}

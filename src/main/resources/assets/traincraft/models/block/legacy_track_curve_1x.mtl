@@ -1,0 +1,9 @@
+# Step 9.2a-r4-r4-r3 material bridge for original Traincraft 1x curve
+
+newmtl Default_OBJ.004
+Ka 1.000000 1.000000 1.000000
+Kd 1.000000 1.000000 1.000000
+Ks 0.000000 0.000000 0.000000
+d 1.000000
+illum 1
+map_Kd #texture0

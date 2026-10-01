@@ -1,0 +1,25 @@
+{
+  "ambientocclusion": false,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "label": "traincraft:item/tracks/track_badge_s",
+    "particle": "traincraft:block/legacy_track_normal"
+  },
+  "elements": [
+    {
+      "from": [4.0, 11.5, 4.0],
+      "to": [12.0, 11.55, 12.0],
+      "shade": false,
+      "faces": {
+        "up": {
+          "uv": [0, 0, 16, 16],
+          "texture": "#label"
+        },
+        "down": {
+          "uv": [0, 0, 16, 16],
+          "texture": "#label"
+        }
+      }
+    }
+  ]
+}

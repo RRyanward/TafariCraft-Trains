@@ -1,0 +1,24 @@
+TAFARICRAFT - TRAINS
+Batch 7 Licensed Audio Source Credits
+Generated: 09/27/2026 19:43:11
+
+This staging pack intentionally uses only sources identified as:
+- CC0 1.0 / public-domain dedication
+- Public Domain
+- Creative Commons Attribution 4.0
+
+For CC BY 4.0 recordings, attribution must remain with redistributed/adapted copies.
+See AUDIO-SOURCE-MANIFEST.tsv for each original file, author/recordist, license,
+source page, and intended Traincraft use.
+
+Core source families:
+- HarveyHenkelmann locomotive horns on Wikimedia Commons: CC0 1.0.
+- Work With Sounds recordings supplied to Wikimedia Commons: CC BY 4.0.
+- Alex Alex Lep train signals: Public Domain.
+- E217 electric-train acceleration/deceleration: CC0 1.0.
+- Ural-66 wheel-on-rail recording: CC0 1.0.
+- Cassiopeia sweet electric train running recording: Public Domain.
+- Zeroping steam whistle recording: CC0 1.0.
+
+Any future edited/trimmed CC BY 4.0 derivative must be marked as modified and
+retain the creator/source/license attribution.

@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "PPP",
+    "CCC",
+    "AAA"
+  ],
+  "key": {
+    "P": {
+      "item": "traincraft:piston"
+    },
+    "C": {
+      "item": "traincraft:cylinder"
+    },
+    "A": {
+      "item": "traincraft:camshaft"
+    }
+  },
+  "result": {
+    "item": "traincraft:engine_diesel",
+    "count": 2
+  }
+}

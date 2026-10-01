@@ -1,0 +1,31 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "BFB",
+    "CEC",
+    "RTR"
+  ],
+  "key": {
+    "B": {
+      "item": "traincraft:steel_bogie"
+    },
+    "F": {
+      "item": "traincraft:steel_frame"
+    },
+    "C": {
+      "item": "traincraft:controls"
+    },
+    "E": {
+      "item": "traincraft:engine_diesel"
+    },
+    "R": {
+      "item": "traincraft:rail_steel"
+    },
+    "T": {
+      "item": "traincraft:steel_chimney"
+    }
+  },
+  "result": {
+    "item": "traincraft:tracks_builder"
+  }
+}

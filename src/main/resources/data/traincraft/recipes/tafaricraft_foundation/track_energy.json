@@ -1,0 +1,23 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CRC",
+    "RTR",
+    "CRC"
+  ],
+  "key": {
+    "C": {
+      "item": "traincraft:copper_ingot"
+    },
+    "R": {
+      "item": "minecraft:redstone"
+    },
+    "T": {
+      "item": "traincraft:track_normal"
+    }
+  },
+  "result": {
+    "item": "traincraft:track_energy",
+    "count": 8
+  }
+}

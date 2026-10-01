@@ -1,0 +1,76 @@
+{
+    "variants":  {
+                     "active=false,shape=north_south":  {
+                                                            "model":  "traincraft:block/special_track/track_coupler_off_flat"
+                                                        },
+                     "active=false,shape=east_west":  {
+                                                          "model":  "traincraft:block/special_track/track_coupler_off_flat",
+                                                          "y":  90
+                                                      },
+                     "active=false,shape=ascending_east":  {
+                                                               "model":  "traincraft:block/special_track/track_coupler_off_raised_ne",
+                                                               "y":  90
+                                                           },
+                     "active=false,shape=ascending_west":  {
+                                                               "model":  "traincraft:block/special_track/track_coupler_off_raised_sw",
+                                                               "y":  90
+                                                           },
+                     "active=false,shape=ascending_north":  {
+                                                                "model":  "traincraft:block/special_track/track_coupler_off_raised_ne"
+                                                            },
+                     "active=false,shape=ascending_south":  {
+                                                                "model":  "traincraft:block/special_track/track_coupler_off_raised_sw"
+                                                            },
+                     "active=false,shape=south_east":  {
+                                                           "model":  "traincraft:block/special_track/track_coupler_off_curved"
+                                                       },
+                     "active=false,shape=south_west":  {
+                                                           "model":  "traincraft:block/special_track/track_coupler_off_curved",
+                                                           "y":  90
+                                                       },
+                     "active=false,shape=north_west":  {
+                                                           "model":  "traincraft:block/special_track/track_coupler_off_curved",
+                                                           "y":  180
+                                                       },
+                     "active=false,shape=north_east":  {
+                                                           "model":  "traincraft:block/special_track/track_coupler_off_curved",
+                                                           "y":  270
+                                                       },
+                     "active=true,shape=north_south":  {
+                                                           "model":  "traincraft:block/special_track/track_coupler_on_flat"
+                                                       },
+                     "active=true,shape=east_west":  {
+                                                         "model":  "traincraft:block/special_track/track_coupler_on_flat",
+                                                         "y":  90
+                                                     },
+                     "active=true,shape=ascending_east":  {
+                                                              "model":  "traincraft:block/special_track/track_coupler_on_raised_ne",
+                                                              "y":  90
+                                                          },
+                     "active=true,shape=ascending_west":  {
+                                                              "model":  "traincraft:block/special_track/track_coupler_on_raised_sw",
+                                                              "y":  90
+                                                          },
+                     "active=true,shape=ascending_north":  {
+                                                               "model":  "traincraft:block/special_track/track_coupler_on_raised_ne"
+                                                           },
+                     "active=true,shape=ascending_south":  {
+                                                               "model":  "traincraft:block/special_track/track_coupler_on_raised_sw"
+                                                           },
+                     "active=true,shape=south_east":  {
+                                                          "model":  "traincraft:block/special_track/track_coupler_on_curved"
+                                                      },
+                     "active=true,shape=south_west":  {
+                                                          "model":  "traincraft:block/special_track/track_coupler_on_curved",
+                                                          "y":  90
+                                                      },
+                     "active=true,shape=north_west":  {
+                                                          "model":  "traincraft:block/special_track/track_coupler_on_curved",
+                                                          "y":  180
+                                                      },
+                     "active=true,shape=north_east":  {
+                                                          "model":  "traincraft:block/special_track/track_coupler_on_curved",
+                                                          "y":  270
+                                                      }
+                 }
+}

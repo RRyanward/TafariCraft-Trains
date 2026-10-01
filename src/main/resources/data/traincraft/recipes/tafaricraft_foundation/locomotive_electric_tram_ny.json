@@ -1,0 +1,31 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "WSW",
+    "BEB",
+    "CRC"
+  ],
+  "key": {
+    "W": {
+      "tag": "minecraft:planks"
+    },
+    "S": {
+      "item": "traincraft:seats"
+    },
+    "B": {
+      "item": "traincraft:bogie_iron"
+    },
+    "E": {
+      "item": "traincraft:engine_electric"
+    },
+    "C": {
+      "item": "traincraft:circuit"
+    },
+    "R": {
+      "item": "traincraft:frame_wood"
+    }
+  },
+  "result": {
+    "item": "traincraft:locomotive_electric_tram_ny"
+  }
+}

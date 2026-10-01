@@ -1,0 +1,28 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "BCB",
+    "FEF",
+    "ETE"
+  ],
+  "key": {
+    "B": {
+      "item": "traincraft:steel_bogie"
+    },
+    "C": {
+      "item": "traincraft:steel_cabin"
+    },
+    "F": {
+      "item": "traincraft:steel_frame"
+    },
+    "E": {
+      "item": "traincraft:engine_diesel"
+    },
+    "T": {
+      "item": "traincraft:transmission"
+    }
+  },
+  "result": {
+    "item": "traincraft:locomotive_diesel_cd742"
+  }
+}

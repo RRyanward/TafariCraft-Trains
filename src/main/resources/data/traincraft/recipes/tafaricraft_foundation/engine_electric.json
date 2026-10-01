@@ -1,0 +1,22 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "IWI",
+    "WEW",
+    "IWI"
+  ],
+  "key": {
+    "I": {
+      "item": "minecraft:iron_ingot"
+    },
+    "W": {
+      "item": "traincraft:fine_copper_wire"
+    },
+    "E": {
+      "item": "traincraft:circuit"
+    }
+  },
+  "result": {
+    "item": "traincraft:engine_electric"
+  }
+}

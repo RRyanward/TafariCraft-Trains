@@ -1,0 +1,17 @@
+{
+  "ambientocclusion": false,
+  "loader": "forge:obj",
+  "model": "traincraft:models/block/tc_crossing/tc_crossing_base.obj",
+  "automatic_culling": false,
+  "shade_quads": true,
+  "emissive_ambient": false,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "metal": "traincraft:block/tc_crossing/metal",
+    "black": "traincraft:block/tc_crossing/black",
+    "white": "traincraft:block/tc_crossing/white",
+    "dark_red": "traincraft:block/tc_crossing/dark_red",
+    "concrete": "traincraft:block/tc_crossing/concrete",
+    "particle": "traincraft:block/tc_crossing/metal"
+  }
+}

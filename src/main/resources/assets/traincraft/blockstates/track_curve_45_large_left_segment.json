@@ -1,0 +1,121 @@
+{
+    "multipart":  [
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a00"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a04"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "north"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a07"
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a00",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a04",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "east"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a07",
+                                        "y":  90
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a00",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a04",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "south"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a07",
+                                        "y":  180
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "0",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a00",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "4",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a04",
+                                        "y":  270
+                                    }
+                      },
+                      {
+                          "when":  {
+                                       "assembly_part":  "7",
+                                       "facing":  "west"
+                                   },
+                          "apply":  {
+                                        "model":  "traincraft:block/batch/track_curve_45_large_left_cullfix_s4_s5_traincraft_block_batch_track_curve_45_large_left_op00_a07",
+                                        "y":  270
+                                    }
+                      }
+                  ]
+}

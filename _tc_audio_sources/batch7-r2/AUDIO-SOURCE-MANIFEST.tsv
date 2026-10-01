@@ -1,0 +1,39 @@
+TAFARICRAFT - TRAINS BATCH 7 r2 LICENSED AUDIO SOURCE MANIFEST
+Generated: 09/27/2026 19:43:09
+Project: D:\TafariCraft - Reborn Development\Traincraft
+Purpose: source acquisition/staging only; no active mod sound routing changed.
+
+STATUS	LOCAL_FILE	COMMONS_FILE	BYTES	SHA256	CREATOR	LICENSE	LICENSE_URL	SOURCE_PAGE	PLANNED_USE
+FAILED	horn_leslie_s3l.ogg	Leslie_S-3L.ogg	https://commons.wikimedia.org/wiki/File:Leslie_S-3L.ogg	CC0 1.0	GP7 / early North-American diesel horn candidate
+FAILED	horn_nathan_p5.ogg	Nathan_P5.ogg	https://commons.wikimedia.org/wiki/File:Nathan_P5.ogg	CC0 1.0	SD40-2 / 1970s North-American diesel horn candidate
+FAILED	horn_airchime_k5la.ogg	AirChime_K5LA.ogg	https://commons.wikimedia.org/wiki/File:AirChime_K5LA.ogg	CC0 1.0	SD70M / modern North-American diesel horn candidate
+FAILED	horn_nathan_m5.ogg	Nathan_M5.ogg	https://commons.wikimedia.org/wiki/File:Nathan_M5.ogg	CC0 1.0	alternate North-American locomotive horn
+FAILED	horn_wabco_e2.ogg	WABCO_E2.ogg	https://commons.wikimedia.org/wiki/File:WABCO_E2.ogg	CC0 1.0	single-note/older locomotive horn candidate
+FAILED	horn_wabco_e2_b1.ogg	WABCO_E2-B1.ogg	https://commons.wikimedia.org/wiki/File:WABCO_E2-B1.ogg	CC0 1.0	alternate older locomotive horn candidate
+FAILED	horn_leslie_a200_156.ogg	Leslie_A200-156.ogg	https://commons.wikimedia.org/wiki/File:Leslie_A200-156.ogg	CC0 1.0	small/shunting locomotive horn candidate
+FAILED	horn_prime_pm920.ogg	Prime_PM-920.ogg	https://commons.wikimedia.org/wiki/File:Prime_PM-920.ogg	CC0 1.0	alternate multi-chime locomotive horn
+FAILED	horn_db_kleinlok.ogg	WWS_Signalhorntrainhorn.ogg	https://commons.wikimedia.org/wiki/File:WWS_Signalhorntrainhorn.ogg	CC BY 4.0	DB Kleinlok/Kof/V60/Tracks Builder horn candidate
+FAILED	horn_soviet_diesel_pd.ogg	Teplovoz_sound.ogg	https://commons.wikimedia.org/wiki/File:Teplovoz_sound.ogg	Public Domain	Soviet diesel horn fallback candidate
+FAILED	whistle_prussian_p8.ogg	WWS_SteamWhistle.ogg	https://commons.wikimedia.org/wiki/File:WWS_SteamWhistle.ogg	CC BY 4.0	German/continental steam whistle family
+FAILED	whistle_russian_steam_pd.ogg	Parovoz_sound.ogg	https://commons.wikimedia.org/wiki/File:Parovoz_sound.ogg	Public Domain	Russian/Soviet steam whistle family
+FAILED	whistle_american_steam_cc0.ogg	Steam_Whistle_at_Georgia_Tech.ogg	https://commons.wikimedia.org/wiki/File:Steam_Whistle_at_Georgia_Tech.ogg	CC0 1.0	American steam whistle family candidate
+FAILED	steam_run_anna6.ogg	WWS_Steamlocomotive.ogg	https://commons.wikimedia.org/wiki/File:WWS_Steamlocomotive.ogg	CC BY 4.0	steam exhaust/rolling/air-pump source
+FAILED	steam_release_s06_018.ogg	WWS_SteamlocomotiveS06-018Steamrelease.ogg	https://commons.wikimedia.org/wiki/File:WWS_SteamlocomotiveS06-018Steamrelease.ogg	CC BY 4.0	steam release/blowoff source
+FAILED	steam_air_pump_p8.ogg	WWS_Airpumpsteamlocomotive.ogg	https://commons.wikimedia.org/wiki/File:WWS_Airpumpsteamlocomotive.ogg	CC BY 4.0	steam locomotive air-pump/brake-compressor source
+FAILED	diesel_db_kleinlok_motor.ogg	WWS_Kleinlokomotive8211motor.ogg	https://commons.wikimedia.org/wiki/File:WWS_Kleinlokomotive8211motor.ogg	CC BY 4.0	Kof/V60/Tracks Builder small-diesel engine source
+FAILED	diesel_industrial_idle.ogg	WWS_Bediadiesellocomotiveidling.ogg	https://commons.wikimedia.org/wiki/File:WWS_Bediadiesellocomotiveidling.ogg	CC BY 4.0	industrial diesel idle source/fallback
+FAILED	diesel_industrial_run.ogg	WWS_DiesellocomotiveBediamoving.ogg	https://commons.wikimedia.org/wiki/File:WWS_DiesellocomotiveBediamoving.ogg	CC BY 4.0	industrial diesel running source/fallback
+FAILED	tram_classic_lh_standard.ogg	WWS_LHStandardtram8211carinterior.ogg	https://commons.wikimedia.org/wiki/File:WWS_LHStandardtram8211carinterior.ogg	CC BY 4.0	Wooden Tram/classic electric tram running source
+FAILED	tram_102n_motorman.ogg	WWS_102Ntrammotormanscabin.ogg	https://commons.wikimedia.org/wiki/File:WWS_102Ntrammotormanscabin.ogg	CC BY 4.0	tram traction/control source
+FAILED	electric_acceleration_cc0.ogg	E233-3000Accelerate.ogg	https://commons.wikimedia.org/wiki/File:E233-3000Accelerate.ogg	CC0 1.0	modern electric/high-speed acceleration candidate
+FAILED	electric_deceleration_cc0.ogg	E231Deceleration.ogg	https://commons.wikimedia.org/wiki/File:E231Deceleration.ogg	CC0 1.0	modern electric braking/deceleration candidate
+FAILED	electric_run_oer8000_pd.ogg	OER_8000_sound_20100409.ogg	https://commons.wikimedia.org/wiki/File:OER_8000_sound_20100409.ogg	Public Domain	electric traction/run source
+FAILED	rail_wheels_cc0.ogg	Стук_колёс_поезда.ogg	https://commons.wikimedia.org/wiki/File:Стук_колёс_поезда.ogg	CC0 1.0	shared wheel-on-rail source for locomotives/tenders/cars
+
+SUMMARY
+Requested sources: 25
+Downloaded: 0
+Failed: 25
+
+IMPORTANT: These are source recordings. Long engine/traction/steam recordings are staged, not yet wired into periodic server playSound calls, because doing that directly would cause overlapping playback. The next patch will add state-aware routing/looping.
+No NonCommercial or unknown-license web audio was downloaded.

@@ -1,0 +1,46 @@
+{
+  "parent": "block/block",
+  "ambientocclusion": false,
+  "textures": {
+    "metal": "traincraft:block/modular_crossing/generic",
+    "particle": "traincraft:block/modular_crossing/generic"
+  },
+  "elements": [
+    {
+      "from": [7.35, 0.0, 7.20],
+      "to":   [8.65, 15.9, 8.80],
+      "faces": {
+        "down":  {"texture": "#metal"},
+        "up":    {"texture": "#metal"},
+        "north": {"texture": "#metal"},
+        "south": {"texture": "#metal"},
+        "west":  {"texture": "#metal"},
+        "east":  {"texture": "#metal"}
+      }
+    },
+    {
+      "from": [6.75, 0.0, 6.55],
+      "to":   [9.25, 1.40, 9.45],
+      "faces": {
+        "down":  {"texture": "#metal"},
+        "up":    {"texture": "#metal"},
+        "north": {"texture": "#metal"},
+        "south": {"texture": "#metal"},
+        "west":  {"texture": "#metal"},
+        "east":  {"texture": "#metal"}
+      }
+    },
+    {
+      "from": [6.95, 13.55, 6.90],
+      "to":   [9.05, 15.0, 9.10],
+      "faces": {
+        "down":  {"texture": "#metal"},
+        "up":    {"texture": "#metal"},
+        "north": {"texture": "#metal"},
+        "south": {"texture": "#metal"},
+        "west":  {"texture": "#metal"},
+        "east":  {"texture": "#metal"}
+      }
+    }
+  ]
+}

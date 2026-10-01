@@ -1,0 +1,38 @@
+{
+  "variants": {
+    "shape=north_south": {
+      "model": "traincraft:block/legacy_track_normal"
+    },
+    "shape=east_west": {
+      "model": "traincraft:block/legacy_track_normal",
+      "y": 90
+    },
+    "shape=south_west": {
+      "model": "traincraft:block/legacy_track_curve_1x"
+    },
+    "shape=north_west": {
+      "model": "traincraft:block/legacy_track_curve_1x",
+      "y": 90
+    },
+    "shape=north_east": {
+      "model": "traincraft:block/legacy_track_curve_1x",
+      "y": 180
+    },
+    "shape=south_east": {
+      "model": "traincraft:block/legacy_track_curve_1x",
+      "y": 270
+    },
+    "shape=ascending_north": {
+      "model": "traincraft:block/legacy_track_slope_north"
+    },
+    "shape=ascending_east": {
+      "model": "traincraft:block/legacy_track_slope_east"
+    },
+    "shape=ascending_south": {
+      "model": "traincraft:block/legacy_track_slope_south"
+    },
+    "shape=ascending_west": {
+      "model": "traincraft:block/legacy_track_slope_west"
+    }
+  }
+}

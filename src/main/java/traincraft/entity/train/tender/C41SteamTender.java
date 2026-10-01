@@ -1,0 +1,16 @@
+/* Step 8.4.0 Batch B1: C41 Tender. */
+package traincraft.entity.train.tender;
+
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.Level;
+import traincraft.debug.LegacyRollingStockDebug;
+import traincraft.registry.TCItems;
+
+public class C41SteamTender extends SteamTender {
+    public C41SteamTender(EntityType<? extends C41SteamTender> type, Level level) { super(type, level); }
+    @Override public void tick() { super.tick(); LegacyRollingStockDebug.logEntity(this, "C41 Tender"); }
+    @Override protected Item getDropItem() { return TCItems.STEAM_TENDER_C41.get(); }
+    @Override public ItemStack getPickResult() { return new ItemStack(TCItems.STEAM_TENDER_C41.get()); }
+}

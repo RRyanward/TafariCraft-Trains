@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CCC",
+    "CLC",
+    "CCC"
+  ],
+  "key": {
+    "C": {
+      "item": "traincraft:coal_dust"
+    },
+    "L": {
+      "item": "minecraft:clay_ball"
+    }
+  },
+  "result": {
+    "item": "traincraft:graphite",
+    "count": 2
+  }
+}

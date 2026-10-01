@@ -1,0 +1,25 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "LXL",
+    "LEL",
+    "III"
+  ],
+  "key": {
+    "L": {
+      "item": "minecraft:lever"
+    },
+    "X": {
+      "item": "minecraft:stone_button"
+    },
+    "E": {
+      "item": "traincraft:circuit"
+    },
+    "I": {
+      "item": "minecraft:iron_ingot"
+    }
+  },
+  "result": {
+    "item": "traincraft:controls"
+  }
+}

@@ -1,0 +1,74 @@
+{
+  "parent": "block/block",
+  "ambientocclusion": false,
+  "textures": {
+    "housing": "traincraft:block/modular_crossing/gate_housing_compact",
+    "particle": "traincraft:block/modular_crossing/gate_housing_compact"
+  },
+  "elements": [
+    {
+      "from": [
+        12.9,
+        6.2,
+        6.3
+      ],
+      "to": [
+        15.35,
+        10.0,
+        9.7
+      ],
+      "faces": {
+        "down": {
+          "texture": "#housing"
+        },
+        "up": {
+          "texture": "#housing"
+        },
+        "north": {
+          "texture": "#housing"
+        },
+        "south": {
+          "texture": "#housing"
+        },
+        "west": {
+          "texture": "#housing"
+        },
+        "east": {
+          "texture": "#housing"
+        }
+      }
+    },
+    {
+      "from": [
+        14.15,
+        7.85,
+        6.7
+      ],
+      "to": [
+        16.0,
+        9.7,
+        9.3
+      ],
+      "faces": {
+        "down": {
+          "texture": "#housing"
+        },
+        "up": {
+          "texture": "#housing"
+        },
+        "north": {
+          "texture": "#housing"
+        },
+        "south": {
+          "texture": "#housing"
+        },
+        "west": {
+          "texture": "#housing"
+        },
+        "east": {
+          "texture": "#housing"
+        }
+      }
+    }
+  ]
+}

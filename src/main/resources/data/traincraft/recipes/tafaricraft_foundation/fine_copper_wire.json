@@ -1,0 +1,20 @@
+{
+  "type": "minecraft:crafting_shaped",
+  "pattern": [
+    "CCC",
+    "CPC",
+    "CCC"
+  ],
+  "key": {
+    "C": {
+      "item": "traincraft:copper_ingot"
+    },
+    "P": {
+      "item": "traincraft:plastic"
+    }
+  },
+  "result": {
+    "item": "traincraft:fine_copper_wire",
+    "count": 6
+  }
+}

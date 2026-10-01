@@ -1,0 +1,13 @@
+{
+  "ambientocclusion": false,
+  "loader": "forge:obj",
+  "model": "traincraft:models/block/machines/legacy_water_wheel.obj",
+  "automatic_culling": false,
+  "shade_quads": false,
+  "emissive_ambient": false,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "texture0": "traincraft:block/machines/classic_water_wheel",
+    "particle": "traincraft:block/machines/classic_water_wheel"
+  }
+}
