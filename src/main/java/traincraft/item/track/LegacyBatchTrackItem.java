@@ -202,12 +202,21 @@ public final class LegacyBatchTrackItem extends Item {
             ItemStack stack,
             net.minecraft.world.InteractionHand hand,
             net.minecraft.world.phys.BlockHitResult hit) {
-        if (level == null
+                if (level == null
                 || player == null
                 || stack == null
                 || stack.isEmpty()
-                || hit == null
-                || hit.getDirection() != Direction.UP) {
+                || hit == null) {
+            return null;
+        }
+
+        boolean tcPreviewClickedRail =
+                BaseRailBlock.isRail(
+                        level.getBlockState(
+                                hit.getBlockPos()));
+
+        if (hit.getDirection() != Direction.UP
+                && !tcPreviewClickedRail) {
             return null;
         }
 
@@ -316,10 +325,7 @@ public final class LegacyBatchTrackItem extends Item {
                         null);
 
         boolean directRailSnapRequest =
-                (isWholeSwitchFamilySnapSpec(
-                                spec.id())
-                        || "track_diagonal_straight_small".equals(
-                                spec.id()))
+                isEightWaySnapFamily(spec.id())
                         && BaseRailBlock.isRail(
                                 clickedPlacementState);
 
@@ -507,7 +513,14 @@ public final class LegacyBatchTrackItem extends Item {
     }
     @Override
     public InteractionResult useOn(UseOnContext context) {
-        if (context.getClickedFace() != Direction.UP) {
+                // TC_FINAL_RELEASE_R1M_BATCH_8WAY_REAL_SNAP_PARITY
+        // Existing rails are thin, so endpoint interaction can arrive through
+        // a side face. Let a rail click reach the exact accepted connector /
+        // candidate solver. Non-rail support/manual placement remains UP-only.
+        if (context.getClickedFace() != Direction.UP
+                && !BaseRailBlock.isRail(
+                        context.getLevel().getBlockState(
+                                context.getClickedPos()))) {
             return InteractionResult.PASS;
         }
 
@@ -522,6 +535,19 @@ public final class LegacyBatchTrackItem extends Item {
         }
 
         ItemStack stack = context.getItemInHand();
+        if (isEightWaySnapFamily(spec.id())) {
+            traincraft.Traincraft.LOGGER.info(
+                    "[TC-FINAL-BATCH8WAY-R1M-USE] spec={} clicked={} face={} clickedRail={} held={} shift={}",
+                    spec.id(),
+                    context.getClickedPos(),
+                    context.getClickedFace(),
+                    BaseRailBlock.isRail(
+                            level.getBlockState(
+                                    context.getClickedPos())),
+                    net.minecraftforge.registries.ForgeRegistries.ITEMS.getKey(
+                            stack.getItem()),
+                    player.isShiftKeyDown());
+        }
         // TC_BATCH8_R3ZM_REGISTERED_HAND_DELEGATE
         // Resolve stack-selected handedness before entering the proven
         // connector/candidate logic. Never construct an Item at runtime:
@@ -644,8 +670,7 @@ public final class LegacyBatchTrackItem extends Item {
         // t6 adds Small Diagonal to the same contract now that both exposed
         // route ends are real physical endpoint cores.
         boolean directRailSnapRequest =
-                (isWholeSwitchFamilySnapSpec(spec.id())
-                        || "track_diagonal_straight_small".equals(spec.id()))
+                isEightWaySnapFamily(spec.id())
                 && BaseRailBlock.isRail(clickedPlacementState);
         if (chosen == null && directRailSnapRequest && connector == null) {
             String failure = "DIRECT_RAIL_SNAP_NO_OPEN_CONNECTOR";

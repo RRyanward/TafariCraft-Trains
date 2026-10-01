@@ -208,14 +208,16 @@ public final class RealTrackPlacementGhostPreview {
 
         Item item =
                 stack.getItem();
-        // TC_FINAL_RELEASE_R1K_RAIL_SIDE_CLICK_PARITY
-        boolean mediumRailSideHit =
-                item instanceof LegacyMediumCurveTrackItem
+                // TC_FINAL_RELEASE_R1K_RAIL_SIDE_CLICK_PARITY
+        // TC_FINAL_RELEASE_R1M_BATCH_8WAY_REAL_SNAP_PARITY
+        boolean tcRailSideSnapHit =
+                (item instanceof LegacyMediumCurveTrackItem
+                        || item instanceof LegacyBatchTrackItem)
                         && net.minecraft.world.level.block.BaseRailBlock.isRail(
                                 mc.level.getBlockState(hit.getBlockPos()));
 
         if (hit.getDirection() != Direction.UP
-                && !mediumRailSideHit) {
+                && !tcRailSideSnapHit) {
             return List.of();
         }
 

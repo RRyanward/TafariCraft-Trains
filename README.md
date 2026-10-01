@@ -1,68 +1,189 @@
-# Traincraft - A mod for Minecraft
+﻿<div align="center">
 
-Here you will find the source code for the **Traincraft 1.12.2 rewrite**.  
-**Don't ask for release dates or beta builds. Unless you are a developer you should get your builds from [curse](https://minecraft.curseforge.com/projects/traincraft).  
-Regarding new features/behavior changes, or if you have found any bugs, please submit a new issue to the issue tracker for it, or add your findings to an existing issue if someone else has already made one.
-This helps keep everything organized while saving time and effort.**
+<img src="tafaricraft-trains-banner.png" alt="TafariCraft - Trains banner" width="900">
 
-## Index
-- Join the Discussion!
-- Official Links
-- What is Traincraft?
-- Why did Mrbrutal opensource Traincraft?
-- Contributing
-- <b>Licensing and rules, READ THIS PART ESPECIALLY</b>
+</div>
 
-## Join the Discussion!
-If you wish to contact the original developers, you can contact Mr. Brutal on twitter [https://twitter.com/Mrbrutall](https://twitter.com/Mrbrutall) or send an email to spitfire4466@gmail.com  
-If you'd like to join the live chat, head over to our (new) [Public Discord chat](https://discord.gg/hdHkAwJ). Also, there was the [old server - pre July 14th, 2020](https://discord.gg/SgpnCnK). 
-And, of course, be sure to check out the issues tab here on GitHub.
+<div align="center">
 
-## Official Links
-* Main Site and Downloads: [http://www.traincraft-mod.com](http://www.traincraft-mod.com)
-* Brutal's Blog: [http://blog.meansoft.si](http://blog.meansoft.si)
-* Our Blog: [https://traincraft-mod.blogspot.com](https://traincraft-mod.blogspot.com)
-* Old wiki: [http://wiki.meansoft.si](http://wiki.meansoft.si)
-* Brutal's IRC: #Traincraft on Esper.net - Currently not used
-* Curse For Downloads: [https://minecraft.curseforge.com/projects/traincraft](https://minecraft.curseforge.com/projects/traincraft)
-* 1.7.10 Forum: [http://www.minecraftforum.net/forums/mapping-and-modding/minecraft-mods/2738593-traincraft](http://www.minecraftforum.net/forums/mapping-and-modding/minecraft-mods/2738593-traincraft)
-* Discord live chat (active) [https://discord.gg/hdHkAwJ](https://discord.gg/hdHkAwJ)  (old server: [https://discord.gg/SgpnCnK](https://discord.gg/SgpnCnK))
+# ðŸš‚ TafariCraft - Trains
 
-## What is Traincraft?
-Traincraft is a [Minecraft](https://minecraft.net/) mod built using [Minecraft Forge](https://github.com/MinecraftForge).
+### Bringing the spirit of classic Traincraft into modern Minecraft.
 
-Traincraft alters the looks of and adds new functionality to various aspects of the game. It adds over 80 trains, wagons, and other vehicles as well as a new railway system with curved tracks and slopes.  
-Traincraft was originally created by **Spitfire4466**, then jointly developed with **Mrbrutal**, and subsequently maintained by **Mrbrutal**. In June 2020 **canitzp** has been declared as an owner too.   
-Traincraft has had well over **1,000,000 downloads** and has been in development since Minecraft 1.1.0 (and even earlier).
+**Minecraft 1.20.1 â€¢ Forge 47.3.22 â€¢ Java 17**
 
-## Why did **Mrbrutal** post the Source Code?
-> As of late, **Spitfire4466** and **Mrbrutal** have had little time to work on Traincraft. Open-sourcing the mod was the only viable option that would ensure it's continuation. Message from **Mrbrutal**: I have never open-sourced a project on this level or size, and am a bit hesitant to do so. However, in the hopes that we can make Traincraft great again (no this is not a Trump reference) and that I can still be a part of this, I have open-sourced both versions of Traincraft  here on Github. Anyone that is willing to contribute can contribute as long as they have signed the CLA (scroll down).
+ðŸš‚ Locomotives â€¢ ðŸšƒ Rolling Stock â€¢ ðŸ›¤ï¸ Tracks â€¢ ðŸ”— Coupling â€¢ ðŸ”¥ Steam Systems
 
-## Contributing
-The Traincraft project welcomes contributions from anyone, provided they have signed the Contributor Licensing Agreement (CLA) found [here](https://cla-assistant.io/Traincraft/Traincraft).  
+</div>
 
-1. To start developing, fork this branch (e.g.: `git clone https://github.com/Traincraft/Traincraft`) and import the build.gradle file as project into your ide.  
-2. After Forge is done setting everything up, you have to run `gradlew genEclipseRuns`,`gradlew genIntelliJRuns` or `gradlew genVCRuns` to generate the correct run files.  
-3. Before running, you have to manually add the "TrackAPI" mod to the "mods" directories under "run" and "run_server" (you may have to create the mods folder).
-4. If you are using IntelliJ, you will need to go to File -> Settings -> Build, Execution, Deployment -> Build Tools -> Gradle and change the "Build and Run Using" and "Run Tests Using" to IntelliJ
-5. (Also for IntelliJ) Then go to File -> Project Structure and set the compiler output path to the build folder
-6. (Still IntelliJ) Finally, File -> Invalidate Caches/Restart and hit Invalidate and Restart. 
-    * This should fix the issue with resources going into the wrong place
-* For more information on getting set up, read [the Forge Getting Started page](https://mcforge.readthedocs.io/en/latest/gettingstarted/)
+---
 
-#### Contribution guideline
-- Code files (.java) should have a copyright header and the @author and @since tag. @author is the name of the contributer (you), while @since should be the current date in ISO-8601 format (YYYY-MM-DD). Copyright is the first thing in the class, even before the package name. Here is the default layout (works in IntelliJ):
+## ðŸš‚ About
 
-```
-Traincraft
-Copyright (c) 2011-$today.year.
+**TafariCraft - Trains** is a modern Minecraft railway mod built for **Minecraft 1.20.1 Forge** and derived from the classic **Traincraft** project.
 
-This file ("$file.fileName") is part of the Traincraft mod for Minecraft.
-It is created by all people that are listed with @author below.
-It is distributed under LGPL-v3.0.
-You can find the source code at https://github.com/Traincraft/Traincraft 
-```
+The goal is to preserve the character and railway gameplay that made Traincraft memorable while rebuilding and modernizing its systems for a newer Minecraft environment.
 
-## License
-All versions for Minecraft 1.7.10 and below are using a custom license which you can find [here](https://github.com/Traincraft/Traincraft/blob/master/LICENSE.md).
-All versions for Minecraft 1.12.2 and above are using the [LGPLv3.0 License](https://github.com/IQAndreas/markdown-licenses/blob/master/gnu-lgpl-v3.0.md).
+The project includes extensive rewrites, fixes, compatibility work, new mechanics, and continued development of locomotives, rolling stock, track systems, physics, controls, and GUIs.
+
+> **Build. Explore. Connect. Keep the rails alive.**
+
+---
+
+## ðŸ›¤ï¸ Features
+
+### ðŸš‚ Locomotives
+- Functional steam locomotives
+- Forward and reverse operation
+- Mass-aware acceleration and traction
+- Hill and grade behavior
+- Functional locomotive controls
+- Classic-inspired locomotive HUDs and GUIs
+- Fuel and water management
+- Boiler temperature and overheating
+
+### ðŸšƒ Rolling Stock
+- Steam tenders
+- Freight cars
+- Passenger coaches
+- Cabooses
+- Multi-car consists
+- Passenger seating
+- Model-aware vehicle spacing
+
+### ðŸ”— Coupling & Consists
+- Locomotive-to-tender coupling
+- Multi-car train chains
+- Forward and reverse consist movement
+- Curve and hill handling
+- Dynamic consist spacing
+- Automatic cleanup when rolling stock is removed
+
+### ðŸ›¤ï¸ Track System
+- Straight track
+- Curves
+- Slopes
+- Multiple track sizes and configurations
+- Ongoing restoration and modernization of classic Traincraft track behavior
+
+### ðŸ”¥ Steam Simulation
+- Boiler temperature
+- Overheating and failure behavior
+- Coal consumption
+- Water consumption
+- Tender-to-locomotive supply
+- Cooling behavior
+- Steam effects
+
+---
+
+## ðŸ§± Requirements
+
+| Component | Version |
+|---|---|
+| Minecraft | **1.20.1** |
+| Mod Loader | **Forge** |
+| Forge | **47.3.22** |
+| Java | **17** |
+| Status 95% | ðŸš§ **Active Development** |
+
+---
+
+## ðŸ“¦ Installation
+
+1. Install **Minecraft 1.20.1**.
+2. Install **Minecraft Forge 47.3.22**.
+3. Place the TafariCraft - Trains `.jar` into the Minecraft `mods` folder.
+4. Launch Minecraft using the Forge profile.
+5. Build your railway and run some trains. ðŸš‚
+
+Public builds will be distributed through the project's approved release pages.
+
+---
+
+## ðŸš§ Development Status
+
+**TafariCraft - Trains is under active development.**
+The project is on the final runtime test phase, ETA Unkown as lots of bugs to work out.
+
+The project is not simply a compatibility wrapper for old Traincraft builds. Systems are being actively repaired, rewritten, modernized, tested, and expanded for Minecraft 1.20.1.
+
+Development currently focuses on preserving classic Traincraft behavior while improving reliability, train handling, coupling, physics, track compatibility, user interfaces, and gameplay systems.
+
+---
+
+## â¤ï¸ Original Traincraft Credits
+
+TafariCraft - Trains exists because of the work of the original **Traincraft** creators, developers, artists, maintainers, and community contributors.
+
+### Original Creators
+- **Spitfire4466** â€” Original founder and creator
+- **Mrbrutal / Mr. Brutal** â€” Original co-developer and maintainer
+
+### Artwork, Models & Early Development
+- **DAYdiecast** â€” Artwork and modeling
+- **Ontax** â€” Artwork and modeling
+- **Skspajdalfsks** â€” Artwork and modeling
+- **Naiten** â€” Turning-mechanics assistance
+
+### Traincraft 1.7.10 & Later Development
+- **EternalBlueFlame**
+- **NitroxydeX**
+- **FirEmerald**
+- **Hagrud**
+- **canitzp**
+
+Full attribution information is available in [`CREDITS.md`](CREDITS.md).
+
+---
+
+## ðŸ“œ License & Attribution
+
+**TafariCraft - Trains is an unofficial derivative and modernization of Traincraft.**
+
+The Traincraft material used as the foundation for this project is subject to the applicable **Traincraft Custom Usage License** for Minecraft 1.7.10 and earlier.
+
+This project contains substantial modifications, rewrites, bug fixes, compatibility work, and new functionality for Minecraft 1.20.1.
+
+See:
+
+- [`LICENSE.md`](LICENSE.md)
+- [`NOTICE.md`](NOTICE.md)
+- [`CREDITS.md`](CREDITS.md)
+
+Original Traincraft repositories:
+
+- https://github.com/Traincraft/Traincraft
+- https://github.com/EternalBlueFlame/Traincraft-5
+- https://github.com/Spitfire4466/Traincraft-5
+
+TafariCraft - Trains is **not an official Traincraft release** and does not claim endorsement by the original Traincraft authors.
+
+---
+
+## âš ï¸ Minecraft Disclaimer
+
+Minecraft is a trademark/property of Mojang Studios / Microsoft.
+
+**TafariCraft - Trains is not affiliated with or endorsed by Mojang Studios or Microsoft.**
+
+---
+
+## ðŸ”— Project Links
+
+- ðŸš‚ **CurseForge:** Coming Soon
+- ðŸ’» **GitHub:** `RRyanward/TafariCraft-Trains`
+- ðŸ› **Issues / Bug Reports:** GitHub Issues
+- ðŸ“– **Documentation:** In development
+
+---
+
+<div align="center">
+
+## ðŸš‚ TafariCraft - Trains
+
+### Build â€¢ Explore â€¢ Connect
+
+**Keep the rails alive.** ðŸ›¤ï¸
+
+</div>

@@ -1,4 +1,4 @@
-/run/
+﻿/run/
 /run_data/
 /run_server/
 /build/
@@ -21,3 +21,31 @@ hs_err_pid*
 /.tc_baselines/
 /Final-Regression*.txt
 /@{multipart=System.Object*
+# Gradle
+.gradle/
+build/
+out/
+
+# IntelliJ
+.idea/
+*.iml
+*.ipr
+*.iws
+# Eclipse
+.classpath
+.project
+.settings/
+# VS Code
+.vscode/
+# Minecraft run directories
+run/
+runs/
+# Logs and crash reports
+logs/
+crash-reports/
+# OS
+.DS_Store
+Thumbs.db
+# Local environment
+.env
+*.local
