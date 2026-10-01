@@ -1,83 +1,135 @@
-﻿<div align="center">
+<div align="center">
 
 <img src="tafaricraft-trains-banner.png" alt="TafariCraft - Trains banner" width="900">
 
-</div>
+# 🚂 TafariCraft - Trains
 
-<div align="center">
+### A modern Minecraft 1.20.1 continuation of the classic Traincraft experience.
 
-# ðŸš‚ TafariCraft - Trains
+**Minecraft 1.20.1 • Forge 47.3.22 • Java 17**
 
-### Bringing the spirit of classic Traincraft into modern Minecraft.
-
-**Minecraft 1.20.1 â€¢ Forge 47.3.22 â€¢ Java 17**
-
-ðŸš‚ Locomotives â€¢ ðŸšƒ Rolling Stock â€¢ ðŸ›¤ï¸ Tracks â€¢ ðŸ”— Coupling â€¢ ðŸ”¥ Steam Systems
+🚂 Steam • 🛢️ Diesel • ⚡ Electric • 🚃 Rolling Stock • 🛤️ Expanded Track System • 🔗 Consists
 
 </div>
 
 ---
 
-## ðŸš‚ About
+## About
 
-**TafariCraft - Trains** is a modern Minecraft railway mod built for **Minecraft 1.20.1 Forge** and derived from the classic **Traincraft** project.
+**TafariCraft - Trains** is an unofficial modernization and port of the classic **Traincraft** mod for **Minecraft 1.20.1 Forge**.
 
-The goal is to preserve the character and railway gameplay that made Traincraft memorable while rebuilding and modernizing its systems for a newer Minecraft environment.
+The project preserves the character of Traincraft while rebuilding its locomotives, rolling stock, track system, controls, physics, GUIs, effects, and supporting gameplay systems for a modern Forge environment.
 
-The project includes extensive rewrites, fixes, compatibility work, new mechanics, and continued development of locomotives, rolling stock, track systems, physics, controls, and GUIs.
-
-> **Build. Explore. Connect. Keep the rails alive.**
+This is not a compatibility wrapper around an old JAR. The current project contains extensive rewrites, fixes, recovered/restored content, new track tooling, new locomotive systems, and large-scale runtime validation.
 
 ---
 
-## ðŸ›¤ï¸ Features
+## Current Development State
 
-### ðŸš‚ Locomotives
-- Functional steam locomotives
+**Status: Final development / release-candidate validation**
+
+The core train and track systems are now substantially implemented. Current work is focused on final runtime regression testing, polish, compatibility, documentation, and release preparation.
+
+The source repository is active development. A public release build has not yet been published.
+
+---
+
+## Major Features
+
+### 🚂 Locomotives
+- Steam, diesel, and electric locomotive support
 - Forward and reverse operation
+- Track-aware movement
+- Hill and grade handling
 - Mass-aware acceleration and traction
-- Hill and grade behavior
-- Functional locomotive controls
-- Classic-inspired locomotive HUDs and GUIs
-- Fuel and water management
-- Boiler temperature and overheating
+- Functional braking and handbrake controls
+- Classic-inspired HUDs and GUIs
+- Locomotive-specific effects, sounds, and controls
 
-### ðŸšƒ Rolling Stock
+### 🔥 Steam Systems
+- Real boiler temperature
+- Coal and water consumption
+- Tender-to-locomotive coal and water supply
+- Automatic water handling
+- Boiler overheating warnings
+- Steam venting and failure behavior
+- Emergency cooling behavior
+- Boiler explosion/failure handling
+- Inventory recovery rules
+
+### ⚡ Electric Rail Operation
+- Functional electric locomotives
+- **Energy Track** support
+- Redstone-powered connected Energy Track runs
+- Line-power behavior for electric locomotives
+- Energy Track visuals designed to retain the normal track look while showing energized effects when active
+
+### 🚃 Rolling Stock
 - Steam tenders
 - Freight cars
 - Passenger coaches
 - Cabooses
-- Multi-car consists
+- Additional restored rolling stock
 - Passenger seating
-- Model-aware vehicle spacing
+- Multi-car train operation
+- Model-aware spacing and coupling
 
-### ðŸ”— Coupling & Consists
-- Locomotive-to-tender coupling
-- Multi-car train chains
-- Forward and reverse consist movement
-- Curve and hill handling
-- Dynamic consist spacing
-- Automatic cleanup when rolling stock is removed
+### 🔗 Coupling & Consists
+- Dual-ended coupling support
+- Locomotive-to-tender operation
+- Multi-car consists
+- Stable forward and reverse operation
+- Curve, hill, and transition handling
+- Consist spacing control
+- Cleanup when linked rolling stock is removed
 
-### ðŸ›¤ï¸ Track System
-- Straight track
-- Curves
-- Slopes
-- Multiple track sizes and configurations
-- Ongoing restoration and modernization of classic Traincraft track behavior
+A five-car validation consist has been used extensively during development:
 
-### ðŸ”¥ Steam Simulation
-- Boiler temperature
-- Overheating and failure behavior
-- Coal consumption
-- Water consumption
-- Tender-to-locomotive supply
-- Cooling behavior
-- Steam effects
+**Small Steam → Tender → Freight → Passenger Coach → Caboose**
+
+### 🛤️ Track System
+The restored/expanded railway system includes:
+- Normal, medium, long, and very-long straights
+- Medium and large curve families
+- 29x / 32x curve families
+- 45-degree curve families
+- Left/right switches
+- Parallel switches and curves
+- Crossings and diamond crossings
+- Diagonal track families
+- Straight slopes
+- Curved slopes
+- Station and special-purpose tracks
+- Energy Track variants
+- Direction-aware placement
+- Connector-aware snapping
+- White real-track placement previews
+
+Track geometry and train ride/path behavior are treated as protected systems during final cleanup to avoid regressions in movement, slopes, curves, and reverse consist handling.
+
+### 🧰 Tracks Builder & Blueprints
+- Tracks Builder gameplay tool
+- Track material handling
+- Blueprint route planning
+- Blueprint-saved track direction/hand data
+- Support for complex track families
+- Builder-assisted automatic placement
+- Placement compatibility checks
+- Runtime and headless validation tooling
+
+The Builder/Blueprint system is one of the areas receiving final runtime regression testing before release.
+
+### 🎛️ Classic Traincraft Feel
+Where practical, TafariCraft - Trains preserves the classic Traincraft presentation:
+- Classic-style locomotive HUD
+- Classic-inspired locomotive and tender GUIs
+- Familiar fuel/water gameplay
+- Restored legacy models and textures
+- Modernized behavior without intentionally discarding the original mod's identity
 
 ---
 
-## ðŸ§± Requirements
+## Requirements
 
 | Component | Version |
 |---|---|
@@ -85,74 +137,79 @@ The project includes extensive rewrites, fixes, compatibility work, new mechanic
 | Mod Loader | **Forge** |
 | Forge | **47.3.22** |
 | Java | **17** |
-| Status 95% | ðŸš§ **Active Development** |
+| Project Status | **Final development / runtime validation** |
 
 ---
 
-## ðŸ“¦ Installation
+## Building From Source
+
+Clone the repository and build with the included Gradle wrapper using **Java 17**.
+
+Windows PowerShell:
+
+```powershell
+.\gradlew.bat clean build
+```
+
+Development client:
+
+```powershell
+.\gradlew.bat runClient
+```
+
+See [DEVELOPMENT_README.md](DEVELOPMENT_README.md) for project-specific development notes.
+
+---
+
+## Installation
+
+When an approved public build is available:
 
 1. Install **Minecraft 1.20.1**.
-2. Install **Minecraft Forge 47.3.22**.
-3. Place the TafariCraft - Trains `.jar` into the Minecraft `mods` folder.
-4. Launch Minecraft using the Forge profile.
-5. Build your railway and run some trains. ðŸš‚
+2. Install **Forge 47.3.22**.
+3. Place the TafariCraft - Trains JAR in the Minecraft `mods` folder.
+4. Launch Minecraft with the Forge profile.
 
-Public builds will be distributed through the project's approved release pages.
-
----
-
-## ðŸš§ Development Status
-
-**TafariCraft - Trains is under active development.**
-The project is on the final runtime test phase, ETA Unkown as lots of bugs to work out.
-
-The project is not simply a compatibility wrapper for old Traincraft builds. Systems are being actively repaired, rewritten, modernized, tested, and expanded for Minecraft 1.20.1.
-
-Development currently focuses on preserving classic Traincraft behavior while improving reliability, train handling, coupling, physics, track compatibility, user interfaces, and gameplay systems.
+Release binaries will be published only through approved project release pages and subject to the licensing/permission requirements described in this repository.
 
 ---
 
-## â¤ï¸ Original Traincraft Credits
+## Credits
 
 TafariCraft - Trains exists because of the work of the original **Traincraft** creators, developers, artists, maintainers, and community contributors.
 
 ### Original Creators
-- **Spitfire4466** â€” Original founder and creator
-- **Mrbrutal / Mr. Brutal** â€” Original co-developer and maintainer
+- **Spitfire4466** — Original founder and creator of the Train and Zeppelin Mod / Traincraft
+- **Mrbrutal / Mr. Brutal** — Co-creator, developer, and longtime maintainer
 
-### Artwork, Models & Early Development
-- **DAYdiecast** â€” Artwork and modeling
-- **Ontax** â€” Artwork and modeling
-- **Skspajdalfsks** â€” Artwork and modeling
-- **Naiten** â€” Turning-mechanics assistance
+### Original Artwork & Models
+- **DAYdiecast**
+- **Ontax**
+- **Skspajdalfsks**
 
-### Traincraft 1.7.10 & Later Development
-- **EternalBlueFlame**
-- **NitroxydeX**
-- **FirEmerald**
-- **Hagrud**
-- **canitzp**
+### Additional Original Development
+- **Naiten** — Turning-mechanics assistance
+- **EternalBlueFlame** and other contributors — 1.7.10 port and later development
 
-Full attribution information is available in [`CREDITS.md`](CREDITS.md).
+### TafariCraft - Trains
+- **RRyanward** — Current TafariCraft - Trains modernization / Minecraft 1.20.1 port maintainer
+
+Full attribution is maintained in [CREDITS.md](CREDITS.md).
 
 ---
 
-## ðŸ“œ License & Attribution
+## License & Attribution
 
 **TafariCraft - Trains is an unofficial derivative and modernization of Traincraft.**
 
-The Traincraft material used as the foundation for this project is subject to the applicable **Traincraft Custom Usage License** for Minecraft 1.7.10 and earlier.
+Legacy Traincraft material remains subject to its applicable original licensing and attribution requirements. This repository also contains substantial new code, rewrites, compatibility work, fixes, and systems developed for the 1.20.1 port.
 
-This project contains substantial modifications, rewrites, bug fixes, compatibility work, and new functionality for Minecraft 1.20.1.
-
-See:
-
-- [`LICENSE.md`](LICENSE.md)
-- [`NOTICE.md`](NOTICE.md)
-- [`CREDITS.md`](CREDITS.md)
+Read:
+- [LICENSE.md](LICENSE.md)
+- [NOTICE.md](NOTICE.md)
+- [CREDITS.md](CREDITS.md)
 
 Original Traincraft repositories:
-
 - https://github.com/Traincraft/Traincraft
 - https://github.com/EternalBlueFlame/Traincraft-5
 - https://github.com/Spitfire4466/Traincraft-5
@@ -161,29 +218,21 @@ TafariCraft - Trains is **not an official Traincraft release** and does not clai
 
 ---
 
-## âš ï¸ Minecraft Disclaimer
+## Project Links
 
-Minecraft is a trademark/property of Mojang Studios / Microsoft.
-
-**TafariCraft - Trains is not affiliated with or endorsed by Mojang Studios or Microsoft.**
-
----
-
-## ðŸ”— Project Links
-
-- ðŸš‚ **CurseForge:** Coming Soon
-- ðŸ’» **GitHub:** `RRyanward/TafariCraft-Trains`
-- ðŸ› **Issues / Bug Reports:** GitHub Issues
-- ðŸ“– **Documentation:** In development
+- **GitHub:** https://github.com/RRyanward/TafariCraft-Trains
+- **Issues / Bug Reports:** GitHub Issues
+- **CurseForge:** Planned public release page
+- **Documentation / In-game Guide:** In active development
 
 ---
 
 <div align="center">
 
-## ðŸš‚ TafariCraft - Trains
+### 🚂 TafariCraft - Trains
 
-### Build â€¢ Explore â€¢ Connect
+**Build • Explore • Connect**
 
-**Keep the rails alive.** ðŸ›¤ï¸
+**Keep the rails alive.**
 
 </div>
