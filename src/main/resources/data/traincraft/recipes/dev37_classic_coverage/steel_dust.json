@@ -1,0 +1,13 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "category":  "misc",
+    "ingredients":  [
+                        {
+                            "item":  "traincraft:steel_ingot"
+                        }
+                    ],
+    "result":  {
+                   "item":  "traincraft:steel_dust",
+                   "count":  1
+               }
+}

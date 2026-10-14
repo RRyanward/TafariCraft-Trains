@@ -9,6 +9,7 @@ import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegistryObject;
 import traincraft.Traincraft;
+import traincraft.menu.AssemblyTableMenu;
 import traincraft.menu.FreightCartMenu;
 import traincraft.menu.GuideMenu;
 import traincraft.menu.ProcessMachineMenu;
@@ -34,6 +35,9 @@ public final class TCMenus {
     public static final RegistryObject<MenuType<PoweredLocomotiveMenu>> POWERED_LOCOMOTIVE =
             MENUS.register("powered_locomotive", () ->
                     new MenuType<>(PoweredLocomotiveMenu::new, FeatureFlags.DEFAULT_FLAGS));
+
+    public static final RegistryObject<MenuType<AssemblyTableMenu>> ASSEMBLY_TABLE =
+            MENUS.register("assembly_table", () -> IForgeMenuType.create(AssemblyTableMenu::new));
     public static final RegistryObject<MenuType<ProcessMachineMenu>> PROCESS_MACHINE =
             MENUS.register("process_machine", () -> IForgeMenuType.create(ProcessMachineMenu::new));
 
@@ -43,6 +47,10 @@ public final class TCMenus {
     public static final RegistryObject<MenuType<TransportCarMenu>> TRANSPORT_CAR_MANIFEST =
             MENUS.register("transport_car_manifest", () ->
                     IForgeMenuType.create(TransportCarMenu::new));
+    // DEV47b read-only GUI synchronized from the server-side Forge fluid handler.
+    public static final RegistryObject<MenuType<traincraft.menu.TctFluidMenu>> TCT_TANKER =
+            MENUS.register("tct_tanker", () -> IForgeMenuType.create(traincraft.menu.TctFluidMenu::new));
+
     private TCMenus() {
     }
 

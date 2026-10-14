@@ -1,6 +1,12 @@
 {
-  "parent": "minecraft:block/cube_all",
-  "textures": {
-    "all": "traincraft:block/train_table_side"
-  }
+    "parent":  "minecraft:block/cube",
+    "textures":  {
+                     "down":  "traincraft:block/train_table_bottom",
+                     "up":  "traincraft:block/train_table_top",
+                     "north":  "traincraft:block/train_table_front",
+                     "south":  "traincraft:block/train_table_side",
+                     "west":  "traincraft:block/train_table_side",
+                     "east":  "traincraft:block/train_table_side",
+                     "particle":  "traincraft:block/train_table_side"
+                 }
 }

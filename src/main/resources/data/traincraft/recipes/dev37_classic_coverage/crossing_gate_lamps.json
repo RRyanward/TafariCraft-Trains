@@ -1,0 +1,24 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "category":  "misc",
+    "pattern":  [
+                    "IRI",
+                    "RLR",
+                    "IRI"
+                ],
+    "key":  {
+                "I":  {
+                          "item":  "minecraft:iron_nugget"
+                      },
+                "L":  {
+                          "item":  "minecraft:redstone_lamp"
+                      },
+                "R":  {
+                          "item":  "minecraft:redstone"
+                      }
+            },
+    "result":  {
+                   "item":  "traincraft:crossing_gate_lamps",
+                   "count":  1
+               }
+}

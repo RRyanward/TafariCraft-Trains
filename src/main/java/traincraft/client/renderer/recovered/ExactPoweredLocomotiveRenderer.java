@@ -15,6 +15,7 @@ import traincraft.entity.train.power.LegacyPoweredLocomotive;
 /** v1j: exact old CustomModelRenderer geometry/UV path for the five broken powered models. */
 public final class ExactPoweredLocomotiveRenderer<T extends LegacyPoweredLocomotive> extends EntityRenderer<T> {
     private final ExactLegacyMesh mesh;
+    private final String meshIdForLights;
     private final ResourceLocation texture;
     private final double tx, ty, tz;
     private final float rx, ry, rz, sx, sy, sz;
@@ -24,6 +25,7 @@ public final class ExactPoweredLocomotiveRenderer<T extends LegacyPoweredLocomot
             float rx, float ry, float rz, float sx, float sy, float sz, float shadow) {
         super(context);
         this.mesh = ExactLegacyMesh.load(meshId);
+        this.meshIdForLights = meshId;
         this.texture = texture;
         this.tx=tx;this.ty=ty;this.tz=tz;this.rx=rx;this.ry=ry;this.rz=rz;this.sx=sx;this.sy=sy;this.sz=sz;
         this.shadowRadius = shadow;
@@ -50,6 +52,14 @@ public final class ExactPoweredLocomotiveRenderer<T extends LegacyPoweredLocomot
         pose.scale(sx, sy, sz);
         VertexConsumer out = buffers.getBuffer(RenderType.entityCutoutNoCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, texture)));
         mesh.render(pose, out, packedLight, OverlayTexture.NO_OVERLAY);
+        // TC_DEV38_R1G1Z7W5_RENDERER_WHEEL_FACE_HOOK
+        traincraft.client.renderer.animation.StructuralWheelFaceOverlayRenderer.renderExact(
+                mesh, pose, out, packedLight, OverlayTexture.NO_OVERLAY);
+        // TC_DEV50D3V_EXACT_POWERED_MARKED_HEADLIGHTS -- visual-only; the original
+        // steam/legacy light renderer and locomotive physics are not modified.
+        Dev50D3VExactPoweredHeadlights.draw(meshIdForLights, entity, pose, buffers,
+                tx, ty + entity.tcCalibrationHeightAdjustment(), tz,
+                rx, ry, rz, sx, sy, sz, partialTicks);
         pose.popPose();
         super.render(entity, yaw, partialTicks, pose, buffers, packedLight);
     }

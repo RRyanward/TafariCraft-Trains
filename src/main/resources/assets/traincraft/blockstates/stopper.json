@@ -1,7 +1,18 @@
 {
-  "variants": {
-    "": {
-      "model": "traincraft:block/stopper"
-    }
-  }
+  "multipart":[
+    {"when":{"facing":"north"},"apply":{"model":"traincraft:block/legacy_track_normal"}},
+    {"when":{"facing":"east"},"apply":{"model":"traincraft:block/legacy_track_normal","y":90}},
+    {"when":{"facing":"south"},"apply":{"model":"traincraft:block/legacy_track_normal","y":180}},
+    {"when":{"facing":"west"},"apply":{"model":"traincraft:block/legacy_track_normal","y":270}},
+
+    {"when":{"facing":"north","energy":"false"},"apply":{"model":"traincraft:block/stopper_classic"}},
+    {"when":{"facing":"east","energy":"false"},"apply":{"model":"traincraft:block/stopper_classic","y":90}},
+    {"when":{"facing":"south","energy":"false"},"apply":{"model":"traincraft:block/stopper_classic","y":180}},
+    {"when":{"facing":"west","energy":"false"},"apply":{"model":"traincraft:block/stopper_classic","y":270}},
+
+    {"when":{"facing":"north","energy":"true"},"apply":{"model":"traincraft:block/stopper_classic_energy"}},
+    {"when":{"facing":"east","energy":"true"},"apply":{"model":"traincraft:block/stopper_classic_energy","y":90}},
+    {"when":{"facing":"south","energy":"true"},"apply":{"model":"traincraft:block/stopper_classic_energy","y":180}},
+    {"when":{"facing":"west","energy":"true"},"apply":{"model":"traincraft:block/stopper_classic_energy","y":270}}
+  ]
 }

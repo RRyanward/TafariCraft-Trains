@@ -5,6 +5,7 @@ package traincraft.network;
 
 import net.minecraft.ChatFormatting;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
@@ -59,6 +60,13 @@ public final class TrackBlueprintSelectionNetwork {
                 RenamePacket::encode,
                 RenamePacket::decode,
                 RenamePacket::handle);
+        // TC_DEV34_R1C5_BLUEPRINT_CONTINUE_EDITING_PACKET
+        channel.registerMessage(
+                2,
+                ContinueEditingPacket.class,
+                ContinueEditingPacket::encode,
+                ContinueEditingPacket::decode,
+                ContinueEditingPacket::handle);
     }
 
     public static void sendCycle(int direction, boolean familyOnly) {
@@ -83,6 +91,12 @@ public final class TrackBlueprintSelectionNetwork {
 
         channel.sendToServer(
                 new RenamePacket(safe));
+    }
+    public static void sendContinueEditing() {
+        init();
+
+        channel.sendToServer(
+                new ContinueEditingPacket());
     }
 
     private static ItemStack heldBlueprint(ServerPlayer player) {
@@ -224,5 +238,81 @@ public final class TrackBlueprintSelectionNetwork {
         }
     }
 
+    // TC_DEV34_R1C5_BLUEPRINT_CONTINUE_EDITING_PACKET
+    private record ContinueEditingPacket() {
+        private static void encode(
+                ContinueEditingPacket message,
+                FriendlyByteBuf buffer) {
+            // no payload
+        }
+
+        private static ContinueEditingPacket decode(
+                FriendlyByteBuf buffer) {
+            return new ContinueEditingPacket();
+        }
+
+        private static void handle(
+                ContinueEditingPacket message,
+                Supplier<NetworkEvent.Context> contextSupplier) {
+            NetworkEvent.Context context =
+                    contextSupplier.get();
+
+            ServerPlayer player =
+                    context.getSender();
+
+            if (player != null) {
+                context.enqueueWork(() -> {
+                    ItemStack blueprint =
+                            heldBlueprint(player);
+
+                    if (!(blueprint.getItem()
+                            instanceof TrackBlueprintItem)) {
+                        return;
+                    }
+
+                    CompoundTag root =
+                            blueprint.getTag();
+
+                    if (root != null
+                            && root.contains(
+                                    "TafariTrackBlueprint",
+                                    CompoundTag.TAG_COMPOUND)) {
+                        CompoundTag data =
+                                root.getCompound(
+                                        "TafariTrackBlueprint");
+
+                        data.putBoolean(
+                                "Locked",
+                                false);
+
+                        root.put(
+                                "TafariTrackBlueprint",
+                                data);
+                    }
+
+                    player.getInventory()
+                            .setChanged();
+
+                    player.inventoryMenu
+                            .broadcastChanges();
+
+                    if (player.containerMenu
+                            != player.inventoryMenu) {
+                        player.containerMenu
+                                .broadcastChanges();
+                    }
+
+                    player.displayClientMessage(
+                            Component.literal(
+                                    "Blueprint unlocked for editing.")
+                                    .withStyle(
+                                            ChatFormatting.AQUA),
+                            true);
+                });
+            }
+
+            context.setPacketHandled(true);
+        }
+    }
     private TrackBlueprintSelectionNetwork() {}
 }

@@ -1,0 +1,25 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "category":  "misc",
+    "ingredients":  [
+                        {
+                            "item":  "traincraft:track_normal"
+                        },
+                        {
+                            "item":  "traincraft:track_normal"
+                        },
+                        {
+                            "item":  "traincraft:track_normal"
+                        },
+                        {
+                            "item":  "traincraft:track_normal"
+                        },
+                        {
+                            "item":  "traincraft:track_normal"
+                        }
+                    ],
+    "result":  {
+                   "item":  "traincraft:track_slope_curve_large_left",
+                   "count":  1
+               }
+}

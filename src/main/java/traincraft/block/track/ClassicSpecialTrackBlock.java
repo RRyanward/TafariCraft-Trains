@@ -156,10 +156,10 @@ public final class ClassicSpecialTrackBlock extends RailBlock {
 
         switch (type) {
             case DETECTOR_FREIGHT -> {
-                if (entity instanceof FreightCart) pulse(level, pos, state);
+                if (isFreightStock(entity)) pulse(level, pos, state);
             }
             case DETECTOR_PASSENGER -> {
-                if (entity instanceof PassengerCoachBlue || entity instanceof ClassicCaboose) pulse(level, pos, state);
+                if (isPassengerStock(entity)) pulse(level, pos, state);
             }
             case DETECTOR_LOCOMOTIVE -> {
                 if (isLocomotive(entity)) pulse(level, pos, state);
@@ -172,7 +172,7 @@ public final class ClassicSpecialTrackBlock extends RailBlock {
             }
             case DETECTOR_TANK -> {
                 String id = entityId(entity);
-                if (id.contains("tank")) pulse(level, pos, state);
+                if (!isLocomotive(entity) && id.contains("tank")) pulse(level, pos, state);
             }
             case CROSSING_APPROACH -> {
                 // First contact with this rail activates the nearest crossing gate cluster immediately.
@@ -230,7 +230,7 @@ public final class ClassicSpecialTrackBlock extends RailBlock {
             }
             case HORN -> {
                 if (isLocomotive(entity)) {
-                    if (entity instanceof LegacyPoweredLocomotive powered) powered.playAutomaticHorn();
+                    if (entity instanceof LegacyPoweredLocomotive powered) powered.playAutomaticHorn(); else if (entity instanceof SmallSteamLocomotive steam) steam.playWhistle(null);
                     pulse(level, pos, state);
                 }
             }
@@ -261,6 +261,21 @@ public final class ClassicSpecialTrackBlock extends RailBlock {
         }
     }
 
+    // DEV50-TC15: Detect ALL registered compatible freight and passenger stock,
+    // not only the original sample cart/blue coach. Do not classify locomotives.
+    private static boolean isFreightStock(Entity e) {
+        if (!(e instanceof AbstractMinecart) || isLocomotive(e)) return false;
+        String id=entityId(e);
+        return id.contains("freight") || id.contains("baggage") || id.contains("tanker")
+                || id.contains("tank") || id.contains("livestock") || id.contains("mob_transport");
+    }
+
+    private static boolean isPassengerStock(Entity e) {
+        if (!(e instanceof AbstractMinecart) || isLocomotive(e)) return false;
+        String id=entityId(e);
+        return id.contains("passenger") || id.contains("observatory")
+                || id.contains("tail_car") || id.contains("caboose");
+    }
     private static boolean isLocomotive(Entity entity) {
         return entity instanceof SmallSteamLocomotive;
     }

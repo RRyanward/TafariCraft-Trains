@@ -1,0 +1,24 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "category":  "misc",
+    "pattern":  [
+                    "IRI",
+                    "RER",
+                    "IRI"
+                ],
+    "key":  {
+                "E":  {
+                          "item":  "minecraft:ender_pearl"
+                      },
+                "I":  {
+                          "item":  "minecraft:iron_ingot"
+                      },
+                "R":  {
+                          "item":  "minecraft:redstone"
+                      }
+            },
+    "result":  {
+                   "item":  "traincraft:chunk_loader_activator",
+                   "count":  1
+               }
+}

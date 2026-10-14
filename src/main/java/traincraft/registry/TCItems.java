@@ -60,6 +60,15 @@ public final class TCItems {
 
 
 
+
+    // DEV50A: An individual egg explicitly assigns its corresponding railway profession.
+    public static final RegistryObject<Item> STATION_CHIEF_SPAWN_EGG = custom("station_chief_spawn_egg", () -> new traincraft.villager.RailwayVillagerEgg(new Item.Properties(), traincraft.villager.RailwayVillagers.STATION_CHIEF));
+    public static final RegistryObject<Item> RAILWAY_ENGINEER_SPAWN_EGG = custom("railway_engineer_spawn_egg", () -> new traincraft.villager.RailwayVillagerEgg(new Item.Properties(), traincraft.villager.RailwayVillagers.RAILWAY_ENGINEER));
+    public static final RegistryObject<Item> TRACK_WORKER_SPAWN_EGG = custom("track_worker_spawn_egg", () -> new traincraft.villager.RailwayVillagerEgg(new Item.Properties(), traincraft.villager.RailwayVillagers.TRACK_WORKER));
+    public static final RegistryObject<Item> TRAIN_CONDUCTOR_SPAWN_EGG = custom("train_conductor_spawn_egg", () -> new traincraft.villager.RailwayVillagerEgg(new Item.Properties(), traincraft.villager.RailwayVillagers.TRAIN_CONDUCTOR));
+    public static final RegistryObject<Item> FUEL_DEPOT_OPERATOR_SPAWN_EGG = custom("fuel_depot_operator_spawn_egg", () -> new traincraft.villager.RailwayVillagerEgg(new Item.Properties(), traincraft.villager.RailwayVillagers.FUEL_DEPOT_OPERATOR));
+    public static final RegistryObject<Item> FREIGHT_YARD_CLERK_SPAWN_EGG = custom("freight_yard_clerk_spawn_egg", () -> new traincraft.villager.RailwayVillagerEgg(new Item.Properties(), traincraft.villager.RailwayVillagers.FREIGHT_YARD_CLERK));
+
     public static final RegistryObject<Item> WRENCH = simple("wrench", new Item.Properties().stacksTo(1));
     public static final RegistryObject<Item> TRANSPORT_ROPE = custom(
             "transport_rope",
@@ -164,6 +173,17 @@ public final class TCItems {
     public static final RegistryObject<Item> LOCOMOTIVE_STEAM_SHAY = custom(
             "locomotive_steam_shay",
             () -> new RollingStockItem<>(new Item.Properties().stacksTo(1), TCEntities.LOCOMOTIVE_STEAM_SHAY));
+
+    // DEV46 TCT rail-fit test placement items.
+    public static final RegistryObject<Item> TCT_TANKER_UNIVERSAL = custom(
+            "tct_tanker_universal", () -> new RollingStockItem<>(
+                    new Item.Properties().stacksTo(1), TCEntities.TCT_TANKER_UNIVERSAL));
+    public static final RegistryObject<Item> TCT_TANKER_WATER = custom(
+            "tct_tanker_water", () -> new RollingStockItem<>(
+                    new Item.Properties().stacksTo(1), TCEntities.TCT_TANKER_WATER));
+    public static final RegistryObject<Item> TCT_TANKER_LAVA = custom(
+            "tct_tanker_lava", () -> new RollingStockItem<>(
+                    new Item.Properties().stacksTo(1), TCEntities.TCT_TANKER_LAVA));
 
     /** Step 7.3.0 classic 36-slot Freight Cart placement item. */
 
@@ -617,10 +637,6 @@ public final class TCItems {
 
     public static final RegistryObject<Item> COPPER_INGOT = simple("copper_ingot");
 
-
-
-    public static final RegistryObject<Item> BALLOON = simple("balloon");
-
     public static final RegistryObject<Item> BOGIE_IRON = simple("bogie_iron");
 
     public static final RegistryObject<Item> BOGIE_WOOD = simple("bogie_wood");
@@ -658,8 +674,6 @@ public final class TCItems {
     public static final RegistryObject<Item> FRAME_WOOD = simple("frame_wood");
 
     public static final RegistryObject<Item> PISTON = simple("piston");
-
-    public static final RegistryObject<Item> PROPELLER = simple("propeller");
 
     public static final RegistryObject<Item> RAIL_COPPER = simple("rail_copper");
 

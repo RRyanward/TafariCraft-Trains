@@ -1,3 +1,1 @@
-{
-  "parent": "traincraft:block/hearth_furnace"
-}
+{"parent":"traincraft:block/hearth_furnace_classic"}

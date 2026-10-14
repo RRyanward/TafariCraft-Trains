@@ -31,7 +31,7 @@ import java.util.*;
 public final class MediumCurveDiagnostics {
     private MediumCurveDiagnostics() {}
 
-    @SubscribeEvent
+    // TC_DEV38_R1D_COMMAND_DISABLED_RELEASE
     public static void register(RegisterCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("tc_curve_debug")
                 .requires(s -> s.hasPermission(2))

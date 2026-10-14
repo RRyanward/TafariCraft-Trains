@@ -11,6 +11,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import traincraft.client.model.recovered.*;
 import traincraft.client.renderer.recovered.RecoveredPoweredLocomotiveRenderer;
+import traincraft.client.renderer.recovered.RecoveredTracksBuilderRenderer;
 import traincraft.client.screen.ProcessMachineScreen;
 import traincraft.client.screen.TafariCraftGuideScreen;
 import traincraft.client.screen.PoweredLocomotiveScreen;
@@ -177,6 +178,7 @@ public final class TCClientEvents {
         event.registerLayerDefinition(RecoveredModelTram.LAYER, RecoveredModelTram::createBodyLayer);
         event.registerLayerDefinition(RecoveredModelTramNY.LAYER, RecoveredModelTramNY::createBodyLayer);
         event.registerLayerDefinition(RecoveredModelBuilder.LAYER, RecoveredModelBuilder::createBodyLayer);
+        event.registerLayerDefinition(RecoveredBuilderRotorModel.LAYER, RecoveredBuilderRotorModel::createBodyLayer);
         event.registerLayerDefinition(SmallSteamLocomotiveModel.LAYER, SmallSteamLocomotiveModel::createBodyLayer);
         event.registerLayerDefinition(SteamTenderModel.LAYER, SteamTenderModel::createBodyLayer);
         event.registerLayerDefinition(HeavySteamLocomotiveModel.LAYER, HeavySteamLocomotiveModel::createBodyLayer);
@@ -286,6 +288,9 @@ public final class TCClientEvents {
         event.registerEntityRenderer(TCEntities.STEAM_TENDER_MIDLAND_COMPOUND.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(MidlandCompoundSteamTenderRenderer::new));
         event.registerEntityRenderer(TCEntities.LOCOMOTIVE_STEAM_STAR_CLASS.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(StarClassSteamLocomotiveRenderer::new));
         event.registerEntityRenderer(TCEntities.STEAM_TENDER_STAR_CLASS.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(StarClassSteamTenderRenderer::new));
+        event.registerEntityRenderer(TCEntities.TCT_TANKER_UNIVERSAL.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(traincraft.client.renderer.TctTankerRenderer::new));
+        event.registerEntityRenderer(TCEntities.TCT_TANKER_WATER.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(traincraft.client.renderer.TctTankerRenderer::new));
+        event.registerEntityRenderer(TCEntities.TCT_TANKER_LAVA.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(traincraft.client.renderer.TctTankerRenderer::new));
         event.registerEntityRenderer(TCEntities.FREIGHT_CART.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(FreightCartRenderer::new));
         event.registerEntityRenderer(TCEntities.PASSENGER_COACH_BLUE.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(PassengerCoachRenderer::new));
         event.registerEntityRenderer(TCEntities.CABOOSE.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(ClassicCabooseRenderer::new));
@@ -308,6 +313,16 @@ public final class TCClientEvents {
         event.registerEntityRenderer(TCEntities.LOCOMOTIVE_ELECTRIC_HIGH_SPEED_ZEROED.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(ctx -> new RecoveredPoweredLocomotiveRenderer<>(ctx,new RecoveredModelLocoHighSpeedZeroED(ctx.bakeLayer(RecoveredModelLocoHighSpeedZeroED.LAYER)),new net.minecraft.resources.ResourceLocation(Traincraft.MOD_ID,"textures/trains/loco_high_speed_zeroed.png"),-1.7D,-0.44D,0D,0F,0F,0F,1F,1F,1F,1.4F)));
         event.registerEntityRenderer(TCEntities.LOCOMOTIVE_ELECTRIC_TRAM.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(ctx -> new RecoveredPoweredLocomotiveRenderer<>(ctx,new RecoveredModelTram(ctx.bakeLayer(RecoveredModelTram.LAYER)),new net.minecraft.resources.ResourceLocation(Traincraft.MOD_ID,"textures/trains/tram.png"),-0.8D,-0.44D,0D,0F,0F,0F,1F,1F,1F,1.1F)));
         event.registerEntityRenderer(TCEntities.LOCOMOTIVE_ELECTRIC_TRAM_NY.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(ctx -> new RecoveredPoweredLocomotiveRenderer<>(ctx,new RecoveredModelTramNY(ctx.bakeLayer(RecoveredModelTramNY.LAYER)),new net.minecraft.resources.ResourceLocation(Traincraft.MOD_ID,"textures/trains/loco_tram_ny.png"),-1.5D,-0.44D,0D,0F,0F,0F,1F,1F,1F,1.2F)));
-        event.registerEntityRenderer(TCEntities.TRACKS_BUILDER.get(), traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(ctx -> new RecoveredPoweredLocomotiveRenderer<>(ctx,new RecoveredModelBuilder(ctx.bakeLayer(RecoveredModelBuilder.LAYER)),new net.minecraft.resources.ResourceLocation(Traincraft.MOD_ID,"textures/trains/builder2.png"),0D,-0.42D,0D,0F,0F,0F,1F,1F,1F,1.3F)));
+        event.registerEntityRenderer(
+                TCEntities.TRACKS_BUILDER.get(),
+                traincraft.client.renderer.calibration.RollingStockCalibrationRenderer.wrap(
+                        ctx -> new RecoveredTracksBuilderRenderer(
+                                ctx,
+                                new RecoveredModelBuilder(
+                                        ctx.bakeLayer(
+                                                RecoveredModelBuilder.LAYER)),
+                                new RecoveredBuilderRotorModel(
+                                        ctx.bakeLayer(
+                                                RecoveredBuilderRotorModel.LAYER)))));
     }
 }

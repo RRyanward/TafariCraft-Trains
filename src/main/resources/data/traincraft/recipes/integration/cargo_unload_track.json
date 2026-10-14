@@ -1,0 +1,12 @@
+{
+  "type":"minecraft:crafting_shaped",
+  "category":"transportation",
+  "pattern":[" I ","PHP"," R "],
+  "key":{
+    "R":{"item":"minecraft:redstone_torch"},
+    "P":{"item":"minecraft:rail"},
+    "H":{"item":"minecraft:hopper"},
+    "I":{"item":"minecraft:iron_ingot"}
+  },
+  "result":{"item":"traincraft:cargo_unload_track","count":2}
+}

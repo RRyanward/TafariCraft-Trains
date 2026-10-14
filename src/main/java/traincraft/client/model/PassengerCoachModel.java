@@ -40,10 +40,8 @@ public final class PassengerCoachModel {
                         0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box1",
                 CubeListBuilder.create().texOffs(188, 11)
-                        .addBox(0.0F, 0.0F, 0.0F, 8.0F, 7.0F, 0.0F),
-                PartPose.offsetAndRotation(
-                        -20.0F, 0.0F, 5.0F,
-                        0.0F, 0.0F, 0.0F));
+                        .addBox(-4.0F, -3.5F, 0.0F, 8.0F, 7.0F, 0.0F),
+                PartPose.offsetAndRotation(-16.0F, 3.5F, 5.0F, 0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box10",
                 CubeListBuilder.create().texOffs(215, 51)
                         .addBox(0.0F, 0.0F, 0.0F, 5.0F, 2.0F, 15.0F),
@@ -82,10 +80,8 @@ public final class PassengerCoachModel {
                         -0.034906585F, -3.1415927F, 0.0F));
         root.addOrReplaceChild("box16",
                 CubeListBuilder.create().texOffs(188, 11)
-                        .addBox(0.0F, 0.0F, 0.0F, 8.0F, 7.0F, 0.0F),
-                PartPose.offsetAndRotation(
-                        -32.0F, 0.0F, -5.0F,
-                        0.0F, 0.0F, 0.0F));
+                        .addBox(-4.0F, -3.5F, 0.0F, 8.0F, 7.0F, 0.0F),
+                PartPose.offsetAndRotation(-28.0F, 3.5F, -5.0F, 0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box17",
                 CubeListBuilder.create().texOffs(96, 1)
                         .addBox(0.0F, 0.0F, 0.0F, 2.0F, 2.0F, 14.0F),
@@ -100,10 +96,8 @@ public final class PassengerCoachModel {
                         0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box19",
                 CubeListBuilder.create().texOffs(188, 11)
-                        .addBox(0.0F, 0.0F, 0.0F, 8.0F, 7.0F, 0.0F),
-                PartPose.offsetAndRotation(
-                        24.0F, 0.0F, -5.0F,
-                        0.0F, 0.0F, 0.0F));
+                        .addBox(-4.0F, -3.5F, 0.0F, 8.0F, 7.0F, 0.0F),
+                PartPose.offsetAndRotation(28.0F, 3.5F, -5.0F, 0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box2",
                 CubeListBuilder.create().texOffs(96, 1)
                         .addBox(0.0F, 0.0F, 0.0F, 2.0F, 2.0F, 14.0F),
@@ -118,10 +112,8 @@ public final class PassengerCoachModel {
                         0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box21",
                 CubeListBuilder.create().texOffs(188, 11)
-                        .addBox(0.0F, 0.0F, 0.0F, 8.0F, 7.0F, 0.0F),
-                PartPose.offsetAndRotation(
-                        24.0F, 0.0F, 5.0F,
-                        0.0F, 0.0F, 0.0F));
+                        .addBox(-4.0F, -3.5F, 0.0F, 8.0F, 7.0F, 0.0F),
+                PartPose.offsetAndRotation(28.0F, 3.5F, 5.0F, 0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box22",
                 CubeListBuilder.create().texOffs(136, 0)
                         .addBox(0.0F, 0.0F, 0.0F, 6.0F, 1.0F, 14.0F),
@@ -208,10 +200,8 @@ public final class PassengerCoachModel {
                         0.0F, -3.1415927F, 6.1784654F));
         root.addOrReplaceChild("box35",
                 CubeListBuilder.create().texOffs(188, 11)
-                        .addBox(0.0F, 0.0F, 0.0F, 8.0F, 7.0F, 0.0F),
-                PartPose.offsetAndRotation(
-                        12.0F, 0.0F, 5.0F,
-                        0.0F, 0.0F, 0.0F));
+                        .addBox(-4.0F, -3.5F, 0.0F, 8.0F, 7.0F, 0.0F),
+                PartPose.offsetAndRotation(16.0F, 3.5F, 5.0F, 0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box36",
                 CubeListBuilder.create().texOffs(215, 209)
                         .addBox(0.0F, 0.0F, 0.0F, 1.0F, 17.0F, 2.0F),
@@ -238,10 +228,8 @@ public final class PassengerCoachModel {
                         0.0F, 0.0F, -6.1784654F));
         root.addOrReplaceChild("box4",
                 CubeListBuilder.create().texOffs(188, 11)
-                        .addBox(0.0F, 0.0F, 0.0F, 8.0F, 7.0F, 0.0F),
-                PartPose.offsetAndRotation(
-                        -32.0F, 0.0F, 5.0F,
-                        0.0F, 0.0F, 0.0F));
+                        .addBox(-4.0F, -3.5F, 0.0F, 8.0F, 7.0F, 0.0F),
+                PartPose.offsetAndRotation(-28.0F, 3.5F, 5.0F, 0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box40",
                 CubeListBuilder.create().texOffs(200, 0)
                         .addBox(0.0F, 0.0F, 0.0F, 6.0F, 1.0F, 22.0F),
@@ -304,10 +292,8 @@ public final class PassengerCoachModel {
                         0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box5",
                 CubeListBuilder.create().texOffs(188, 11)
-                        .addBox(0.0F, 0.0F, 0.0F, 8.0F, 7.0F, 0.0F),
-                PartPose.offsetAndRotation(
-                        12.0F, 0.0F, -5.0F,
-                        0.0F, 0.0F, 0.0F));
+                        .addBox(-4.0F, -3.5F, 0.0F, 8.0F, 7.0F, 0.0F),
+                PartPose.offsetAndRotation(16.0F, 3.5F, -5.0F, 0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box50",
                 CubeListBuilder.create().texOffs(209, 116)
                         .addBox(3.0F, 0.0F, 0.0F, 22.0F, 3.0F, 1.0F),
@@ -394,10 +380,8 @@ public final class PassengerCoachModel {
                         -0.034906585F, -3.1415927F, 0.0F));
         root.addOrReplaceChild("box63",
                 CubeListBuilder.create().texOffs(188, 11)
-                        .addBox(0.0F, 0.0F, 0.0F, 8.0F, 7.0F, 0.0F),
-                PartPose.offsetAndRotation(
-                        -20.0F, 0.0F, -5.0F,
-                        0.0F, 0.0F, 0.0F));
+                        .addBox(-4.0F, -3.5F, 0.0F, 8.0F, 7.0F, 0.0F),
+                PartPose.offsetAndRotation(-16.0F, 3.5F, -5.0F, 0.0F, 0.0F, 0.0F));
         root.addOrReplaceChild("box64",
                 CubeListBuilder.create().texOffs(213, 165)
                         .addBox(0.0F, 0.0F, 0.0F, 0.0F, 22.0F, 20.0F),
@@ -605,6 +589,21 @@ public final class PassengerCoachModel {
         return LayerDefinition.create(mesh, 256, 256);
     }
 
+    // TC_DEV38_R1G1X_PASSENGER_NATIVE_WHEELS
+    // r1g1w2 proved these are eight separate one-cube 8x7 wheel planes.
+    // Each was re-centered around its exact phase-zero geometric center above.
+    // Passenger/Freight models are authored lengthwise on X, so wheel axle axis
+    // is local Z and zRot is the correct native rotation axis.
+    public static void animateWheels(ModelPart bakedRoot, float phase) {
+        bakedRoot.getChild("box1").zRot = phase;
+        bakedRoot.getChild("box16").zRot = phase;
+        bakedRoot.getChild("box19").zRot = phase;
+        bakedRoot.getChild("box21").zRot = phase;
+        bakedRoot.getChild("box35").zRot = phase;
+        bakedRoot.getChild("box4").zRot = phase;
+        bakedRoot.getChild("box5").zRot = phase;
+        bakedRoot.getChild("box63").zRot = phase;
+    }
     public static ModelPart root(ModelPart bakedRoot) {
         return bakedRoot;
     }

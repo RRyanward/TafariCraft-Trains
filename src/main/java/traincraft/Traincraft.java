@@ -29,7 +29,7 @@ import traincraft.registry.TCSounds;
 @Mod(Traincraft.MOD_ID)
 public final class Traincraft {
     public static final String MOD_ID = "traincraft";
-    public static final String MOD_NAME = "Traincraft";
+    public static final String MOD_NAME = "TafariCraft - Trains";
     public static final Logger LOGGER = LogUtils.getLogger();
 
     public Traincraft() {
@@ -44,7 +44,9 @@ TCBlocks.register(modBus);
         TCMenus.register(modBus);
         TCSounds.register(modBus);
         TCCreativeTabs.register(modBus);
+        traincraft.villager.RailwayVillagers.register(modBus);
         TCNetwork.register();
+        traincraft.worldgen.RailwayVillageWorldgen.initialize();
 
         MinecraftForge.EVENT_BUS.register(this);
         LOGGER.info("Starting {} 1.20.1 port with steam boiler/fuel system", MOD_NAME);

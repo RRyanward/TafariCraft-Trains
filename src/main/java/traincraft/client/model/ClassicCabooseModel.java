@@ -68,24 +68,24 @@ public final class ClassicCabooseModel {
                 PartPose.offset(-19.0F, 25.0F, -6.0F));
         root.addOrReplaceChild("box18",
                 CubeListBuilder.create().texOffs(38, 216)
-                        .addBox(0.0F, 0.0F, 0.0F, 4.0F, 4.0F, 1.0F),
-                PartPose.offset(-13.0F, -1.0F, -6.0F));
+                        .addBox(-2.0F, -2.0F, 0.0F, 4.0F, 4.0F, 1.0F),
+                PartPose.offset(-11.0F, 1.0F, -6.0F));
         root.addOrReplaceChild("box19",
                 CubeListBuilder.create().texOffs(26, 216)
-                        .addBox(0.0F, 0.0F, 0.0F, 4.0F, 4.0F, 1.0F),
-                PartPose.offset(-13.0F, -1.0F, 7.0F));
+                        .addBox(-2.0F, -2.0F, 0.0F, 4.0F, 4.0F, 1.0F),
+                PartPose.offset(-11.0F, 1.0F, 7.0F));
         root.addOrReplaceChild("box2",
                 CubeListBuilder.create().texOffs(71, 215)
                         .addBox(0.0F, 0.0F, 0.0F, 1.0F, 6.0F, 1.0F),
                 PartPose.offset(18.0F, 4.0F, 1.0F));
         root.addOrReplaceChild("box20",
                 CubeListBuilder.create().texOffs(14, 216)
-                        .addBox(0.0F, 0.0F, 0.0F, 4.0F, 4.0F, 1.0F),
-                PartPose.offset(10.0F, -1.0F, 7.0F));
+                        .addBox(-2.0F, -2.0F, 0.0F, 4.0F, 4.0F, 1.0F),
+                PartPose.offset(12.0F, 1.0F, 7.0F));
         root.addOrReplaceChild("box21",
                 CubeListBuilder.create().texOffs(2, 216)
-                        .addBox(0.0F, 0.0F, 0.0F, 4.0F, 4.0F, 1.0F),
-                PartPose.offset(10.0F, -1.0F, -6.0F));
+                        .addBox(-2.0F, -2.0F, 0.0F, 4.0F, 4.0F, 1.0F),
+                PartPose.offset(12.0F, 1.0F, -6.0F));
         root.addOrReplaceChild("box22",
                 CubeListBuilder.create().texOffs(25, 228)
                         .addBox(0.0F, 0.0F, 0.0F, 20.0F, 10.0F, 14.0F),
@@ -128,6 +128,16 @@ public final class ClassicCabooseModel {
                 PartPose.offset(11.0F, 4.0F, -7.0F));
 
         return LayerDefinition.create(mesh, 128, 256);
+    }
+    // TC_DEV38_R1G1Z_CABOOSE_NATIVE_WHEELS
+    // r1g1y2 proved box18/19/20/21 are four separate 4x4x1 wheel-only
+    // children at the four corners of the Caboose running gear.
+    // The wheels are thin on local Z, so zRot is the authored axle axis.
+    public static void animateWheels(ModelPart bakedRoot, float phase) {
+        bakedRoot.getChild("box18").zRot = phase;
+        bakedRoot.getChild("box19").zRot = phase;
+        bakedRoot.getChild("box20").zRot = phase;
+        bakedRoot.getChild("box21").zRot = phase;
     }
 
     public static ModelPart root(ModelPart bakedRoot) {

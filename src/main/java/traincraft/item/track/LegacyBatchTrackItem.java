@@ -53,6 +53,7 @@ import java.util.function.Supplier;
 public final class LegacyBatchTrackItem extends Item {
     private static final double CONNECTOR_RADIUS = 0.90D;
 
+
     // TC_BATCH8_R3ZK_UNIFIED_FAMILY_ITEM
     // One visible item per paired family. Stack NBT chooses LEFT/RIGHT while
     // existing specs, segment blocks, endpoint topology and path math stay intact.
@@ -194,7 +195,8 @@ public final class LegacyBatchTrackItem extends Item {
     public record PlacementPreview(
             LegacyBatchTrackItem item,
             BlockPos root,
-            Direction facing) {}
+            Direction facing,
+            boolean originalVisualRootOwnership) {}
 
     public PlacementPreview previewPlacement(
             Level level,
@@ -323,6 +325,22 @@ public final class LegacyBatchTrackItem extends Item {
                         level,
                         context,
                         null);
+        if (connector == null
+                && isEightWaySnapFamily(spec.id())) {
+            BlockPos tcRequestedCell =
+                    BaseRailBlock.isRail(clickedPlacementState)
+                            ? hit.getBlockPos()
+                            : hit.getBlockPos().above();
+
+            connector =
+                    tcFindCompatibleEightWayConnectorNear(
+                            level,
+                            player,
+                            stack,
+                            tcRequestedCell,
+                            hit.getLocation(),
+                            false);
+        }
 
         boolean directRailSnapRequest =
                 isEightWaySnapFamily(spec.id())
@@ -422,10 +440,17 @@ public final class LegacyBatchTrackItem extends Item {
             return null;
         }
 
+        boolean tcGhostOriginalVisualRootOwnership =
+                isOriginalDiagonalVisualOwnership(
+                        connector,
+                        chosen);
+
+        // TC_FINAL_RELEASE_R1AB_REAL_GHOST_VISUAL_OWNERSHIP
         return new PlacementPreview(
                 this,
                 root,
-                facing);
+                facing,
+                tcGhostOriginalVisualRootOwnership);
     }
     public LegacyBatchTrackItem(Properties properties,
                                 LegacyBatchTrackSpec spec,
@@ -452,17 +477,11 @@ public final class LegacyBatchTrackItem extends Item {
                 super.getName(
                         stack);
 
-        if (!tcIsDirectionalHandFamily(
-                        spec.id())) {
-            return base;
-        }
-
-        return base.copy().append(
-                Component.literal(
-                        tcUnifiedSelectedLeft(
-                                stack)
-                                ? " [LEFT]"
-                                : " [RIGHT]"));
+        // TC_FINAL_RELEASE_R1AE_HIDE_HAND_SUFFIXES
+        // Keep the selected LEFT/RIGHT hand as internal stack state only.
+        // Creative/Survival inventory names and hover text never expose
+        // [LEFT] or [RIGHT]. Sneak + right-click still changes the hand.
+        return base;
     }
 
     @Override
@@ -659,7 +678,53 @@ public final class LegacyBatchTrackItem extends Item {
         // connector/candidate pipeline.
         Candidate chosen = null;
         Connector connector = findConnector(level, context, oneShot);
+        if (connector == null
+                && isEightWaySnapFamily(spec.id())) {
+            BlockPos tcRequestedCell =
+                    BaseRailBlock.isRail(clickedPlacementState)
+                            ? context.getClickedPos()
+                            : context.getClickedPos().above();
 
+            connector =
+                    tcFindCompatibleEightWayConnectorNear(
+                            level,
+                            player,
+                            stack,
+                            tcRequestedCell,
+                            context.getClickLocation(),
+                            true);
+        }
+
+        if (isEightWaySnapFamily(spec.id())) {
+            BlockPos tcR1pRequestedCell =
+                    BaseRailBlock.isRail(clickedPlacementState)
+                            ? context.getClickedPos()
+                            : context.getClickedPos().above();
+
+            traincraft.Traincraft.LOGGER.info(
+                    "[TC-FINAL-BATCH8WAY-R1R-CONNECTOR] incoming={} requested={} selected={} source={} source8way={} sourcePart={} segment={} outward={} heading={} clickDist={}",
+                    spec.id(),
+                    tcR1pRequestedCell,
+                    connector != null,
+                    connector == null ? "NONE" : connector.sourceId,
+                    connector != null
+                            && isEightWaySnapFamily(connector.sourceId),
+                    connector == null
+                            ? -999
+                            : connector.sourceEndpointPart,
+                    connector == null
+                            ? tcR1pRequestedCell
+                            : connector.segment,
+                    connector == null
+                            ? Direction.NORTH
+                            : connector.outward,
+                    connector == null
+                            ? "NONE"
+                            : connector.routeHeading,
+                    connector == null
+                            ? -1.0D
+                            : Math.sqrt(connector.distanceSq));
+        }
         // STEP_9_3G_T2_WHOLE_SWITCH_FAMILY_DIRECT_RAIL_SNAP
         //
         // Project-wide direct-rail snap contract:
@@ -692,6 +757,25 @@ public final class LegacyBatchTrackItem extends Item {
         if (connector != null) {
             List<Candidate> candidates = candidatesFor(
                     level, player, stack, connector, oneShot);
+            if (isEightWaySnapFamily(spec.id())) {
+                traincraft.Traincraft.LOGGER.info(
+                        "[TC-FINAL-BATCH8WAY-R1R-CANDIDATES] incoming={} source={} sourcePart={} heading={} count={}",
+                        spec.id(),
+                        connector.sourceId,
+                        connector.sourceEndpointPart,
+                        connector.routeHeading,
+                        candidates.size());
+
+                for (Candidate tcCandidate : candidates) {
+                    traincraft.Traincraft.LOGGER.info(
+                            "[TC-FINAL-BATCH8WAY-R1R-CANDIDATE] incoming={} root={} facing={} endpointPart={} penalty={}",
+                            spec.id(),
+                            tcCandidate.root,
+                            tcCandidate.facing,
+                            tcCandidate.endpointPart,
+                            tcCandidate.penalty);
+                }
+            }
 
             if (candidates.isEmpty()) {
                 String failure = "NO_SNAP_CANDIDATE connectorSegment=" + connector.segment
@@ -981,14 +1065,35 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
 
                 RouteHeading8 candidateHeading = routeHeadingForEndpoint(
                         spec, candidateRoot, candidateFacing, endpoint);
-                boolean originalEightWayPair = isOriginalEightWaySnapPair(
+                                boolean originalEightWayPair = isOriginalEightWaySnapPair(
                         spec.id(), connector.sourceId);
                 boolean originalCrossingPair = isOriginalDiagonalCrossingSnapPair(
                         spec.id(), connector.sourceId);
+
+                // TC_FINAL_RELEASE_R1S_TRUE_8WAY_TANGENT_PARITY
+                // Builder already treats the entire accepted 8-way family as
+                // true tangent geometry. Real held placement now does the same.
+                boolean fullEightWayPair =
+                        isEightWaySnapFamily(spec.id())
+                                && isEightWaySnapFamily(
+                                        connector.sourceId);
+
+                boolean medium45CurvePair =
+                        (isMedium45SwitchSource(spec.id())
+                                && isFortyFiveCurveSnapFamily(
+                                        connector.sourceId))
+                        || (isFortyFiveCurveSnapFamily(spec.id())
+                                && isMedium45SwitchSource(
+                                        connector.sourceId));
+
                 boolean exactTraincraftTangentPair =
-                        originalEightWayPair || originalCrossingPair;
-                boolean tangentFaceToFace = candidateHeading
-                        == connector.routeHeading.opposite();
+                        fullEightWayPair
+                                || originalEightWayPair
+                                || originalCrossingPair;
+
+                boolean tangentFaceToFace =
+                        candidateHeading
+                                == connector.routeHeading.opposite();
 
                 // STEP_9_3E_T4_R4_OG_SMALL_ROOT_AT_CROSSING
                 //
@@ -1005,15 +1110,77 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
                 boolean correctOriginalSmallRoot =
                         !originalCrossingSmallRoot || endpoint.part() == 0;
 
-                boolean faceToFace = newOutward == requiredNewOutward;
-                boolean diagonalFamily = isDiagonalConnectorFamily(spec.id())
-                        || isDiagonalConnectorFamily(connector.sourceId);
-                boolean cornerHandoff = !exactTraincraftTangentPair
-                        && diagonalFamily
-                        && newOutward.getAxis() != connector.outward.getAxis();
-                boolean relationAllowed = exactTraincraftTangentPair
-                        ? (tangentFaceToFace && correctOriginalSmallRoot)
-                        : (faceToFace || cornerHandoff);
+                                boolean faceToFace =
+                        newOutward == requiredNewOutward;
+
+                boolean diagonalFamily =
+                        isDiagonalConnectorFamily(spec.id())
+                                || isDiagonalConnectorFamily(
+                                        connector.sourceId);
+
+                boolean cornerHandoff =
+                        !exactTraincraftTangentPair
+                                && diagonalFamily
+                                && newOutward.getAxis()
+                                        != connector.outward.getAxis();
+
+                // Medium45 true-45 compatibility is endpoint-role-specific.
+                // The accepted Builder contract is:
+                //   p0 = common/throat
+                //   p2 = straight outlet
+                //   p4 = true-45 branch
+                boolean medium45BranchRoleAllowed =
+                        !medium45CurvePair
+                        || (isMedium45SwitchSource(
+                                        connector.sourceId)
+                                ? connector.sourceEndpointPart == 4
+                                : endpoint.part() == 4);
+
+                // Extending a cardinal line with a Medium45 switch must enter
+                // through the common/throat p0, never p2/p4.
+                boolean cardinalSourceToMedium45 =
+                        isMedium45SwitchSource(spec.id())
+                                && !isEightWaySnapFamily(
+                                        connector.sourceId)
+                                && !connector.routeHeading.isDiagonal();
+
+                boolean medium45CommonToeAllowed =
+                        !cardinalSourceToMedium45
+                                || endpoint.part() == 0;
+
+                // A classic 45-degree curve has a cardinal start p0 and a
+                // true-diagonal far end. A cardinal source may attach only p0.
+                boolean cardinalSourceToFortyFiveCurve =
+                        isFortyFiveCurveSnapFamily(spec.id())
+                                && !isEightWaySnapFamily(
+                                        connector.sourceId)
+                                && !connector.routeHeading.isDiagonal();
+
+                boolean fortyFiveCardinalStartAllowed =
+                        !cardinalSourceToFortyFiveCurve
+                                || endpoint.part() == 0;
+
+                boolean relationAllowed;
+                if (medium45CurvePair) {
+                    relationAllowed =
+                            tangentFaceToFace
+                                    && medium45BranchRoleAllowed;
+                } else if (cardinalSourceToMedium45) {
+                    relationAllowed =
+                            faceToFace
+                                    && medium45CommonToeAllowed;
+                } else if (cardinalSourceToFortyFiveCurve) {
+                    relationAllowed =
+                            faceToFace
+                                    && fortyFiveCardinalStartAllowed;
+                } else {
+                    relationAllowed =
+                            exactTraincraftTangentPair
+                                    ? (tangentFaceToFace
+                                            && correctOriginalSmallRoot)
+                                    : (faceToFace
+                                            || cornerHandoff);
+                }
 
                 String reject = relationAllowed
                         ? placementRejectReason(level, player, stack,
@@ -1135,7 +1302,14 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
                             + " endpointWorldOutward=" + newOutward
                             + " sourceRouteHeading=" + connector.routeHeading
                             + " candidateRouteHeading=" + candidateHeading
-                            + " originalTraincraft8WayPair=" + originalEightWayPair
+                            + " r1sFullEightWayPair=" + fullEightWayPair
+                            + " r1sMedium45CurvePair=" + medium45CurvePair
+                            + " r1sSourceEndpointPart=" + connector.sourceEndpointPart
+                            + " r1sMedium45BranchRoleAllowed=" + medium45BranchRoleAllowed
+                            + " r1sCardinalSourceToMedium45=" + cardinalSourceToMedium45
+                            + " r1sMedium45CommonToeAllowed=" + medium45CommonToeAllowed
+                            + " r1sCardinalSourceTo45Curve=" + cardinalSourceToFortyFiveCurve
+                            + " r1s45CardinalStartAllowed=" + fortyFiveCardinalStartAllowed                            + " originalTraincraft8WayPair=" + originalEightWayPair
                             + " originalTraincraftCrossingPair=" + originalCrossingPair
                             + " originalCrossingSmallRoot=" + originalCrossingSmallRoot
                             + " correctOriginalSmallRoot=" + correctOriginalSmallRoot
@@ -1398,6 +1572,157 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
         return 1;
     }
 
+    // TC_FINAL_RELEASE_R1O_LOCAL_8WAY_CONNECTOR_RECOVERY
+    //
+    // Builder-parity source acquisition for real held Batch tracks.
+    // The accepted exact/local solver still runs first. This is a bounded
+    // fallback only when it returns no source connector.
+    private Connector tcFindCompatibleEightWayConnectorNear(
+            Level level,
+            Player player,
+            ItemStack stack,
+            BlockPos requestedCell,
+            Vec3 click,
+            boolean runtimeLog) {
+        if (level == null
+                || player == null
+                || stack == null
+                || stack.isEmpty()
+                || requestedCell == null
+                || click == null
+                || !isEightWaySnapFamily(spec.id())) {
+            return null;
+        }
+
+        final int scanRadius = 4;
+        final double maxClickDistanceSq = 16.0D;
+
+        Connector best = null;
+        int bestCandidateCount = 0;
+        int bestCellDistance = Integer.MAX_VALUE;
+
+        java.util.HashSet<String> seen =
+                new java.util.HashSet<>();
+
+        for (int dx = -scanRadius; dx <= scanRadius; dx++) {
+            for (int dz = -scanRadius; dz <= scanRadius; dz++) {
+                BlockPos probeRequiredCell =
+                        requestedCell.offset(dx, 0, dz);
+
+                Connector candidate =
+                        findConnectorForExactRequiredCell(
+                                level,
+                                probeRequiredCell,
+                                click,
+                                null);
+
+                                // TC_FINAL_RELEASE_R1R_CARDINAL_SOURCE_PARITY
+                // Incoming item is still restricted to the accepted 8-way
+                // family by the helper entry gate. The local source may be
+                // cardinal or 8-way. candidatesFor() below remains the final
+                // tangent + placement compatibility authority.
+                if (candidate == null
+                        || candidate.distanceSq > maxClickDistanceSq) {
+                    continue;
+                }
+
+                String key =
+                        candidate.segment.asLong()
+                                + "|"
+                                + candidate.outward.ordinal()
+                                + "|"
+                                + candidate.routeHeading.name()
+                                + "|"
+                                + candidate.sourceId
+                                + "|"
+                                + candidate.sourceEndpointPart;
+
+                if (!seen.add(key)) {
+                    continue;
+                }
+
+                List<Candidate> viable =
+                        candidatesFor(
+                                level,
+                                player,
+                                stack,
+                                candidate,
+                                null);
+
+                int cellDistance =
+                        Math.abs(dx)
+                                + Math.abs(dz);
+
+                if (runtimeLog) {
+                    traincraft.Traincraft.LOGGER.info(
+                            "[TC-FINAL-BATCH8WAY-R1R-SCAN] incoming={} requested={} probe={} source={} source8way={} sourcePart={} segment={} outward={} heading={} candidates={} clickDist={} cellDist={}",
+                            spec.id(),
+                            requestedCell,
+                            probeRequiredCell,
+                            candidate.sourceId,
+                            isEightWaySnapFamily(candidate.sourceId),
+                            candidate.sourceEndpointPart,
+                            candidate.segment,
+                            candidate.outward,
+                            candidate.routeHeading,
+                            viable.size(),
+                            Math.sqrt(candidate.distanceSq),
+                            cellDistance);
+                }
+
+                if (viable.isEmpty()) {
+                    continue;
+                }
+
+                if (best == null
+                        || candidate.distanceSq
+                                < best.distanceSq - 1.0E-9D
+                        || (Math.abs(
+                                        candidate.distanceSq
+                                                - best.distanceSq)
+                                        <= 1.0E-9D
+                                && cellDistance
+                                        < bestCellDistance)
+                        || (Math.abs(
+                                        candidate.distanceSq
+                                                - best.distanceSq)
+                                        <= 1.0E-9D
+                                && cellDistance
+                                        == bestCellDistance
+                                && candidate.sourceEndpointPart
+                                        < best.sourceEndpointPart)) {
+                    best = candidate;
+                    bestCandidateCount = viable.size();
+                    bestCellDistance = cellDistance;
+                }
+            }
+        }
+
+        if (runtimeLog) {
+            if (best == null) {
+                traincraft.Traincraft.LOGGER.info(
+                        "[TC-FINAL-BATCH8WAY-R1R-NONE] incoming={} requested={} radius={} reason=NO_LOCAL_COMPATIBLE_8WAY_CONNECTOR",
+                        spec.id(),
+                        requestedCell,
+                        scanRadius);
+            } else {
+                traincraft.Traincraft.LOGGER.info(
+                        "[TC-FINAL-BATCH8WAY-R1R-SELECT] incoming={} requested={} source={} sourcePart={} segment={} outward={} heading={} candidates={} clickDist={} cellDist={}",
+                        spec.id(),
+                        requestedCell,
+                        best.sourceId,
+                        best.sourceEndpointPart,
+                        best.segment,
+                        best.outward,
+                        best.routeHeading,
+                        bestCandidateCount,
+                        Math.sqrt(best.distanceSq),
+                        bestCellDistance);
+            }
+        }
+
+        return best;
+    }
     private Connector findConnector(Level level,
                                     UseOnContext context,
                                     List<String> oneShot) {
@@ -1897,10 +2222,25 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
                     continue;
                 }
 
+                                // TC_FINAL_RELEASE_R1S_ENDPOINT_ROLE_PARITY
+                String sourceId =
+                        connectorSourceId(state);
+                int sourceEndpointPart =
+                        sourceEndpointPartForSource(
+                                segment,
+                                state,
+                                open);
+
                 Connector candidate = connectorAt(
-                        segment, open,
-                        routeHeadingForSource(segment, state, open),
-                        click, connectorSourceId(state));
+                        segment,
+                        open,
+                        routeHeadingForSource(
+                                segment,
+                                state,
+                                open),
+                        click,
+                        sourceId,
+                        sourceEndpointPart);
                 best = nearerConnector(best, candidate);
             }
         }
@@ -2100,6 +2440,49 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
      * endpoint. Most modern guide endpoints remain cardinal; the active branch
      * end of the Medium 45-degree Left switch is the focused exception for t2.
      */
+    /**
+     * Final Release r1s:
+     * retain the logical endpoint role for a physical Batch rail endpoint.
+     *
+     * This is intentionally metadata-only: no root, facing, route heading,
+     * footprint, mesh, path or placement coordinates are changed here.
+     */
+    private static int sourceEndpointPartForSource(
+            BlockPos segment,
+            BlockState state,
+            Direction outward) {
+        if (state.getBlock()
+                instanceof AbstractLegacyBatchRailBlock batch) {
+            BlockPos root =
+                    batch.getAssemblyRoot(
+                            segment,
+                            state);
+            Direction facing =
+                    batch.getAssemblyFacing(
+                            state);
+
+            for (LegacyBatchTrackSpec.Endpoint endpoint
+                    : batch.getSpec().endpoints()) {
+                BlockPos logical =
+                        batch.getSpec().endpointPosition(
+                                root,
+                                facing,
+                                endpoint);
+                Direction endpointOutward =
+                        placementEndpointOutward(
+                                batch.getSpec(),
+                                facing,
+                                endpoint);
+
+                if (logical.equals(segment)
+                        && endpointOutward == outward) {
+                    return endpoint.part();
+                }
+            }
+        }
+
+        return -1;
+    }
     private static RouteHeading8 routeHeadingForSource(BlockPos segment,
                                                        BlockState state,
                                                        Direction outward) {
@@ -2343,6 +2726,14 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
     // STEP_9_3G_T5_S2B_SYMMETRIC_CONNECTED_DIAGONAL_VISUAL
     private boolean isOriginalDiagonalVisualOwnership(Connector connector,
                                                        Candidate chosen) {
+        // TC_DEV36_R1K26_MEDIUM45_DIAGONAL_SMALL_VISUAL_INCOMING
+        // Shared-gag era parity: Small placed FROM Medium45 keeps the historical
+        // logical/shared-gag visual ownership instead of true-diagonal p2 promotion.
+        if (connector != null
+                && "track_diagonal_straight_small".equals(spec.id())
+                && isMedium45SwitchSource(connector.sourceId)) {
+            return false;
+        }
         if (!isDiagonalStraightFamily(spec.id())
                 || connector == null
                 || chosen == null
@@ -2357,6 +2748,10 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
         // Preserve the confirmed-good historical Small <-> Medium45 SWITCH
         // shared-gag exception exactly. Curves/crossings/other diagonals are
         // intentionally not part of this exception.
+        // TC_FINAL_RELEASE_R1AR_RESTORE_SMALL_MEDIUM45_ROUTE_FACING_OWNER
+        // Small<->Medium45 is special: keep the route-facing p0 logical owner
+        // so the original TC4.5 visual rotation follows the correct cardinal
+        // surrogate. The true-diagonal required endpoint from r1aa is untouched.
         if ("track_diagonal_straight_small".equals(spec.id())
                 && isMedium45SwitchSource(connector.sourceId)) {
             return false;
@@ -2380,6 +2775,14 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
      */
     private void promoteSourceDiagonalVisualOwnership(
             Level level, Connector connector, List<String> oneShot) {
+        // TC_DEV36_R1K26_MEDIUM45_DIAGONAL_SMALL_VISUAL_REVERSE
+        // Shared-gag era parity for the reverse placement order. Do not retag
+        // the pre-existing Small assembly onto the later true-diagonal visual root.
+        if (connector != null
+                && "track_diagonal_straight_small".equals(connector.sourceId)
+                && isMedium45SwitchSource(spec.id())) {
+            return;
+        }
         if (connector == null
                 || !isDiagonalStraightFamily(connector.sourceId)
                 || !connector.routeHeading.isDiagonal()) {
@@ -2388,6 +2791,9 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
 
         // Preserve the accepted Small -> Medium45 SWITCH exception in the
         // reverse placement order as well.
+        // TC_FINAL_RELEASE_R1AR_RESTORE_SMALL_MEDIUM45_ROUTE_FACING_OWNER_REVERSE
+        // Preserve the same Small->Medium45 render-owner rule when the Small
+        // was placed first. Do not retag that Small assembly to the p2 owner.
         if ("track_diagonal_straight_small".equals(connector.sourceId)
                 && isMedium45SwitchSource(spec.id())) {
             return;
@@ -2611,17 +3017,50 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
     // advance one RouteHeading8 diagonal block. This single rule replaces the
     // old Small-p2/crossing correction and the s4c crossing-family-only branch.
     // TC_BATCH8_R4A5F_REAL_DIAGONAL_STRAIGHT_MEDIUM45_PROBE
-    private static BlockPos requiredEndpointCellFor(String incomingId,
-                                                     Connector connector) {
-        if (isDiagonalStraightFamily(incomingId)
-                && isMedium45SwitchSource(connector.sourceId)
-                && connector.routeHeading.isDiagonal()) {
+    // TC_FINAL_RELEASE_R1Y_45CURVE_TRUE_DIAGONAL_RESTORE
+    //
+    // Restore the proven t6/t7 real-placement route contract:
+    // - Original Medium45 <-> Small/Medium diagonal straight keeps its
+    //   TC4.5 cardinal shared-gag anchor.
+    // - Every other diagonal RouteHeading8 handoff advances by the true
+    //   diagonal route vector.
+    //
+    // This is the narrow distinction shown by the accepted Builder behavior:
+    // 45-degree curves use the real diagonal continuation cell, while the
+    // original diagonal-straight shared-gag pair retains its special anchor.
+    // TC_FINAL_RELEASE_R1AA_DIAGONAL_STRAIGHT_TRUE_DIAGONAL_PARITY
+    //
+    // r1y runtime result:
+    //   - 45-degree curves visually align correctly using RouteHeading8 dx/dz.
+    //   - Small/Medium diagonal straights remain exactly one guide cell
+    //     sideways because the legacy Medium45<->Diagonal exception still
+    //     forces source.outward (cardinal) even when the source p4 heading is
+    //     NORTH_WEST / NORTH_EAST / SOUTH_WEST / SOUTH_EAST.
+    //
+    // Remove that last exception. Physical endpoint role selection remains
+    // unchanged; this method only chooses the required continuation cell.
+    private static BlockPos requiredEndpointCellFor(
+            String incomingId,
+            Connector connector) {
+        // TC_DEV36_R1K26_MEDIUM45_DIAGONAL_SHARED_GAG_REQUIRED_CELL
+        // r1k25 direct-placement proof: this exact TC4.5 pair must share the
+        // source endpoint's cardinal gag cell. Keep true-diagonal stepping for
+        // every other accepted 8-way family.
+        if (connector != null
+                && isOriginalMediumFortyFiveDiagonalPair(
+                        incomingId,
+                        connector.sourceId)) {
+            return connector.segment.relative(connector.outward);
+        }
+        if (connector.routeHeading.isDiagonal()) {
             return connector.segment.offset(
                     connector.routeHeading.dx,
                     0,
                     connector.routeHeading.dz);
         }
-        return connector.segment.relative(connector.outward);
+
+        return connector.segment.relative(
+                connector.outward);
     }
 
     // STEP_9_3G_T7_P2_RESTORE_TC45_SHARED_GAG_PLACEMENT

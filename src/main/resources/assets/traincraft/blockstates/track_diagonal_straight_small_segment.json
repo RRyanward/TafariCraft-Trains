@@ -7,7 +7,7 @@
         "original_visual_root": "false"
       },
       "apply": {
-        "model": "traincraft:block/batch/track_diagonal_straight_small",
+        "model": "traincraft:block/batch/track_diagonal_straight_small_r1at",
         "y": 90
       }
     },
@@ -18,7 +18,7 @@
         "original_visual_root": "false"
       },
       "apply": {
-        "model": "traincraft:block/batch/track_diagonal_straight_small",
+        "model": "traincraft:block/batch/track_diagonal_straight_small_r1at",
         "y": 180
       }
     },
@@ -29,7 +29,7 @@
         "original_visual_root": "false"
       },
       "apply": {
-        "model": "traincraft:block/batch/track_diagonal_straight_small",
+        "model": "traincraft:block/batch/track_diagonal_straight_small_r1at",
         "y": 270
       }
     },
@@ -40,7 +40,7 @@
         "original_visual_root": "false"
       },
       "apply": {
-        "model": "traincraft:block/batch/track_diagonal_straight_small"
+        "model": "traincraft:block/batch/track_diagonal_straight_small_r1at"
       }
     },
     {
@@ -50,7 +50,7 @@
         "original_visual_root": "true"
       },
       "apply": {
-        "model": "traincraft:block/batch/track_diagonal_straight_small",
+        "model": "traincraft:block/batch/track_diagonal_straight_small_r1at",
         "y": 270
       }
     },
@@ -61,7 +61,7 @@
         "original_visual_root": "true"
       },
       "apply": {
-        "model": "traincraft:block/batch/track_diagonal_straight_small"
+        "model": "traincraft:block/batch/track_diagonal_straight_small_r1at"
       }
     },
     {
@@ -71,7 +71,7 @@
         "original_visual_root": "true"
       },
       "apply": {
-        "model": "traincraft:block/batch/track_diagonal_straight_small",
+        "model": "traincraft:block/batch/track_diagonal_straight_small_r1at",
         "y": 90
       }
     },
@@ -82,7 +82,7 @@
         "original_visual_root": "true"
       },
       "apply": {
-        "model": "traincraft:block/batch/track_diagonal_straight_small",
+        "model": "traincraft:block/batch/track_diagonal_straight_small_r1at",
         "y": 180
       }
     }

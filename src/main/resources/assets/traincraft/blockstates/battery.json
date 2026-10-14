@@ -1,7 +1,1 @@
-{
-  "variants": {
-    "": {
-      "model": "traincraft:block/battery"
-    }
-  }
-}
+{"variants":{"":{"model":"traincraft:block/battery_classic"}}}

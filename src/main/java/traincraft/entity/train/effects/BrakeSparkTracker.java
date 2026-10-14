@@ -28,7 +28,7 @@ import traincraft.entity.train.steam.small.SmallSteamLocomotive;
 @Mod.EventBusSubscriber(modid = Traincraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class BrakeSparkTracker {
     private static final double MIN_SPARK_SPEED_BPT = 4.0D / 72.0D;
-    private static final int HAND_BRAKE_BURST_TICKS = 4;
+    private static final int HAND_BRAKE_BURST_TICKS = 60;
 
     private static final Map<UUID, SmallSteamLocomotive> ACTIVE_BRAKES = new HashMap<>();
     private static final Map<UUID, HandBrakeBurst> HAND_BRAKE_BURSTS = new HashMap<>();
@@ -161,22 +161,32 @@ public final class BrakeSparkTracker {
                     || locomotive.isRemoved()
                     || !(locomotive.level() instanceof ServerLevel server)
                     || !supportsBrakeSparks(locomotive)
+                    || !locomotive.isHandBrakeApplied()
                     || burst.ticksRemaining <= 0) {
                 it.remove();
                 continue;
             }
 
-            int particlesPerPoint =
-                    burst.capturedSpeedKmh >= 40.0D ? 7 :
-                    burst.capturedSpeedKmh >= 20.0D ? 6 : 5;
+            Vec3 currentMotion = locomotive.getDeltaMovement();
+            double currentSpeedBpt =
+                    Math.sqrt(
+                            currentMotion.x * currentMotion.x
+                                    + currentMotion.z * currentMotion.z);
 
-            emitWheelGroup(server, locomotive,  0.78D, particlesPerPoint, 0.14D, 0.035D);
-            emitWheelGroup(server, locomotive, -0.78D, particlesPerPoint, 0.14D, 0.035D);
+            if (currentSpeedBpt < MIN_SPARK_SPEED_BPT) {
+                it.remove();
+                continue;
+            }
+
+            double currentSpeedKmh = currentSpeedBpt * 72.0D;
+            int particlesPerPoint =
+                    currentSpeedKmh >= 40.0D ? 10 :
+                    currentSpeedKmh >= 20.0D ? 9 : 8;
+
+            emitWheelGroup(server, locomotive,  0.78D, particlesPerPoint, 0.17D, 0.045D);
+            emitWheelGroup(server, locomotive, -0.78D, particlesPerPoint, 0.17D, 0.045D);
 
             burst.ticksRemaining--;
-            if (burst.ticksRemaining <= 0) {
-                it.remove();
-            }
         }
     }
 
@@ -188,27 +198,71 @@ public final class BrakeSparkTracker {
             double spread,
             double speed) {
 
-        double yaw = Math.toRadians(locomotive.getTrainFacingYaw());
-        double frontX = Math.sin(yaw);
-        double frontZ = -Math.cos(yaw);
+        /*
+         * TC_DEV38_R1G1T3D_TRACK_ALIGNED_BRAKE_SPARKS
+         *
+         * Sample the same read-only continuous route used by renderer alignment.
+         * No entity position, velocity, path, track state or coupling is written.
+         */
+        float trainYaw = locomotive.getTrainFacingYaw();
+        traincraft.block.track.LegacyContinuousTrackPath.VirtualBogiePose pose =
+                traincraft.block.track.LegacyContinuousTrackPath.virtualBogiePose(
+                        locomotive,
+                        trainYaw,
+                        Math.max(0.30D, Math.abs(along) * 2.0D));
+
+        double baseX;
+        double baseY;
+        double baseZ;
+        double yaw;
+
+        if (pose != null) {
+            Vec3 contact = along >= 0.0D ? pose.front() : pose.rear();
+            double dx = contact.x - locomotive.getX();
+            double dz = contact.z - locomotive.getZ();
+            double horizontal = Math.hypot(dx, dz);
+
+            if (horizontal <= Math.abs(along) + 0.75D) {
+                baseX = contact.x;
+                baseY = contact.y + 0.035D;
+                baseZ = contact.z;
+                yaw = Math.toRadians(pose.yaw());
+            } else {
+                pose = null;
+                baseX = 0.0D;
+                baseY = 0.0D;
+                baseZ = 0.0D;
+                yaw = 0.0D;
+            }
+        } else {
+            baseX = 0.0D;
+            baseY = 0.0D;
+            baseZ = 0.0D;
+            yaw = 0.0D;
+        }
+
+        if (pose == null) {
+            yaw = Math.toRadians(trainYaw);
+            double frontX = Math.sin(yaw);
+            double frontZ = -Math.cos(yaw);
+
+            baseX = locomotive.getX() + frontX * along;
+            baseY = locomotive.getY() + 0.10D;
+            baseZ = locomotive.getZ() + frontZ * along;
+        }
+
         double sideX = Math.cos(yaw);
         double sideZ = Math.sin(yaw);
-
         double gaugeSide = 0.43D;
-        double y = locomotive.getY() + 0.10D;
 
         for (int sideSign : new int[] { -1, 1 }) {
-            double x = locomotive.getX()
-                    + frontX * along
-                    + sideX * gaugeSide * sideSign;
-            double z = locomotive.getZ()
-                    + frontZ * along
-                    + sideZ * gaugeSide * sideSign;
+            double x = baseX + sideX * gaugeSide * sideSign;
+            double z = baseZ + sideZ * gaugeSide * sideSign;
 
             server.sendParticles(
                     ParticleTypes.ELECTRIC_SPARK,
                     x,
-                    y,
+                    baseY,
                     z,
                     particlesPerSide,
                     spread,

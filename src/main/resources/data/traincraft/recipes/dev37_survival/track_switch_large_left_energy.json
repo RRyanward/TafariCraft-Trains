@@ -1,0 +1,19 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "category":  "misc",
+    "ingredients":  [
+                        {
+                            "item":  "traincraft:track_switch_large_left"
+                        },
+                        {
+                            "item":  "traincraft:track_energy"
+                        },
+                        {
+                            "item":  "minecraft:redstone"
+                        }
+                    ],
+    "result":  {
+                   "item":  "traincraft:track_switch_large_left_energy",
+                   "count":  1
+               }
+}

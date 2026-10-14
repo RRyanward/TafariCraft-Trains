@@ -1,6 +1,7 @@
 package traincraft.client.event;
 
 // TC_BATCH8_R3ZZX1_REAL_TRACK_WHITE_PREVIEW
+// TC_FINAL_RELEASE_R1AB_REAL_GHOST_VISUAL_OWNERSHIP
 // TC_BATCH8_R3ZZX2_NORMAL_STRAIGHT_WHITE_PREVIEW
 
 import com.mojang.blaze3d.vertex.PoseStack;
@@ -76,6 +77,13 @@ public final class RealTrackPlacementGhostPreview {
     private static int tcMediumBranchFingerprintTick =
             Integer.MIN_VALUE;
 
+    // DEV50B2J -- limit geometry telemetry to 12 snapshots/session, 2 seconds
+    // apart, and ONLY while holding a Medium Diagonal Straight track item.
+    private static int tcDiagLastDebugTick = Integer.MIN_VALUE;
+    private static int tcDiagDebugSnapshots = 0;
+    // DEV50B2M -- log at most once per 6 seconds of active preview.
+    private static int tcDiagSeamLastLogTick = Integer.MIN_VALUE;
+
     private static final ResourceLocation WHITE_TEXTURE =
             new ResourceLocation(
                     "traincraft",
@@ -101,6 +109,23 @@ public final class RealTrackPlacementGhostPreview {
                     boolean.class,
                     boolean.class);
 
+    // TC_FINAL_RELEASE_R1AG_GHOST_HAND_MODE
+    // Read-only client reflection: use the same selected-hand state as the
+    // actual Batch item without restoring LEFT/RIGHT to item hover names.
+    private static final Method BATCH_IS_DIRECTIONAL_HAND_FAMILY =
+            method(
+                    LegacyBatchTrackItem.class,
+                    "tcIsDirectionalHandFamily",
+                    String.class);
+
+    private static final Method BATCH_UNIFIED_SELECTED_LEFT =
+            method(
+                    LegacyBatchTrackItem.class,
+                    "tcUnifiedSelectedLeft",
+                    ItemStack.class);
+
+    private static String TC_LAST_GHOST_HAND_MODE = null;
+    private static long TC_LAST_GHOST_HAND_TICK = Long.MIN_VALUE;
     private static final Field STRAIGHT_LENGTH =
             field(
                     LegacyStraightTrackItem.class,
@@ -110,9 +135,21 @@ public final class RealTrackPlacementGhostPreview {
             ItemStack stack,
             InteractionHand hand) {}
 
+    // DEV50B2M: standard incoming ghost, or a *seam-only* extra extension
+    // on a physically connected existing diagonal. Never preview the whole
+    // existing track again: that was the rejected DEV50B2K regression.
     private record WorldPreviewPart(
             BlockPos pos,
-            BlockState state) {}
+            BlockState state,
+            boolean seamOnly,
+            int seamAxisX,
+            int seamAxisZ,
+            double seamCutoff,
+            boolean seamAtStart) {
+        private WorldPreviewPart(BlockPos pos, BlockState state) {
+            this(pos, state, false, 0, 0, 0.0D, false);
+        }
+    }
 
     private RealTrackPlacementGhostPreview() {}
 
@@ -191,8 +228,7 @@ public final class RealTrackPlacementGhostPreview {
                     mc,
                     pose,
                     buffers,
-                    part.state(),
-                    part.pos(),
+                    part,
                     camera);
         }
 
@@ -235,10 +271,48 @@ public final class RealTrackPlacementGhostPreview {
                 return List.of();
             }
 
-            return batchPartsAtRoot(
-                    placement.item(),
-                    placement.root(),
-                    placement.facing());
+            String tcGhostHandMode =
+                    batchGhostHandMode(
+                            batch,
+                            stack,
+                            mc.player.isShiftKeyDown());
+
+            if (tcGhostHandMode != null) {
+                long tcNow =
+                        mc.level.getGameTime();
+
+                if (!tcGhostHandMode.equals(
+                                TC_LAST_GHOST_HAND_MODE)
+                        || tcNow
+                                - TC_LAST_GHOST_HAND_TICK
+                                >= 20L) {
+                    mc.player.displayClientMessage(
+                            net.minecraft.network.chat.Component.literal(
+                                    "Track ghost: "
+                                            + tcGhostHandMode),
+                            true);
+
+                    TC_LAST_GHOST_HAND_MODE =
+                            tcGhostHandMode;
+                    TC_LAST_GHOST_HAND_TICK =
+                            tcNow;
+                }
+            }
+
+            // DEV50B2J -- read-only capped preview/placement parity capture.
+            // We DO NOT change the ghost, placed rails, movement, or shaders.
+            List<WorldPreviewPart> batchPreview =
+                    batchPartsAtRoot(
+                            placement.item(),
+                            placement.root(),
+                            placement.facing(),
+                            placement.originalVisualRootOwnership());
+            tcDebugMediumDiagonalGhost(
+                    mc, stack, hit, placement, batchPreview);
+            // DEV50B2M: add ONLY the connecting extension in unoccupied
+            // space. No entire-source overlay, block writes or move of the
+            // incoming ghost; native placement and snapped root stay exact.
+            return tcPreviewMediumDiagonalMissingSeam(mc, placement, batchPreview);
         }
 
         // r3zzx2: the N / track_normal item is a BlockItem, not a
@@ -305,10 +379,404 @@ public final class RealTrackPlacementGhostPreview {
         return List.of();
     }
 
+    // DEV50B2J -- DIAGONAL GHOST / PLACEMENT READ-ONLY DIAGNOSTIC.
+    // Snapshot logs are prefixed [TC-DEV50B2J-DIAG] and intentionally
+    // limited to 12 reports per client session to avoid flooding latest.log.
+    private static void tcDebugMediumDiagonalGhost(
+            Minecraft mc,
+            ItemStack heldStack,
+            BlockHitResult hit,
+            LegacyBatchTrackItem.PlacementPreview placement,
+            List<WorldPreviewPart> parts) {
+        if (mc.player == null || mc.level == null || parts.isEmpty()) {
+            return;
+        }
+        int tick = mc.player.tickCount;
+        if (tick % 40 != 0
+                || tick == tcDiagLastDebugTick
+                || tcDiagDebugSnapshots >= 12) {
+            return;
+        }
+        try {
+            LegacyBatchTrackItem actualItem = placement.item();
+            LegacyBatchTrackSpec spec = (LegacyBatchTrackSpec)
+                    BATCH_SPEC.get(actualItem);
+            if (!"track_diagonal_straight_medium".equals(spec.id())) {
+                return;
+            }
+            tcDiagLastDebugTick = tick;
+            tcDiagDebugSnapshots++;
+            Direction facing = placement.facing();
+            BlockPos root = placement.root();
+            boolean nativeOwner = placement.originalVisualRootOwnership();
+            ResourceLocation heldId = ForgeRegistries.ITEMS.getKey(
+                    heldStack.getItem());
+            Traincraft.LOGGER.info(
+                    "[TC-DEV50B2J-DIAG] SNAP {}/12 tick={} held={} selected={} hit={} side={} click={} root={} facing={} "
+                            + "nativeVisualOwner={} forcedGhostVisualOwner=true parts={} shift={}",
+                    tcDiagDebugSnapshots, tick, heldId,
+                    ForgeRegistries.ITEMS.getKey(actualItem),
+                    hit.getBlockPos(), hit.getDirection(),
+                    hit.getLocation(), root, facing, nativeOwner,
+                    parts.size(), mc.player.isShiftKeyDown());
+            for (LegacyBatchTrackSpec.Endpoint endpoint : spec.endpoints()) {
+                Traincraft.LOGGER.info(
+                        "[TC-DEV50B2J-DIAG] ENDPOINT part={} physical={} logical={} outgoing={}",
+                        endpoint.part(),
+                        spec.offsetForPart(root, facing, endpoint.part()),
+                        spec.endpointPositionForPart(root, facing, endpoint.part()),
+                        spec.rotateDirection(facing, endpoint.outward()));
+            }
+            AbstractLegacyBatchRailBlock block =
+                    (AbstractLegacyBatchRailBlock) parts.get(0).state().getBlock();
+            for (int i = 0; i < parts.size(); i++) {
+                WorldPreviewPart preview = parts.get(i);
+                BlockState nativeState = (BlockState)
+                        BATCH_STATE_FOR_PLACEMENT.invoke(
+                                null, block, facing, i, false, nativeOwner);
+                BlockState currentWorld = mc.level.getBlockState(preview.pos());
+                Traincraft.LOGGER.info(
+                        "[TC-DEV50B2J-DIAG] PART={} cell={} ghostState={} nativeState={} "
+                                + "statesEqual={} worldState={} ghostMesh={} nativeMesh={}",
+                        i, preview.pos(), preview.state(), nativeState,
+                        preview.state().equals(nativeState), currentWorld,
+                        tcDiagMeshBounds(mc, preview.pos(), preview.state()),
+                        tcDiagMeshBounds(mc, preview.pos(), nativeState));
+            }
+            int nearby = 0;
+            BlockPos target = hit.getBlockPos();
+            // Only the local rail neighborhood, not arbitrary world contents.
+            for (int dx = -4; dx <= 4; dx++) {
+                for (int dz = -4; dz <= 4; dz++) {
+                    for (int dy = -1; dy <= 1; dy++) {
+                        BlockPos pos = target.offset(dx, dy, dz);
+                        BlockState state = mc.level.getBlockState(pos);
+                        if (!(state.getBlock()
+                                instanceof AbstractLegacyBatchRailBlock batchBlock)
+                                || !"track_diagonal_straight_medium".equals(
+                                        batchBlock.getSpec().id())) {
+                            continue;
+                        }
+                        if (++nearby <= 18) {
+                            Traincraft.LOGGER.info(
+                                    "[TC-DEV50B2J-DIAG] NEARBY_PLACED cell={} "
+                                            + "state={} visualMesh={}",
+                                    pos, state,
+                                    tcDiagMeshBounds(mc, pos, state));
+                        }
+                    }
+                }
+            }
+            Traincraft.LOGGER.info(
+                    "[TC-DEV50B2J-DIAG] END_SNAPSHOT {} nearbyDiagonalCells={} "
+                            + "(this diagnostic never writes world blocks)",
+                    tcDiagDebugSnapshots, nearby);
+        }
+        catch (ReflectiveOperationException | RuntimeException ex) {
+            Traincraft.LOGGER.warn(
+                    "[TC-DEV50B2J-DIAG] Read-only snapshot failed", ex);
+        }
+    }
+
+    // Computes the world-space AABB of the SAME baked model quads used
+    // by the white ghost. This distinguishes a wrong snapped root from a
+    // mesh whose geometry lives beyond its owning block.
+    private static String tcDiagMeshBounds(
+            Minecraft mc, BlockPos pos, BlockState state) {
+        BakedModel model = mc.getBlockRenderer().getBlockModel(state);
+        if (model == null
+                || model == mc.getModelManager().getMissingModel()) {
+            return "MISSING_MODEL";
+        }
+        ModelData data = model.getModelData(
+                mc.level, pos, state, ModelData.EMPTY);
+        RandomSource random = RandomSource.create();
+        java.util.ArrayList<BakedQuad> quads = new java.util.ArrayList<>();
+        random.setSeed(42L);
+        quads.addAll(model.getQuads(state, null, random, data, null));
+        for (Direction side : SIDES) {
+            random.setSeed(42L);
+            quads.addAll(model.getQuads(state, side, random, data, null));
+        }
+        double minX = Double.POSITIVE_INFINITY;
+        double minY = Double.POSITIVE_INFINITY;
+        double minZ = Double.POSITIVE_INFINITY;
+        double maxX = Double.NEGATIVE_INFINITY;
+        double maxY = Double.NEGATIVE_INFINITY;
+        double maxZ = Double.NEGATIVE_INFINITY;
+        int vertices = 0;
+        for (BakedQuad quad : quads) {
+            int[] packed = quad.getVertices();
+            if (packed.length % 4 != 0) continue;
+            int stride = packed.length / 4;
+            if (stride < 3) continue;
+            for (int vertex = 0; vertex < 4; vertex++) {
+                int offset = vertex * stride;
+                double x = Float.intBitsToFloat(packed[offset]) + pos.getX();
+                double y = Float.intBitsToFloat(packed[offset + 1]) + pos.getY();
+                double z = Float.intBitsToFloat(packed[offset + 2]) + pos.getZ();
+                if (!Double.isFinite(x) || !Double.isFinite(y)
+                        || !Double.isFinite(z)) continue;
+                minX = Math.min(minX, x);
+                maxX = Math.max(maxX, x);
+                minY = Math.min(minY, y);
+                maxY = Math.max(maxY, y);
+                minZ = Math.min(minZ, z);
+                maxZ = Math.max(maxZ, z);
+                vertices++;
+            }
+        }
+        if (vertices == 0) return "quads=" + quads.size() + " noVertices";
+        return String.format(java.util.Locale.ROOT,
+                "quads=%d bounds=[%.2f,%.2f,%.2f]..[%.2f,%.2f,%.2f]",
+                quads.size(), minX, minY, minZ, maxX, maxY, maxZ);
+    }
+
+    // DEV50B2M -- medium diagonal join: the existing shortened track mesh
+    // (part 0, visual_root=false) has a 3.6-block diagonal footprint. Native
+    // placement promotes it to the 4.6-block connected model (part 6,
+    // visual_root=true). Show ONLY the previously missing half-block of that
+    // promoted mesh which lies OUTSIDE the shortened source's world-space
+    // longitudinal bounds, leaving every existing dark rail visible.
+    // This is purely an in-memory render list, not a source block update.
+    private static List<WorldPreviewPart> tcPreviewMediumDiagonalMissingSeam(
+            Minecraft mc,
+            LegacyBatchTrackItem.PlacementPreview placement,
+            List<WorldPreviewPart> incomingParts) {
+        if (mc.level == null || incomingParts.isEmpty()) {
+            return incomingParts;
+        }
+        try {
+            LegacyBatchTrackSpec spec = (LegacyBatchTrackSpec)
+                    BATCH_SPEC.get(placement.item());
+            if (!"track_diagonal_straight_medium".equals(spec.id())) {
+                return incomingParts;
+            }
+            ArrayList<WorldPreviewPart> combined = null;
+            java.util.HashSet<BlockPos> seen = new java.util.HashSet<>();
+            for (LegacyBatchTrackSpec.Endpoint incomingEnd : spec.endpoints()) {
+                BlockPos incomingEndpoint = spec.endpointPosition(
+                        placement.root(), placement.facing(), incomingEnd);
+                Direction incomingOut = spec.rotateDirection(
+                        placement.facing(), incomingEnd.outward());
+                for (int dx : new int[] {-1, 1}) {
+                    for (int dz : new int[] {-1, 1}) {
+                        BlockPos neighborPos = incomingEndpoint.offset(dx, 0, dz);
+                        if (!mc.level.hasChunkAt(neighborPos)) {
+                            continue;
+                        }
+                        BlockState nearState = mc.level.getBlockState(neighborPos);
+                        if (!(nearState.getBlock() instanceof AbstractLegacyBatchRailBlock sourceBlock)
+                                || sourceBlock != incomingParts.get(0).state().getBlock()
+                                || !"track_diagonal_straight_medium".equals(sourceBlock.getSpec().id())
+                                || !nearState.hasProperty(traincraft.block.track.LegacyBatchRailBlock.ORIGINAL_VISUAL_ROOT)
+                                || nearState.getValue(traincraft.block.track.LegacyBatchRailBlock.ORIGINAL_VISUAL_ROOT)) {
+                            continue;
+                        }
+                        LegacyBatchTrackSpec sourceSpec = sourceBlock.getSpec();
+                        Direction sourceFacing = sourceBlock.getAssemblyFacing(nearState);
+                        BlockPos sourceRoot = sourceBlock.getAssemblyRoot(neighborPos, nearState);
+                        int connectedPart = -1;
+                        for (LegacyBatchTrackSpec.Endpoint sourceEnd : sourceSpec.endpoints()) {
+                            if (sourceSpec.endpointPosition(sourceRoot, sourceFacing, sourceEnd)
+                                        .equals(neighborPos)
+                                    && sourceSpec.rotateDirection(sourceFacing, sourceEnd.outward())
+                                        == incomingOut.getOpposite()) {
+                                connectedPart = sourceEnd.part();
+                                break;
+                            }
+                        }
+                        if (connectedPart < 0) {
+                            continue;
+                        }
+                        boolean complete = true;
+                        for (int i = 0; i < sourceSpec.partCount(); i++) {
+                            BlockPos cell = sourceSpec.offsetForPart(sourceRoot, sourceFacing, i);
+                            if (!mc.level.hasChunkAt(cell)) {
+                                complete = false;
+                                break;
+                            }
+                            BlockState state = mc.level.getBlockState(cell);
+                            if (state.getBlock() != sourceBlock
+                                    || sourceBlock.getPart(state) != i
+                                    || sourceBlock.getAssemblyFacing(state) != sourceFacing) {
+                                complete = false;
+                                break;
+                            }
+                        }
+                        if (!complete) {
+                            continue;
+                        }
+                        BlockPos visualCell = sourceSpec.offsetForPart(sourceRoot, sourceFacing, 6);
+                        if (!seen.add(visualCell)) {
+                            continue;
+                        }
+                        BlockState visualState = mc.level.getBlockState(visualCell);
+                        if (visualState.getBlock() != sourceBlock
+                                || !visualState.hasProperty(traincraft.block.track.LegacyBatchRailBlock.ORIGINAL_VISUAL_ROOT)
+                                || visualState.getValue(traincraft.block.track.LegacyBatchRailBlock.ORIGINAL_VISUAL_ROOT)) {
+                            continue;
+                        }
+                        BlockPos tail = sourceSpec.offsetForPart(sourceRoot, sourceFacing, 6);
+                        int axisX = Integer.signum(tail.getX() - sourceRoot.getX());
+                        int axisZ = Integer.signum(tail.getZ() - sourceRoot.getZ());
+                        if (axisX == 0 || axisZ == 0) {
+                            continue;
+                        }
+                        boolean atStart = connectedPart == 0;
+                        BlockState originalRootState = mc.level.getBlockState(sourceRoot);
+                        double cutoff = tcMediumDiagLongitudinalBound(
+                                mc, sourceRoot, originalRootState, axisX, axisZ, atStart);
+                        if (!Double.isFinite(cutoff)) {
+                            continue;
+                        }
+                        if (combined == null) {
+                            combined = new ArrayList<>(incomingParts);
+                        }
+                        combined.add(new WorldPreviewPart(
+                                visualCell,
+                                visualState.setValue(
+                                    traincraft.block.track.LegacyBatchRailBlock.ORIGINAL_VISUAL_ROOT, true),
+                                true, axisX, axisZ, cutoff, atStart));
+                        int now = mc.player == null ? 0 : mc.player.tickCount;
+                        if (now % 120 == 0 && now != tcDiagSeamLastLogTick) {
+                            tcDiagSeamLastLogTick = now;
+                            Traincraft.LOGGER.info(
+                                    "[TC-DEV50B2M] SEAM_ONLY existingSource={} joint={} renderedPart={} axis=({}, {}) "
+                                    + "start={} boundary={} incomingRoot={} noWorldWrites=true",
+                                    sourceRoot, neighborPos, visualCell, axisX, axisZ,
+                                    atStart, cutoff, placement.root());
+                        }
+                    }
+                }
+            }
+            return combined == null ? incomingParts : combined;
+        }
+        catch (ReflectiveOperationException | RuntimeException ex) {
+            Traincraft.LOGGER.warn("[TC-DEV50B2M] Read-only seam lookup failed", ex);
+            return incomingParts;
+        }
+    }
+
+    // The cutoff is taken from the EXISTING source's real visible baked
+    // model, not a hardcoded number or a guessed Minecraft block anchor.
+    private static double tcMediumDiagLongitudinalBound(
+            Minecraft mc, BlockPos pos, BlockState state,
+            int axisX, int axisZ, boolean start) {
+        BakedModel model = mc.getBlockRenderer().getBlockModel(state);
+        if (model == null || model == mc.getModelManager().getMissingModel()) {
+            return Double.NaN;
+        }
+        ModelData data = model.getModelData(mc.level, pos, state, ModelData.EMPTY);
+        RandomSource random = RandomSource.create();
+        double extreme = start ? Double.POSITIVE_INFINITY : Double.NEGATIVE_INFINITY;
+        int count = 0;
+        for (int face = -1; face < SIDES.length; face++) {
+            random.setSeed(42L);
+            Direction cull = face == -1 ? null : SIDES[face];
+            for (BakedQuad quad : model.getQuads(state, cull, random, data, null)) {
+                int[] packed = quad.getVertices();
+                int stride = packed.length / 4;
+                if (stride < 3) {
+                    continue;
+                }
+                for (int i = 0; i < 4; i++) {
+                    int v = stride * i;
+                    double x = Float.intBitsToFloat(packed[v]) + pos.getX();
+                    double z = Float.intBitsToFloat(packed[v + 2]) + pos.getZ();
+                    double projected = x * axisX + z * axisZ;
+                    if (!Double.isFinite(projected)) {
+                        continue;
+                    }
+                    extreme = start ? Math.min(extreme, projected)
+                                    : Math.max(extreme, projected);
+                    count++;
+                }
+            }
+        }
+        return count == 0 ? Double.NaN : extreme;
+    }
+
+    // Drop every quad which touches the existing shortened-model footprint.
+    // Entire quads only: no UV changes, vertex shifts, new polygons or culling
+    // state edits. The medium diagonal seam models contain whole end quads
+    // strictly beyond the shorter source's physical AABB.
+    private static List<BakedQuad> tcMediumDiagOutsideSourceOnly(
+            List<BakedQuad> quads, WorldPreviewPart part) {
+        ArrayList<BakedQuad> outside = new ArrayList<>();
+        for (BakedQuad quad : quads) {
+            int[] packed = quad.getVertices();
+            int stride = packed.length / 4;
+            if (stride < 3) {
+                continue;
+            }
+            boolean entirelyOutside = true;
+            for (int i = 0; i < 4; i++) {
+                int v = i * stride;
+                double x = Float.intBitsToFloat(packed[v]) + part.pos().getX();
+                double z = Float.intBitsToFloat(packed[v + 2]) + part.pos().getZ();
+                double coordinate = x * part.seamAxisX() + z * part.seamAxisZ();
+                if (!Double.isFinite(coordinate)
+                        || (part.seamAtStart()
+                             ? coordinate >= part.seamCutoff() - 0.01D
+                             : coordinate <= part.seamCutoff() + 0.01D)) {
+                    entirelyOutside = false;
+                    break;
+                }
+            }
+            if (entirelyOutside) {
+                outside.add(quad);
+            }
+        }
+        return outside;
+    }
+
+    private static String batchGhostHandMode(
+            LegacyBatchTrackItem item,
+            ItemStack stack,
+            boolean shiftMirror) {
+        try {
+            LegacyBatchTrackSpec spec =
+                    (LegacyBatchTrackSpec)
+                            BATCH_SPEC.get(
+                                    item);
+
+            boolean directional =
+                    (boolean)
+                            BATCH_IS_DIRECTIONAL_HAND_FAMILY.invoke(
+                                    null,
+                                    spec.id());
+
+            if (!directional) {
+                return null;
+            }
+
+            boolean selectedLeft =
+                    (boolean)
+                            BATCH_UNIFIED_SELECTED_LEFT.invoke(
+                                    item,
+                                    stack);
+
+            // previewPlacement() applies the held Shift mirror live.
+            if (shiftMirror
+                    && item == stack.getItem()) {
+                selectedLeft =
+                        !selectedLeft;
+            }
+
+            return selectedLeft
+                    ? "LEFT"
+                    : "RIGHT";
+        }
+        catch (ReflectiveOperationException ex) {
+            return null;
+        }
+    }
     private static List<WorldPreviewPart> batchPartsAtRoot(
             LegacyBatchTrackItem item,
             BlockPos root,
-            Direction facing) {
+            Direction facing,
+            boolean originalVisualRootOwnership) {
         try {
             LegacyBatchTrackSpec spec =
                     (LegacyBatchTrackSpec)
@@ -323,6 +791,16 @@ public final class RealTrackPlacementGhostPreview {
 
             AbstractLegacyBatchRailBlock block =
                     supplier.get();
+
+            // DEV50B2I -- MEDIUM_DIAGONAL_HELD_GHOST_VISUAL_PARITY
+            // The saved Blueprint ghost uses the original TC4.5 medium
+            // diagonal visual owner (part 6). Apply that identical render-
+            // only ownership for the real held-item ghost, including Energy
+            // items (which share this spec). Never alter placement, pathing,
+            // blockstates in the world, or other track families.
+            boolean ghostOriginalVisualRoot =
+                    originalVisualRootOwnership
+                    || "track_diagonal_straight_medium".equals(spec.id());
 
             ArrayList<WorldPreviewPart> parts =
                     new ArrayList<>(
@@ -345,7 +823,7 @@ public final class RealTrackPlacementGhostPreview {
                                         facing,
                                         part,
                                         false,
-                                        false);
+                                        ghostOriginalVisualRoot);
 
                 parts.add(
                         new WorldPreviewPart(
@@ -531,9 +1009,10 @@ public final class RealTrackPlacementGhostPreview {
             Minecraft mc,
             PoseStack pose,
             MultiBufferSource buffers,
-            BlockState state,
-            BlockPos worldPos,
+            WorldPreviewPart part,
             Vec3 camera) {
+        BlockState state = part.state();
+        BlockPos worldPos = part.pos();
         BakedModel model =
                 mc.getBlockRenderer().getBlockModel(
                         state);
@@ -574,30 +1053,22 @@ public final class RealTrackPlacementGhostPreview {
         random.setSeed(
                 42L);
 
-        emitWhiteQuads(
-                pose,
-                consumer,
-                model.getQuads(
-                        state,
-                        null,
-                        random,
-                        modelData,
-                        null));
+        List<BakedQuad> unculledQuads = model.getQuads(
+                state, null, random, modelData, null);
+        emitWhiteQuads(pose, consumer, part.seamOnly()
+                ? tcMediumDiagOutsideSourceOnly(unculledQuads, part)
+                : unculledQuads);
 
         for (Direction side
                 : SIDES) {
             random.setSeed(
                     42L);
 
-            emitWhiteQuads(
-                    pose,
-                    consumer,
-                    model.getQuads(
-                            state,
-                            side,
-                            random,
-                            modelData,
-                            null));
+            List<BakedQuad> faceQuads = model.getQuads(
+                    state, side, random, modelData, null);
+            emitWhiteQuads(pose, consumer, part.seamOnly()
+                    ? tcMediumDiagOutsideSourceOnly(faceQuads, part)
+                    : faceQuads);
         }
 
         pose.popPose();

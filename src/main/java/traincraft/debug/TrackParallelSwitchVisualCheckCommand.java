@@ -130,7 +130,7 @@ public final class TrackParallelSwitchVisualCheckCommand {
         return List.copyOf(out);
     }
 
-    @SubscribeEvent
+    // TC_DEV38_R1D_COMMAND_DISABLED_RELEASE
     public static void register(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("tc_parallel_switch_visual_check")

@@ -468,7 +468,7 @@ private String realismEnvironmentFluidClass = "NONE";
                 this.brakeInput = false;
             }
 
-            this.realismBrakePipelineArmed = this.brakeInput;
+            this.realismBrakePipelineArmed = this.brakeInput || this.handBrakeApplied;
             this.applyDriverInput();
             if (this.realismBrakePipelineArmed) {
                 Vec3 realismBrakePostDriverMotion = this.getDeltaMovement();
@@ -588,7 +588,7 @@ private String realismEnvironmentFluidClass = "NONE";
          * the lower speed. This is NOT a second brake application.
          */
         if (!this.level().isClientSide
-                && this.brakeInput
+                && (this.brakeInput || this.handBrakeApplied)
                 && this.realismBrakePipelineArmed) {
             Vec3 realismPostRailBrakeMotion = this.getDeltaMovement();
             double realismPostRailBrakeSpeed =
@@ -658,11 +658,17 @@ private String realismEnvironmentFluidClass = "NONE";
             }
         }
 
-        // A set hand brake is a parking brake: vanilla minecart slope physics must
-        // not be allowed to creep the locomotive after our control step.
-        if (!this.level().isClientSide && this.handBrakeApplied) {
-            // A parking brake must kill the slope's vertical component too. Keeping
-            // Y motion allowed an uphill cart to keep creeping after C was applied.
+        /*
+         * TC_DEV38_R1G1T3D_PROGRESSIVE_C_BRAKE_PARKED_LOCK
+         *
+         * While the progressive target is above zero, preserve movement.
+         * Once C reaches zero, lock XYZ so vanilla slope resolution cannot
+         * creep a parked locomotive.
+         */
+        if (!this.level().isClientSide
+                && this.handBrakeApplied
+                && this.realismBrakePipelineArmed
+                && this.realismBrakePipelinePostDriverBpt <= STOP_EPSILON) {
             this.setDeltaMovement(Vec3.ZERO);
         }
 
@@ -2404,16 +2410,13 @@ private String realismEnvironmentFluidClass = "NONE";
     public void toggleHandBrake(ServerPlayer player) {
         this.handBrakeApplied = !this.handBrakeApplied;
         this.entityData.set(DATA_HAND_BRAKE, this.handBrakeApplied);
-        if (this.handBrakeApplied) {
-            this.setDeltaMovement(Vec3.ZERO);
-        }
+        // TC_DEV38_R1G1T3D_PROGRESSIVE_C_TOGGLE
+        // Do not zero velocity here. The normal locomotive tick applies C.
 
-        player.displayClientMessage(
-                Component.translatable(this.handBrakeApplied
-                        ? "message.traincraft.hand_brake.applied"
-                        : "message.traincraft.hand_brake.released"),
-                true
-        );
+        // TC_DEV37_R1D9_NO_HANDBRAKE_ACTIONBAR
+        // The clean F5 HUDs already show brake state.  Keep the server-authoritative
+        // brake toggle and stopping behavior, but do not add a separate white
+        // action-bar "Handbrake applied/released" message over the HUD.
     }
 
     // TC_BATCH7_R4A_PROTOTYPE_STEAM_WHISTLES
@@ -3001,7 +3004,7 @@ private String realismEnvironmentFluidClass = "NONE";
         double horizontalSpeed = Math.sqrt(motion.x * motion.x + motion.z * motion.z);
 
         if (this.handBrakeApplied) {
-            this.setDeltaMovement(Vec3.ZERO);
+            this.handBrakeTowardStop(motion, horizontalSpeed);
             return;
         }
 
@@ -3535,6 +3538,23 @@ private String realismEnvironmentFluidClass = "NONE";
         this.setDeltaMovement(motion.x * scale, motion.y, motion.z * scale);
     }
 
+    /*
+     * TC_DEV38_R1G1T3D_PROGRESSIVE_C_BRAKE
+     * C is deliberately stronger than SPACE but remains progressive while
+     * moving.  The accepted service-brake constant is reused directly.
+     */
+    private void handBrakeTowardStop(Vec3 motion, double horizontalSpeed) {
+        double handBrakePerTick = BRAKE_PER_TICK * 2.25D;
+        if (horizontalSpeed <= handBrakePerTick + STOP_EPSILON) {
+            this.setDeltaMovement(Vec3.ZERO);
+            return;
+        }
+
+        double newSpeed = Math.max(0.0D, horizontalSpeed - handBrakePerTick);
+        double scale = newSpeed / horizontalSpeed;
+        this.setDeltaMovement(motion.x * scale, motion.y, motion.z * scale);
+    }
+
     private void updateTrainFacingFromRail() {
         RailShape shape = this.getCurrentRailShape();
         if (shape == null) {
@@ -3835,7 +3855,8 @@ private String realismEnvironmentFluidClass = "NONE";
     protected void applyNaturalSlowdown() {
         Vec3 motion = this.getDeltaMovement();
         if (this.handBrakeApplied) {
-            this.setDeltaMovement(Vec3.ZERO);
+            // TC_DEV38_R1G1T3D_PROGRESSIVE_C_NATURAL_SLOWDOWN
+            // C already produced this tick's target before super.tick().
             return;
         }
 

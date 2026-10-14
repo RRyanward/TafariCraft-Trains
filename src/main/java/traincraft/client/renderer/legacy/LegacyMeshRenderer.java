@@ -17,6 +17,7 @@ public abstract class LegacyMeshRenderer<T extends Entity> extends EntityRendere
     private final String stockName;
     private final ResourceLocation texture;
     private final LegacyStaticMesh mesh;
+    private final ResourceLocation tcDev44LightMeshId;
     private final double tx, ty, tz;
     private final float rx, ry, rz, sx, sy, sz;
     private final float renderedMinY, renderedMaxY;
@@ -31,6 +32,7 @@ public abstract class LegacyMeshRenderer<T extends Entity> extends EntityRendere
         this.stockName = stockName;
         this.texture = texture;
         this.mesh = LegacyStaticMesh.load(meshLocation);
+        this.tcDev44LightMeshId = meshLocation;
         this.tx = tx; this.ty = ty; this.tz = tz;
         this.rx = rx; this.ry = ry; this.rz = rz;
         this.sx = sx; this.sy = sy; this.sz = sz;
@@ -91,6 +93,7 @@ public abstract class LegacyMeshRenderer<T extends Entity> extends EntityRendere
 
         VertexConsumer vertices = buffers.getBuffer(tcRenderType(getTextureLocation(entity)));
         mesh.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+        Dev44TrainLightVisuals.draw(tcDev44LightMeshId, entity, poseStack, buffers, mesh.minX(), mesh.maxX(), mesh.minY());
         LegacyRollingStockDebug.logRender(entity, stockName, trainYaw, mesh,
                 tx, ty, tz, rx, ry, rz, sx, sy, sz, renderedMinY, renderedMaxY);
         poseStack.popPose();

@@ -14,6 +14,9 @@ import traincraft.network.packet.LocomotiveWhistlePacket;
 import traincraft.network.packet.ToggleHandBrakePacket;
 
 public final class PoweredLocomotiveScreen extends AbstractContainerScreen<PoweredLocomotiveMenu> {
+    // TC_DEV36_R1K29R_MANUAL_TUNNEL_BUTTON
+    private net.minecraft.client.gui.components.Button
+            tcDev36ManualTunnelButton;
     private static final ResourceLocation BUILDER_FURNACE_OFF =
             new ResourceLocation(
                     Traincraft.MOD_ID,
@@ -31,7 +34,8 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
 
     public PoweredLocomotiveScreen(PoweredLocomotiveMenu menu,Inventory inventory,Component title){
         super(menu,inventory,title);
-        if(menu.getLocomotive().isBuilder()){imageWidth=255;imageHeight=254;}else{imageWidth=176;imageHeight=166;}
+        if(menu.getLocomotive().isBuilder()){// TC_DEV36_R1K12_FIFTH_MATERIAL_ROWS
+            imageWidth=391;imageHeight=272;}else{imageWidth=176;imageHeight=166;}
     }
     @Override
     protected void init() {
@@ -51,30 +55,59 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
                             .bounds(leftPos + 159, topPos + 7, 88, 18)
                             .build());
         }
-    }
+    
+        if (menu.getLocomotive().isBuilder()) {
+            tcDev36ManualTunnelButton =
+                    addRenderableWidget(
+                            net.minecraft.client.gui.components.Button.builder(
+                                            Component.literal(
+                                                    "MANUAL TUNNEL: "
+                                                            + (menu.getLocomotive()
+                                                                            .isBuilderManualTunnelMode()
+                                                                    ? "ON"
+                                                                    : "OFF")),
+                                            button -> {
+                                                if (minecraft != null
+                                                        && minecraft.gameMode
+                                                                != null) {
+                                                    minecraft.gameMode
+                                                            .handleInventoryButtonClick(
+                                                                    menu.containerId,
+                                                                    91);
+                                                }
+                                            })
+                                    .bounds(
+                                            leftPos - 132,
+                                            topPos + 178,
+                                            126,
+                                            18)
+                                    .build());
+        }}
 
     // TC_BATCH8_R4A4E_BUILDER_TEXT_FIRE_DUALFUEL_TUBE
     private void renderBlueprintBuilderBackground(
             GuiGraphics graphics) {
-        int x = leftPos;
-        int y = topPos;
+        // TC_DEV36_R1K12_NO_DIESEL_UI
+        // TC_DEV36_R1K14_FINAL_MATERIAL_LAYOUT
+        int x =
+                leftPos;
+        int y =
+                topPos;
 
-        // Main Builder shell.
         graphics.fill(
                 x,
                 y,
                 x + 255,
-                y + 254,
+                y + 272,
                 0xFFB9BDC1);
 
         graphics.fill(
                 x + 2,
                 y + 2,
                 x + 253,
-                y + 252,
+                y + 270,
                 0xFFDFE2E4);
 
-        // Header.
         graphics.fill(
                 x + 4,
                 y + 4,
@@ -89,70 +122,76 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
                 y + 30,
                 0xFF3CBCD6);
 
-        // Core / supplies panel.
+        // Top material band: equal bottom edge for both sides.
         panel(
                 graphics,
                 x + 6,
                 y + 31,
                 94,
-                132);
+                150);
 
-        // Blueprint material rack panel.
         panel(
                 graphics,
                 x + 102,
                 y + 31,
                 147,
-                132);
+                150);
 
-        // Player inventory panel.
+        // Clean continuous divider between material band and Player Inventory.
+        graphics.fill(
+                x + 6,
+                y + 180,
+                x + 249,
+                y + 182,
+                0xFF8B9297);
+
         panel(
                 graphics,
                 x + 43,
-                y + 164,
+                y + 182,
                 206,
                 86);
 
-        // Shared physical fuel input + real Blueprint insertion slot.
+        // Coal only. The old small Blueprint slot/frame is intentionally gone.
         slotFrame(
                 graphics,
                 x + 12,
                 y + 58,
                 0xFFCF8B3C);
 
-        // TC_BATCH8_R4A4G2_OLD_BLUEPRINT_SLOT_VISUAL_REMOVED
-
-        // Coal furnace indicator above slot 0.
         drawBuilderFire(
                 graphics,
                 x + 13,
                 y + 37);
 
-        // TC_BATCH8_R4A4G_LARGE_BLUEPRINT_DISPLAY
-        // Live large display of the same stack held by handler slot 52.
+        // This is now the only visible Blueprint holder.
         drawBuilderBlueprintDisplay(
                 graphics,
                 x + 55,
                 y + 35);
 
-        // Supplies: handler slots 1..19.
-        int supplySlot = 1;
-        for (int row = 0; row < 4; row++) {
+        // SUPPLIES: exactly 4x5.
+        for (int row = 0;
+             row < 4;
+             row++) {
             for (int col = 0;
-                 col < 5 && supplySlot <= 19;
+                 col < 5;
                  col++) {
                 slotFrame(
                         graphics,
                         x + 12 + col * 18,
                         y + 92 + row * 18,
                         0xFF6F7479);
-                supplySlot++;
             }
         }
 
-        // Blueprint material rack: handler slots 20..51.
-        for (int row = 0; row < 4; row++) {
-            for (int col = 0; col < 8; col++) {
+        // BLUEPRINT MATERIALS: full 7x8, filling the former empty lower area.
+        for (int row = 0;
+             row < 7;
+             row++) {
+            for (int col = 0;
+                 col < 8;
+                 col++) {
                 slotFrame(
                         graphics,
                         x + 106 + col * 18,
@@ -161,28 +200,28 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
             }
         }
 
-        // Bottom-right DIESEL tube. Coal never feeds this reserve.
-        drawBuilderFuelTube(
-                graphics,
-                x + 232,
-                y + 127);
-
-        // Player inventory + hotbar.
-        for (int row = 0; row < 3; row++) {
-            for (int col = 0; col < 9; col++) {
+        // Player inventory + hotbar unchanged from r1k12.
+        for (int row = 0;
+             row < 3;
+             row++) {
+            for (int col = 0;
+                 col < 9;
+                 col++) {
                 slotFrame(
                         graphics,
                         x + 47 + col * 18,
-                        y + 174 + row * 18,
+                        y + 192 + row * 18,
                         0xFF777D82);
             }
         }
 
-        for (int col = 0; col < 9; col++) {
+        for (int col = 0;
+             col < 9;
+             col++) {
             slotFrame(
                     graphics,
                     x + 47 + col * 18,
-                    y + 232,
+                    y + 250,
                     0xFF777D82);
         }
     }
@@ -591,7 +630,231 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
                 accent);
     }
 
-    private ResourceLocation texture(){var l=menu.getLocomotive();if(l.isBuilder())return BUILDER;return l.isElectric()?ELECTRIC:DIESEL;}
+    // TC_DEV34_R1C1A_INFRASTRUCTURE_PANEL
+    // TC_DEV34_R1C1A_INFRASTRUCTURE_PANEL
+    // TC_DEV36_R1E_INFRASTRUCTURE_CENTERED
+    // TC_DEV34_R1C1A_INFRASTRUCTURE_PANEL
+    // TC_DEV36_R1F_INFRASTRUCTURE_LABEL_CLEARANCE
+    private void renderBuilderInfrastructurePanel(
+            GuiGraphics graphics) {
+        int x =
+                leftPos + 257;
+        int y =
+                topPos + 4;
+        int panelWidth =
+                132;
+        int panelCenter =
+                x + panelWidth / 2;
+
+        graphics.fill(
+                x,
+                y,
+                x + panelWidth,
+                y + 204,
+                0xFFB9BDC1);
+
+        graphics.fill(
+                x + 2,
+                y + 2,
+                x + panelWidth - 2,
+                y + 202,
+                0xFF242A31);
+
+        graphics.drawString(
+                font,
+                "ROADBED / TUNNEL",
+                panelCenter
+                        - font.width(
+                                "ROADBED / TUNNEL") / 2,
+                y + 8,
+                0xFF65E6FF,
+                false);
+
+        graphics.drawString(
+                font,
+                "4.75 BLOCK CLEAR",
+                panelCenter
+                        - font.width(
+                                "4.75 BLOCK CLEAR") / 2,
+                y + 19,
+                0xFF86F58F,
+                false);
+
+        graphics.drawString(
+                font,
+                "ROADBED",
+                panelCenter
+                        - font.width(
+                                "ROADBED") / 2,
+                y + 35,
+                0xFFFFCC72,
+                false);
+
+        String[] roadbedLabels = {
+                "L3", "L2", "L1", "C", "R1", "R2", "R3"
+        };
+        int roadbedX =
+                leftPos + 261;
+        for (int i = 0;
+             i < roadbedLabels.length;
+             i++) {
+            String label =
+                    roadbedLabels[i];
+            int center =
+                    roadbedX
+                            + i * 18
+                            + 8;
+            graphics.drawString(
+                    font,
+                    label,
+                    center
+                            - font.width(
+                                    label) / 2,
+                    y + 44,
+                    0xFFD9D9D9,
+                    false);
+        }
+
+        graphics.drawString(
+                font,
+                "WALLS",
+                panelCenter
+                        - font.width(
+                                "WALLS") / 2,
+                y + 88,
+                0xFFFFCC72,
+                false);
+
+        String[] wallLabels = {
+                "L", "R"
+        };
+        int[] wallX = {
+                leftPos + 306,
+                leftPos + 324
+        };
+        for (int i = 0;
+             i < wallLabels.length;
+             i++) {
+            String label =
+                    wallLabels[i];
+            graphics.drawString(
+                    font,
+                    label,
+                    wallX[i]
+                            + 8
+                            - font.width(
+                                    label) / 2,
+                    y + 97,
+                    0xFFD9D9D9,
+                    false);
+        }
+
+        graphics.drawString(
+                font,
+                "ROOF",
+                panelCenter
+                        - font.width(
+                                "ROOF") / 2,
+                y + 141,
+                0xFFFFCC72,
+                false);
+
+        String[] roofLabels = {
+                "L", "C", "R"
+        };
+        int roofX =
+                leftPos + 297;
+        for (int i = 0;
+             i < roofLabels.length;
+             i++) {
+            String label =
+                    roofLabels[i];
+            int center =
+                    roofX
+                            + i * 18
+                            + 8;
+            graphics.drawString(
+                    font,
+                    label,
+                    center
+                            - font.width(
+                                    label) / 2,
+                    y + 150,
+                    0xFFD9D9D9,
+                    false);
+        }
+
+        graphics.drawString(
+                font,
+                "CENTER required",
+                panelCenter
+                        - font.width(
+                                "CENTER required") / 2,
+                y + 183,
+                0xFFFF7777,
+                false);
+
+        graphics.drawString(
+                font,
+                "empty side = CENTER",
+                panelCenter
+                        - font.width(
+                                "empty side = CENTER") / 2,
+                y + 192,
+                0xFFBFC5CA,
+                false);
+
+        // Actual filter frames remain exactly aligned to the accepted
+        // r1e centered menu-slot coordinates.
+        for (int i = 0; i < 7; i++) {
+            drawInfrastructureSlotFrame(
+                    graphics,
+                    leftPos + 261 + i * 18,
+                    topPos + 58);
+        }
+
+        drawInfrastructureSlotFrame(
+                graphics,
+                leftPos + 306,
+                topPos + 111);
+
+        drawInfrastructureSlotFrame(
+                graphics,
+                leftPos + 324,
+                topPos + 111);
+
+        for (int i = 0; i < 3; i++) {
+            drawInfrastructureSlotFrame(
+                    graphics,
+                    leftPos + 297 + i * 18,
+                    topPos + 164);
+        }
+    }
+
+    private void drawInfrastructureSlotFrame(
+            GuiGraphics graphics,
+            int x,
+            int y) {
+        graphics.fill(
+                x - 1,
+                y - 1,
+                x + 17,
+                y + 17,
+                0xFF777C82);
+
+        graphics.fill(
+                x,
+                y,
+                x + 16,
+                y + 16,
+                0xFF171A1F);
+    }
+    // TC_DEV37_R1D6_GUI_TYPE
+    private static boolean tcDev37ElectricGui(traincraft.entity.train.power.LegacyPoweredLocomotive locomotive) {
+        var key = net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES.getKey(locomotive.getType());
+        return key != null && key.getPath().startsWith("locomotive_electric_");
+    }
+    private ResourceLocation texture(){var l=menu.getLocomotive();if(l.isBuilder())return BUILDER;return tcDev37ElectricGui(l)?ELECTRIC:DIESEL;}
     @Override
     protected void renderBg(
             GuiGraphics graphics,
@@ -600,6 +863,7 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
             int mouseY) {
         if (menu.getLocomotive().isBuilder()) {
             renderBlueprintBuilderBackground(graphics);
+            renderBuilderInfrastructurePanel(graphics);
             return;
         }
 
@@ -659,7 +923,7 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
 
             graphics.drawString(
                     font,
-                    "BLUEPRINT CONSTRUCTION",
+                    (locomotive.isBuilderManualTunnelMode() ? "MANUAL TUNNEL" : "BLUEPRINT CONSTRUCTION"),
                     8,
                     18,
                     0xFF65E6FF,
@@ -695,15 +959,10 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
                     38,
                     0xFF62E7FF);
 
-            drawScaledOutlinedText(graphics, "PLAYER INVENTORY", 47, 167, 0.70F,
+            drawScaledOutlinedText(graphics, "PLAYER INVENTORY", 47, 183, 0.70F,
                     0xFFE8E8E8);
 
-            drawOutlinedText(
-                    graphics,
-                    "DIESEL",
-                    194,
-                    143,
-                    0xFFFFB347);
+            // TC_DEV36_R1K12_NO_DIESEL_UI
 
             return;
         }
@@ -716,7 +975,7 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
                 0xD3A900,
                 false);
 
-        if (!locomotive.isElectric()) {
+        if (!tcDev37ElectricGui(locomotive)) {
             graphics.drawString(
                     font,
                     "Fuel: "
@@ -733,7 +992,7 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
         var l=menu.getLocomotive();if(l.isBuilder())return;
         int y=topPos-49;g.fill(leftPos,y,leftPos+imageWidth,topPos-18,0xD8202020);
         g.drawCenteredString(font,title,leftPos+imageWidth/2,y+3,0xFFE070);
-        if(l.isElectric()){
+        if(tcDev37ElectricGui(l)){
             boolean line=l.isOnPoweredEnergyTrack();boolean backup=menu.hasBackupRedstone();
             String status=line?"LINE POWER":backup?"BACKUP":"NO POWER";
             int color=line?0x55FF77:backup?0xFFCC55:0xFF5555;
@@ -744,9 +1003,176 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
             g.drawCenteredString(font,"Diesel Fuel: "+menu.getPowerAmount()+" / "+menu.getPowerCapacity(),leftPos+imageWidth/2,y+17,0xE0E0E0);
         }
     }
-    @Override public void render(GuiGraphics g,int mx,int my,float partial){renderBackground(g);super.render(g,mx,my,partial);renderStatusPanel(g);renderBrake(g);renderTooltip(g,mx,my);
-        renderBuilderBlueprintBoxTooltip(g, mx, my);
-}
+    // TC_DEV36_R1K19_RESPONSIVE_BUILDER_SCREEN
+    // Match the accepted status-overlay philosophy:
+    // natural 1.0 scale when there is room, exact-fit scale only when needed.
+    private float tcDev36R1k19BuilderScale() {
+        // TC_DEV36_R1K29I_COMBINED_CLUSTER
+        // Visible Builder width = 126 status + 6 gap + 391 main = 523.
+        if (!menu.getLocomotive().isBuilder()) {
+            return 1.0F;
+        }
+
+        float availableWidth =
+                Math.max(
+                        1.0F,
+                        this.width - 8.0F);
+
+        float availableHeight =
+                Math.max(
+                        1.0F,
+                        this.height - 8.0F);
+
+        float fit =
+                Math.min(
+                        availableWidth / 523.0F,
+                        availableHeight / 272.0F);
+
+        fit =
+                Math.min(
+                        1.0F,
+                        fit);
+
+        // Same principle as the already-accepted responsive side overlay:
+        // never enforce a large minimum that would make a tiny window overlap.
+        return Math.max(
+                1.0F / 523.0F,
+                fit);
+    }
+
+    // TC_DEV36_R1K29I_CLUSTER_CENTER_SHIFT
+    private float tcDev36R1k29hClusterShiftX() {
+        if (!menu.getLocomotive().isBuilder()) {
+            return 0.0F;
+        }
+
+        // Half of the 126px status panel + 6px gap, scaled with the cluster.
+        return 66.0F
+                * tcDev36R1k19BuilderScale();
+    }
+
+    private double tcDev36R1k19LogicalMouseX(
+            double physicalX) {
+        float scale =
+                tcDev36R1k19BuilderScale();
+
+        double center =
+                this.width / 2.0D;
+
+        double shift =
+                tcDev36R1k29hClusterShiftX();
+
+        return center
+                + (physicalX
+                        - center
+                        - shift)
+                        / scale;
+    }
+
+    private double tcDev36R1k19LogicalMouseY(
+            double physicalY) {
+        float scale =
+                tcDev36R1k19BuilderScale();
+
+        if (scale >= 0.9999F) {
+            return physicalY;
+        }
+
+        double center =
+                this.height / 2.0D;
+
+        return center
+                + (physicalY - center)
+                        / scale;
+    }
+    @Override
+    public void render(
+            GuiGraphics graphics,
+            int mouseX,
+            int mouseY,
+            float partialTick) {
+        if (tcDev36ManualTunnelButton != null
+                && menu.getLocomotive().isBuilder()) {
+            tcDev36ManualTunnelButton.setMessage(
+                    Component.literal(
+                            "MANUAL TUNNEL: "
+                                    + (menu.getLocomotive()
+                                                    .isBuilderManualTunnelMode()
+                                            ? "ON"
+                                            : "OFF")));
+        }
+        if (!menu.getLocomotive().isBuilder()) {
+            renderBackground(
+                    graphics);
+            super.render(
+                    graphics,
+                    mouseX,
+                    mouseY,
+                    partialTick);
+            renderBrake(
+                    graphics);
+            renderTooltip(
+                    graphics,
+                    mouseX,
+                    mouseY);
+            return;
+        }
+
+        renderBackground(
+                graphics);
+
+        float scale =
+                tcDev36R1k19BuilderScale();
+
+        int logicalMouseX =
+                (int) Math.floor(
+                        tcDev36R1k19LogicalMouseX(
+                                mouseX));
+
+        int logicalMouseY =
+                (int) Math.floor(
+                        tcDev36R1k19LogicalMouseY(
+                                mouseY));
+
+        graphics.pose()
+                .pushPose();
+
+        graphics.pose()
+                .translate(
+                        this.width / 2.0F
+                                + tcDev36R1k29hClusterShiftX(),
+                        this.height / 2.0F,
+                        0.0F);
+
+        graphics.pose()
+                .scale(
+                        scale,
+                        scale,
+                        1.0F);
+
+        graphics.pose()
+                .translate(
+                        -this.width / 2.0F,
+                        -this.height / 2.0F,
+                        0.0F);
+
+        super.render(
+                graphics,
+                logicalMouseX,
+                logicalMouseY,
+                partialTick);
+
+        renderBrake(
+                graphics);
+
+        renderTooltip(
+                graphics,
+                logicalMouseX,
+                logicalMouseY);
+
+        graphics.pose()
+                .popPose();
+    }
     private void renderBrake(
             GuiGraphics graphics) {
         // TC_BATCH8_R4A4G2_BUILDER_NO_TOP_SWITCH
@@ -813,24 +1239,39 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
             double mouseY,
             int button) {
         if (menu.getLocomotive().isBuilder()) {
+            double logicalX =
+                    tcDev36R1k19LogicalMouseX(
+                            mouseX);
+
+            double logicalY =
+                    tcDev36R1k19LogicalMouseY(
+                            mouseY);
+
             // TC_BATCH8_R4A4G2_LARGE_BLUEPRINT_CLICK_TARGET
-            // Large display: x=55..99, y=35..80 relative to GUI origin.
-            if ((button == 0 || button == 1)
-                    && mouseX >= leftPos + 55
-                    && mouseX < leftPos + 99
-                    && mouseY >= topPos + 35
-                    && mouseY < topPos + 80) {
+            // TC_DEV36_R1K14_LARGE_BLUEPRINT_HOLDER
+            // TC_DEV36_R1K19_RESPONSIVE_BUILDER_SCREEN
+            if ((button == 0
+                            || button == 1)
+                    && logicalX >= leftPos + 55
+                    && logicalX < leftPos + 99
+                    && logicalY >= topPos + 35
+                    && logicalY < topPos + 80) {
+                net.minecraft.world.inventory.ClickType type =
+                        hasShiftDown()
+                                ? net.minecraft.world.inventory.ClickType.QUICK_MOVE
+                                : net.minecraft.world.inventory.ClickType.PICKUP;
+
                 slotClicked(
                         menu.getSlot(52),
                         52,
                         button,
-                        net.minecraft.world.inventory.ClickType.PICKUP);
+                        type);
                 return true;
             }
 
             return super.mouseClicked(
-                    mouseX,
-                    mouseY,
+                    logicalX,
+                    logicalY,
                     button);
         }
 
@@ -857,6 +1298,75 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
                 mouseX,
                 mouseY,
                 button);
+    }
+    // TC_DEV36_R1K19_RESPONSIVE_BUILDER_INPUT
+    @Override
+    public boolean mouseReleased(
+            double mouseX,
+            double mouseY,
+            int button) {
+        if (menu.getLocomotive().isBuilder()) {
+            return super.mouseReleased(
+                    tcDev36R1k19LogicalMouseX(
+                            mouseX),
+                    tcDev36R1k19LogicalMouseY(
+                            mouseY),
+                    button);
+        }
+
+        return super.mouseReleased(
+                mouseX,
+                mouseY,
+                button);
+    }
+
+    @Override
+    public boolean mouseDragged(
+            double mouseX,
+            double mouseY,
+            int button,
+            double dragX,
+            double dragY) {
+        if (menu.getLocomotive().isBuilder()) {
+            float scale =
+                    tcDev36R1k19BuilderScale();
+
+            return super.mouseDragged(
+                    tcDev36R1k19LogicalMouseX(
+                            mouseX),
+                    tcDev36R1k19LogicalMouseY(
+                            mouseY),
+                    button,
+                    dragX / scale,
+                    dragY / scale);
+        }
+
+        return super.mouseDragged(
+                mouseX,
+                mouseY,
+                button,
+                dragX,
+                dragY);
+    }
+
+    @Override
+    public boolean mouseScrolled(
+            double mouseX,
+            double mouseY,
+            double delta) {
+        if (menu.getLocomotive().isBuilder()) {
+            return super.mouseScrolled(
+                    tcDev36R1k19LogicalMouseX(
+                            mouseX),
+                    tcDev36R1k19LogicalMouseY(
+                            mouseY),
+                    delta);
+        }
+
+        return super.mouseScrolled(
+                mouseX,
+                mouseY,
+                delta);
     }
     private void sendControls(){TCNetwork.CHANNEL.sendToServer(new LocomotiveControlPacket(menu.getLocomotive().getId(),forward,reverse,brake));}
     @Override public boolean keyPressed(int key,int scan,int modifiers){

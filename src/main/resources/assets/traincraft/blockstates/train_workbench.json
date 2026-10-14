@@ -1,7 +1,19 @@
 {
-  "variants": {
-    "": {
-      "model": "traincraft:block/train_workbench"
-    }
-  }
+    "variants":  {
+                     "facing=north":  {
+                                          "model":  "traincraft:block/train_workbench"
+                                      },
+                     "facing=east":  {
+                                         "model":  "traincraft:block/train_workbench",
+                                         "y":  90
+                                     },
+                     "facing=south":  {
+                                          "model":  "traincraft:block/train_workbench",
+                                          "y":  180
+                                      },
+                     "facing=west":  {
+                                         "model":  "traincraft:block/train_workbench",
+                                         "y":  270
+                                     }
+                 }
 }

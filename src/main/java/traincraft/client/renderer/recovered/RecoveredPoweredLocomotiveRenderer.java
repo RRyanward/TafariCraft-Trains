@@ -62,6 +62,9 @@ public final class RecoveredPoweredLocomotiveRenderer<T extends LegacyPoweredLoc
         p.scale(sx,sy,sz);
         VertexConsumer v=b.getBuffer(RenderType.entityTranslucentCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(e, texture)));
         model.renderToBuffer(p,v,light,OverlayTexture.NO_OVERLAY,1,1,1,1);
+        // TC_DEV38_R1G1Z7W5_RENDERER_WHEEL_FACE_HOOK
+        traincraft.client.renderer.animation.StructuralWheelFaceOverlayRenderer.renderNative(
+                model, p, v, light, OverlayTexture.NO_OVERLAY);
         p.popPose();
         super.render(e,yaw,partial,p,b,light);
     }

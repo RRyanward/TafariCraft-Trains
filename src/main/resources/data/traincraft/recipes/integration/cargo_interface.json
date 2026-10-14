@@ -1,0 +1,12 @@
+{
+  "type":"minecraft:crafting_shaped",
+  "category":"redstone",
+  "pattern":["IHI","CBC","IHI"],
+  "key":{
+    "I":{"item":"minecraft:iron_ingot"},
+    "H":{"item":"minecraft:hopper"},
+    "C":{"item":"traincraft:copper_ingot"},
+    "B":{"item":"minecraft:barrel"}
+  },
+  "result":{"item":"traincraft:cargo_interface"}
+}

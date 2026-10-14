@@ -157,7 +157,7 @@ public final class TrackSnapPairGalleryCommand {
     private TrackSnapPairGalleryCommand() {
     }
 
-    @SubscribeEvent
+    // TC_DEV38_R1D_COMMAND_DISABLED_RELEASE
     public static void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("tc_snap_pair_gallery")

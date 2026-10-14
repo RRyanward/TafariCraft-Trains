@@ -1,0 +1,6 @@
+{
+  "variants":{
+    "powered=false":{"model":"traincraft:block/rail_power_interface_off"},
+    "powered=true":{"model":"traincraft:block/rail_power_interface_on"}
+  }
+}

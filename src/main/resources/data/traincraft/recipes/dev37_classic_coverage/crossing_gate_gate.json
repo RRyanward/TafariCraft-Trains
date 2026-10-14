@@ -1,0 +1,23 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "category":  "misc",
+    "pattern":  [
+                    "WRW",
+                    "SSS"
+                ],
+    "key":  {
+                "R":  {
+                          "item":  "minecraft:red_wool"
+                      },
+                "S":  {
+                          "item":  "minecraft:stick"
+                      },
+                "W":  {
+                          "item":  "minecraft:white_wool"
+                      }
+            },
+    "result":  {
+                   "item":  "traincraft:crossing_gate_gate",
+                   "count":  1
+               }
+}

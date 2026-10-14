@@ -1,0 +1,28 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "category":  "misc",
+    "ingredients":  [
+                        {
+                            "item":  "traincraft:track_normal"
+                        },
+                        {
+                            "item":  "traincraft:track_normal"
+                        },
+                        {
+                            "item":  "traincraft:track_normal"
+                        },
+                        {
+                            "item":  "traincraft:track_normal"
+                        },
+                        {
+                            "item":  "traincraft:track_normal"
+                        },
+                        {
+                            "item":  "traincraft:track_normal"
+                        }
+                    ],
+    "result":  {
+                   "item":  "traincraft:track_switch_45_medium_left",
+                   "count":  1
+               }
+}

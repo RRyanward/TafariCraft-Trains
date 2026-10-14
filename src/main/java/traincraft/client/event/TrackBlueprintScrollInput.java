@@ -3,6 +3,7 @@ package traincraft.client.event;
 // TC_BATCH8_R3P_BLUEPRINT_SCROLL_FAMILY_NAV
 
 import net.minecraft.client.Minecraft;
+import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.InputEvent;
@@ -27,7 +28,8 @@ public final class TrackBlueprintScrollInput {
     @SubscribeEvent
     public static void onScroll(
             InputEvent.MouseScrollingEvent event) {
-        Minecraft mc = Minecraft.getInstance();
+        Minecraft mc =
+                Minecraft.getInstance();
 
         if (mc.player == null
                 || mc.screen != null
@@ -35,6 +37,10 @@ public final class TrackBlueprintScrollInput {
             return;
         }
 
+        // TC_DEV34_R1C2_BLUEPRINT_MAIN_WHEEL
+        // BLUEPRINT MAIN is always Track Edit Mode. The offhand no longer
+        // changes wheel ownership. This restores the classic Blueprint feel:
+        // stay on the Blueprint hotbar slot while scrolling track pieces.
         ItemStack blueprint =
                 mc.player.getMainHandItem();
 
@@ -59,6 +65,7 @@ public final class TrackBlueprintScrollInput {
                 direction,
                 familyOnly);
 
+        // The wheel belongs to Blueprint selection, not hotbar selection.
         event.setCanceled(true);
     }
 

@@ -81,6 +81,20 @@ public final class TrackBlueprintNameScreen
                                 20)
                         .build());
 
+        // TC_DEV34_R1C5_CANCEL_KEEP_EDITING
+        this.addRenderableWidget(
+                Button.builder(
+                                Component.literal(
+                                        "Cancel - Keep Editing"),
+                                button -> cancelAndClose())
+                        .bounds(
+                                this.width / 2
+                                        - BUTTON_WIDTH
+                                        - 4,
+                                buttonY + 24,
+                                BUTTON_WIDTH * 2 + 8,
+                                20)
+                        .build());
         this.setInitialFocus(
                 this.nameBox);
     }
@@ -100,12 +114,23 @@ public final class TrackBlueprintNameScreen
 
         this.onClose();
     }
+    private void cancelAndClose() {
+        TrackBlueprintSelectionNetwork
+                .sendContinueEditing();
+
+        super.onClose();
+    }
 
     @Override
     public boolean keyPressed(
             int keyCode,
             int scanCode,
             int modifiers) {
+        if (keyCode
+                == InputConstants.KEY_ESCAPE) {
+            cancelAndClose();
+            return true;
+        }
         if (keyCode
                         == InputConstants.KEY_RETURN
                 || keyCode
@@ -146,7 +171,7 @@ public final class TrackBlueprintNameScreen
                 this.font,
                 "Leave it as Blueprint to use the default cyan name.",
                 this.width / 2,
-                this.height / 2 + 48,
+                this.height / 2 + 72,
                 0x8A8A8A);
 
         super.render(

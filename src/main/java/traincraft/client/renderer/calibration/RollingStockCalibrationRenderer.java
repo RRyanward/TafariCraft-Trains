@@ -12,6 +12,7 @@ import net.minecraftforge.registries.ForgeRegistries;
 import traincraft.Traincraft;
 import traincraft.config.RollingStockCalibrationConfig;
 import traincraft.entity.train.power.LegacyPoweredLocomotive;
+import traincraft.client.renderer.animation.RollingStockWheelAnimation;
 
 /**
  * Generic outer Y-offset + train-sized frustum bounds for TafariCraft rolling
@@ -129,6 +130,18 @@ public final class RollingStockCalibrationRenderer<T extends Entity>
             poseStack.translate(0.0D, y, 0.0D);
         }
 
+        // TC_DEV38_R1G1Z3A_BULK_NATIVE_WHEEL_HOOK
+        // Real authored ModelParts only; no synthetic overlay geometry.
+        traincraft.client.renderer.animation.FleetNativeWheelPartAnimator.apply(
+                delegate,
+                entity,
+                partialTick);
+        // TC_DEV38_R1G1Z7Y14_DIRECT_DELEGATE_ROD_HOOK
+        // Gated inside the helper to six exact DEV42-supported targets.
+        traincraft.client.renderer.animation.FleetRodPistonPartAnimator.applyDelegate(
+                delegate,
+                entity,
+                partialTick);
         delegate.render(
                 entity,
                 entityYaw,
@@ -136,6 +149,9 @@ public final class RollingStockCalibrationRenderer<T extends Entity>
                 poseStack,
                 buffer,
                 packedLight);
+
+        // DEV38 r1g1c client-only all-fleet signed-distance wheel animation.
+        RollingStockWheelAnimation.render(entity, partialTick, poseStack, buffer);
 
         poseStack.popPose();
     }

@@ -42,22 +42,79 @@ public final class TCBlocks {
     /** Block items are kept here so the creative tab can enumerate them. */
     public static final Map<String, RegistryObject<Item>> BLOCK_ITEMS = new LinkedHashMap<>();
 
+
+    // DEV50A: Dedicated railway villager workplaces (no vanilla workstation conflicts).
+    public static final RegistryObject<Block> STATION_OFFICE_DESK = register("station_office_desk", () -> new Block(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE).noOcclusion()));
+    public static final RegistryObject<Block> RAILWAY_TOOLBENCH = register("railway_toolbench", () -> new Block(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE).noOcclusion()));
+    public static final RegistryObject<Block> TRACK_MAINTENANCE_BENCH = register("track_maintenance_bench", () -> new Block(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE).noOcclusion()));
+    public static final RegistryObject<Block> TICKET_BOOTH = register("ticket_booth", () -> new Block(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE).noOcclusion()));
+    public static final RegistryObject<Block> FUEL_DEPOT_COUNTER = register("fuel_depot_counter", () -> new Block(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE).noOcclusion()));
+    public static final RegistryObject<Block> FREIGHT_OFFICE_DESK = register("freight_office_desk", () -> new Block(BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE).noOcclusion()));
+
     public static final RegistryObject<Block> DISTILLERY = register("distillery", () -> new traincraft.block.machine.TraincraftProcessBlock(traincraft.block.machine.TraincraftProcessBlock.Mode.DISTILLERY, net.minecraft.world.level.block.state.BlockBehaviour.Properties.of().mapColor(net.minecraft.world.level.material.MapColor.METAL).strength(3.5F).sound(net.minecraft.world.level.block.SoundType.METAL)));
-    public static final RegistryObject<Block> ASSEMBLY_TABLE_I = register("assembly_table_1", () -> new traincraft.block.machine.TraincraftCraftingBlock(net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)));
-    public static final RegistryObject<Block> ASSEMBLY_TABLE_II = register("assembly_table_2", () -> new traincraft.block.machine.TraincraftCraftingBlock(net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)));
-    public static final RegistryObject<Block> ASSEMBLY_TABLE_III = register("assembly_table_3", () -> new traincraft.block.machine.TraincraftCraftingBlock(net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)));
+    public static final RegistryObject<Block> ASSEMBLY_TABLE_I = register("assembly_table_1", () -> new traincraft.block.machine.AssemblyTableBlock(1, net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)));
+    public static final RegistryObject<Block> ASSEMBLY_TABLE_II = register("assembly_table_2", () -> new traincraft.block.machine.AssemblyTableBlock(2, net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)));
+    public static final RegistryObject<Block> ASSEMBLY_TABLE_III = register("assembly_table_3", () -> new traincraft.block.machine.AssemblyTableBlock(3, net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)));
     public static final RegistryObject<Block> TRAIN_WORKBENCH = register("train_workbench", () -> new traincraft.block.machine.TraincraftCraftingBlock(net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.CRAFTING_TABLE)));
     public static final RegistryObject<Block> OPEN_HEARTH_FURNACE = register("hearth_furnace", () -> new traincraft.block.machine.TraincraftProcessBlock(traincraft.block.machine.TraincraftProcessBlock.Mode.HEARTH, net.minecraft.world.level.block.state.BlockBehaviour.Properties.of().mapColor(net.minecraft.world.level.material.MapColor.METAL).strength(3.5F).sound(net.minecraft.world.level.block.SoundType.METAL)));
 
     public static final RegistryObject<Block> WATER_WHEEL = register("water_wheel", TCBlocks::woodMachineBlock);
     public static final RegistryObject<Block> WIND_MILL = register("wind_mill", TCBlocks::woodMachineBlock);
     public static final RegistryObject<Block> GENERATOR_DIESEL = register("generator_diesel", TCBlocks::machineBlock);
-    public static final RegistryObject<Block> BATTERY = register("battery", TCBlocks::machineBlock);
+    public static final RegistryObject<Block> BATTERY = register("battery",
+            () -> new traincraft.block.integration.TCBatteryBlock(
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.IRON_BLOCK)
+                            // TC_DEV38_R1F2D_BATTERY_NO_WORLD_FACE_CULL
+                            // The classic battery mesh is inset from the block edges.
+                            // Do not let its block state cull neighboring terrain faces.
+                            .noOcclusion()
+                            .strength(3.5F, 6.0F)));
 
-    public static final RegistryObject<Block> STOPPER = register("stopper", () -> new Block(
-            BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(1.7F).sound(SoundType.METAL)));
-    public static final RegistryObject<Block> BRIDGE_PILLAR = register("bridge_pillar", () -> new Block(
-            BlockBehaviour.Properties.of().mapColor(MapColor.WOOD).strength(3.5F).sound(SoundType.WOOD)));
+    // TC_DEV38_R1F1B_RAIL_LOGISTICS
+    public static final RegistryObject<Block> RAIL_POWER_INTERFACE = register("rail_power_interface",
+            () -> new traincraft.block.integration.RailPowerInterfaceBlock(
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.COPPER_BLOCK)
+                            .strength(3.5F, 6.0F)));
+
+    public static final RegistryObject<Block> CARGO_INTERFACE = register("cargo_interface",
+            () -> new traincraft.block.integration.CargoInterfaceBlock(
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.IRON_BLOCK)
+                            .strength(3.5F, 6.0F)));
+
+    // DEV47_TCT_FORGE_FLUID_DOCK - dedicated pipe buffer plus two stopped-tanker tracks.
+    public static final RegistryObject<Block> FLUID_INTERFACE = register("fluid_interface",
+            () -> new traincraft.block.integration.FluidInterfaceBlock(
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.IRON_BLOCK)
+                            .strength(3.5F, 6.0F)));
+
+    public static final RegistryObject<Block> TRACK_FLUID_LOAD = register("track_fluid_load",
+            () -> new traincraft.block.integration.FluidTransferTrackBlock(
+                    traincraft.block.integration.FluidTransferTrackBlock.Mode.LOAD,
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.RAIL)));
+
+    public static final RegistryObject<Block> TRACK_FLUID_UNLOAD = register("track_fluid_unload",
+            () -> new traincraft.block.integration.FluidTransferTrackBlock(
+                    traincraft.block.integration.FluidTransferTrackBlock.Mode.UNLOAD,
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.RAIL)));
+
+    public static final RegistryObject<Block> CARGO_LOAD_TRACK = register("cargo_load_track",
+            () -> new traincraft.block.integration.CargoTransferTrackBlock(
+                    traincraft.block.integration.CargoTransferTrackBlock.Mode.LOAD,
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.RAIL)));
+
+    public static final RegistryObject<Block> CARGO_UNLOAD_TRACK = register("cargo_unload_track",
+            () -> new traincraft.block.integration.CargoTransferTrackBlock(
+                    traincraft.block.integration.CargoTransferTrackBlock.Mode.UNLOAD,
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.RAIL)));
+
+    public static final RegistryObject<Block> STOPPER = register("stopper",
+            () -> new traincraft.block.decor.TrainBufferBlock(
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.IRON_BLOCK)
+                            .noOcclusion().strength(1.7F)));
+    public static final RegistryObject<Block> BRIDGE_PILLAR = register("bridge_pillar",
+            () -> new traincraft.block.decor.LegacyFacingDecorBlock(
+                    net.minecraft.world.level.block.state.BlockBehaviour.Properties.copy(net.minecraft.world.level.block.Blocks.STONE_BRICKS)
+                            .noOcclusion().strength(3.5F)));
     public static final RegistryObject<Block> LANTERN = register("lantern", () -> new Block(
             BlockBehaviour.Properties.of().mapColor(MapColor.METAL).strength(1.7F).sound(SoundType.METAL)
                     .lightLevel(state -> 15)));

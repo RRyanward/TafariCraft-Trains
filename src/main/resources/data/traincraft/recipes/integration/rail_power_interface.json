@@ -1,0 +1,12 @@
+{
+  "type":"minecraft:crafting_shaped",
+  "category":"redstone",
+  "pattern":["CRC","IBI","CRC"],
+  "key":{
+    "C":{"item":"traincraft:copper_ingot"},
+    "R":{"item":"minecraft:redstone"},
+    "I":{"item":"minecraft:iron_ingot"},
+    "B":{"item":"traincraft:battery"}
+  },
+  "result":{"item":"traincraft:rail_power_interface"}
+}

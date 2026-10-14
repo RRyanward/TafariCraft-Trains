@@ -74,7 +74,16 @@ public final class RollingStockSeatRenderEvents {
 
         // Powered locomotives keep the accepted synchronized physical seat path.
         // Their real rider position already drives both first- and third-person.
-        if (vehicle instanceof LegacyPoweredLocomotive) return;
+        // DEV38 r1c2:
+        // Normal powered riding keeps the accepted physical Seat 1 path.
+        // During the temporary DEV38 seat-perfect-pass preview, however, use
+        // this already-accepted camera/render bridge so live config edits are
+        // immediately visible just like Steam/non-powered stock.
+        // TC_DEV38_R1F2C_POWERED_NORMAL_CAMERA
+        // The server-side powered physical seat remains frozen. At render time,
+        // use the same canonical final seat calibration as Steam/non-powered
+        // stock so first-person camera and third-person rider agree with the
+        // accepted BODY + SEATS TOML during normal gameplay too.
 
         String id = registryId(vehicle);
 

@@ -1,0 +1,11 @@
+{
+  "replace": false,
+  "values": [
+    "traincraft:station_chief_poi",
+    "traincraft:railway_engineer_poi",
+    "traincraft:track_worker_poi",
+    "traincraft:train_conductor_poi",
+    "traincraft:fuel_depot_operator_poi",
+    "traincraft:freight_yard_clerk_poi"
+  ]
+}

@@ -29,7 +29,8 @@ import traincraft.item.TrackBlueprintItem;
         value = Dist.CLIENT,
         bus = Mod.EventBusSubscriber.Bus.FORGE)
 public final class TracksBuilderBlueprintOverlay {
-    private static final int BUILDER_WIDTH = 255;
+    // TC_DEV34_R1C1A_WIDE_BUILDER_OVERLAY_DOCK
+    private static final int BUILDER_WIDTH = 391;
 
     @SubscribeEvent
     public static void onRender(
@@ -87,6 +88,10 @@ public final class TracksBuilderBlueprintOverlay {
 
         if (blueprintMode
                 && progress < total) {
+            graphics.pose().pushPose();
+            tcDev36R1k29vApplyMainGuiTransform(
+                    graphics,
+                    screen);
             renderRackRequirements(
                     graphics,
                     font,
@@ -95,9 +100,142 @@ public final class TracksBuilderBlueprintOverlay {
                     blueprint,
                     progress,
                     total);
+            graphics.pose().popPose();
+        }
+        // TC_DEV36_R1J_STRUCTURE_REQUIREMENTS
+        if (blueprintMode
+                && traincraft.blueprint.BuilderStructurePlan.count(
+                        blueprint) > 0) {
+            graphics.pose().pushPose();
+            tcDev36R1k29vApplyMainGuiTransform(
+                    graphics,
+                    screen);
+            renderStructureRequirements(
+                    graphics,
+                    font,
+                    screen,
+                    locomotive,
+                    blueprint);
+            graphics.pose().popPose();
+        }
+        // TC_DEV36_R1K4_REQUIREMENT_TOOLTIPS
+        if (blueprintMode) {
+            renderRequirementTooltip(
+                    graphics,
+                    font,
+                    screen,
+                    locomotive,
+                    blueprint,
+                    progress,
+                    total,
+                    event.getMouseX(),
+                    event.getMouseY());
         }
     }
 
+    // TC_DEV36_R1K29V_MAIN_GUI_OVERLAY_TRANSFORM
+    // ScreenEvent.Render.Post begins with an identity pose, while the main
+    // PoweredLocomotiveScreen has already been drawn with the accepted r1k29i
+    // 523x272 scale + 66px cluster-center shift. Requirement ghosts/borders/
+    // counts must replay that exact transform or they drift off the real slots.
+    private static float tcDev36R1k29vMainGuiScale(
+            PoweredLocomotiveScreen screen) {
+        int margin =
+                4;
+
+        float availableWidth =
+                Math.max(
+                        1.0F,
+                        screen.width
+                                - margin * 2.0F);
+
+        float availableHeight =
+                Math.max(
+                        1.0F,
+                        screen.height
+                                - margin * 2.0F);
+
+        float scale =
+                Math.min(
+                        1.0F,
+                        Math.min(
+                                availableWidth / 523.0F,
+                                availableHeight / 272.0F));
+
+        return Math.max(
+                1.0F / 523.0F,
+                scale);
+    }
+
+    private static void tcDev36R1k29vApplyMainGuiTransform(
+            GuiGraphics graphics,
+            PoweredLocomotiveScreen screen) {
+        float scale =
+                tcDev36R1k29vMainGuiScale(
+                        screen);
+
+        float shift =
+                66.0F
+                        * scale;
+
+        graphics.pose()
+                .translate(
+                        screen.width / 2.0F
+                                + shift,
+                        screen.height / 2.0F,
+                        0.0F);
+
+        graphics.pose()
+                .scale(
+                        scale,
+                        scale,
+                        1.0F);
+
+        graphics.pose()
+                .translate(
+                        -screen.width / 2.0F,
+                        -screen.height / 2.0F,
+                        0.0F);
+    }
+
+    private static int tcDev36R1k29vLogicalMouseX(
+            PoweredLocomotiveScreen screen,
+            int physicalX) {
+        float scale =
+                tcDev36R1k29vMainGuiScale(
+                        screen);
+
+        double center =
+                screen.width / 2.0D;
+
+        double shift =
+                66.0D
+                        * scale;
+
+        return (int)Math.floor(
+                center
+                        + (physicalX
+                                - center
+                                - shift)
+                                / scale);
+    }
+
+    private static int tcDev36R1k29vLogicalMouseY(
+            PoweredLocomotiveScreen screen,
+            int physicalY) {
+        float scale =
+                tcDev36R1k29vMainGuiScale(
+                        screen);
+
+        double center =
+                screen.height / 2.0D;
+
+        return (int)Math.floor(
+                center
+                        + (physicalY
+                                - center)
+                                / scale);
+    }
     private static void renderSidePanel(
             GuiGraphics graphics,
             Font font,
@@ -108,47 +246,67 @@ public final class TracksBuilderBlueprintOverlay {
             int progress,
             int total) {
         // TC_BATCH8_R4A4D_RESPONSIVE_BUILDER_OVERLAY
+        // TC_DEV36_R1E_BUILDER_STATUS_LEFT
+        // TC_DEV36_R1F_STATUS_MINIMIZED_RESPONSIVE
+        // TC_DEV36_R1K29I_COMBINED_CLUSTER_OVERLAY
         //
-        // Keep the accepted 126x174 natural layout at full size on roomy
-        // windows. On smaller windows, uniformly scale the whole panel to the
-        // actual right-side width/available screen height.
+        // Treat the left status panel + main 391px Builder screen as one
+        // centered responsive cluster. This uses the SAME 523x272 fit as
+        // PoweredLocomotiveScreen, so the overlay can never outgrow/overlap
+        // the scaled main GUI in a small logical window.
         int panelWidth = 126;
         int panelHeight = 174;
         int gap = 6;
         int margin = 4;
 
-        int guiRight =
-                screen.getGuiLeft()
+        int clusterWidth =
+                panelWidth
+                        + gap
                         + BUILDER_WIDTH;
 
-        int availableRight =
-                Math.max(
-                        1,
-                        screen.width
-                                - (guiRight + gap)
-                                - margin);
+        int clusterHeight =
+                272;
 
-        int availableHeight =
+        float availableWidth =
                 Math.max(
-                        1,
+                        1.0F,
+                        screen.width
+                                - margin * 2.0F);
+
+        float availableHeight =
+                Math.max(
+                        1.0F,
                         screen.height
-                                - margin * 2);
+                                - margin * 2.0F);
 
         float panelScale =
                 Math.min(
                         1.0F,
                         Math.min(
-                                availableRight
-                                        / (float)panelWidth,
+                                availableWidth
+                                        / (float)clusterWidth,
                                 availableHeight
-                                        / (float)panelHeight));
+                                        / (float)clusterHeight));
 
-        // Small-window screenshots are still readable around 0.60 scale.
-        // A 0.50 floor avoids making text unusably tiny on extreme windows.
         panelScale =
                 Math.max(
-                        0.50F,
+                        1.0F / (float)clusterWidth,
                         panelScale);
+
+        float clusterShiftX =
+                (panelWidth + gap)
+                        * 0.5F
+                        * panelScale;
+
+        float centerX =
+                screen.width / 2.0F;
+
+        float scaledGuiLeft =
+                centerX
+                        + clusterShiftX
+                        + (screen.getGuiLeft()
+                                - centerX)
+                                * panelScale;
 
         int scaledWidth =
                 Math.max(
@@ -164,30 +322,42 @@ public final class TracksBuilderBlueprintOverlay {
                                 panelHeight
                                         * panelScale));
 
-        int preferredRight =
-                guiRight
-                        + gap;
-
-        int rightLimit =
-                screen.width
-                        - margin
-                        - scaledWidth;
-
         int x =
+                Math.round(
+                        scaledGuiLeft
+                                - (panelWidth + gap)
+                                        * panelScale);
+
+        x =
                 Math.max(
                         margin,
                         Math.min(
-                                preferredRight,
-                                rightLimit));
+                                x,
+                                screen.width
+                                        - margin
+                                        - scaledWidth));
+
+        float centerY =
+                screen.height / 2.0F;
+
+        float scaledGuiTop =
+                centerY
+                        + (screen.getGuiTop()
+                                - centerY)
+                                * panelScale;
 
         int y =
+                Math.round(
+                        scaledGuiTop);
+
+        y =
                 Math.max(
                         margin,
                         Math.min(
-                                screen.getGuiTop(),
+                                y,
                                 screen.height
-                                        - scaledHeight
-                                        - margin));
+                                        - margin
+                                        - scaledHeight));
 
         graphics.pose().pushPose();
         graphics.pose().translate(
@@ -509,7 +679,8 @@ public final class TracksBuilderBlueprintOverlay {
             assigned.add(rackSlot);
 
             int relative =
-                    rackSlot - 20;
+                    tcDev36R1k12BlueprintMaterialDisplayIndex(
+                            rackSlot);
             int row =
                     relative / 8;
             int col =
@@ -647,21 +818,678 @@ public final class TracksBuilderBlueprintOverlay {
         return result;
     }
 
-    private static int matchingRackSlot(
+    // TC_DEV36_R1J_STRUCTURE_REQUIREMENTS
+    private static void renderStructureRequirements(
+            GuiGraphics graphics,
+            Font font,
+            PoweredLocomotiveScreen screen,
+            LegacyPoweredLocomotive locomotive,
+            ItemStack blueprint) {
+        LinkedHashMap<String, Need> needs =
+                remainingStructureNeeds(
+                        blueprint);
+
+        if (needs.isEmpty()) {
+            return;
+        }
+
+        Set<Integer> assigned =
+                new HashSet<>();
+
+        int left =
+                screen.getGuiLeft();
+        int top =
+                screen.getGuiTop();
+
+        for (Map.Entry<String, Need> entry :
+                needs.entrySet()) {
+            String id =
+                    entry.getKey();
+            Need need =
+                    entry.getValue();
+
+            int displaySlot =
+                    matchingSupplySlot(
+                            locomotive,
+                            id,
+                            assigned);
+
+            if (displaySlot < 0) {
+                displaySlot =
+                        emptySupplySlot(
+                                locomotive,
+                                assigned);
+            }
+
+            if (displaySlot < 0) {
+                break;
+            }
+
+            assigned.add(
+                    displaySlot);
+
+            int relative =
+                    tcDev36R1k12SupplyDisplayIndex(
+                            displaySlot);
+            int row =
+                    relative / 5;
+            int col =
+                    relative % 5;
+
+            int slotX =
+                    left
+                            + 12
+                            + col * 18;
+            int slotY =
+                    top
+                            + 92
+                            + row * 18;
+
+            ItemStack actual =
+                    locomotive
+                            .getPowerInventory()
+                            .getStackInSlot(
+                                    displaySlot);
+
+            int have =
+                    availableStructureCount(
+                            locomotive,
+                            id);
+
+            boolean ready =
+                    have >= need.count();
+
+            drawBorder(
+                    graphics,
+                    slotX,
+                    slotY,
+                    ready
+                            ? 0xFF2EFF52
+                            : 0xFFFF5555);
+
+            if (actual.isEmpty()
+                    && !need.stack().isEmpty()) {
+                ItemStack ghost =
+                        need.stack().copy();
+                ghost.setCount(
+                        1);
+
+                graphics.renderItem(
+                        ghost,
+                        slotX,
+                        slotY);
+
+                graphics.fill(
+                        slotX,
+                        slotY,
+                        slotX + 16,
+                        slotY + 16,
+                        0x90FFFFFF);
+
+                graphics.fill(
+                        slotX,
+                        slotY,
+                        slotX + 16,
+                        slotY + 16,
+                        0x70000000);
+            }
+
+            drawCount(
+                    graphics,
+                    font,
+                    have,
+                    need.count(),
+                    slotX,
+                    slotY,
+                    ready
+                            ? 0xFF8DFF9D
+                            : 0xFFFFC0C0);
+        }
+    }
+
+    private static LinkedHashMap<String, Need>
+            remainingStructureNeeds(
+                    ItemStack blueprint) {
+        // TC_DEV36_R1K4_FULL_STRUCTURE_BOM
+        LinkedHashMap<String, Need> result =
+                new LinkedHashMap<>();
+
+        int total =
+                traincraft.blueprint.BuilderStructurePlan.count(
+                        blueprint);
+
+        for (int index = 0;
+             index < total;
+             index++) {
+            CompoundTag structureEntry =
+                    traincraft.blueprint.BuilderStructurePlan.entry(
+                            blueprint,
+                            index);
+
+            net.minecraft.world.level.block.state.BlockState planned =
+                    traincraft.blueprint.BuilderStructurePlan.blockState(
+                            structureEntry);
+
+            if (planned.isAir()) {
+                continue;
+            }
+
+            Item item =
+                    planned.getBlock()
+                            .asItem();
+
+            if (item == net.minecraft.world.item.Items.AIR) {
+                continue;
+            }
+
+            ResourceLocation key =
+                    ForgeRegistries.ITEMS
+                            .getKey(
+                                    item);
+
+            if (key == null) {
+                continue;
+            }
+
+            String id =
+                    key.toString();
+
+            Need previous =
+                    result.get(
+                            id);
+
+            ItemStack sample =
+                    new ItemStack(
+                            item);
+
+            if (previous == null) {
+                result.put(
+                        id,
+                        new Need(
+                                sample,
+                                1));
+            }
+            else {
+                result.put(
+                        id,
+                        new Need(
+                                previous.stack(),
+                                previous.count()
+                                        + 1));
+            }
+        }
+
+        return result;
+    }
+
+    private static net.minecraft.core.BlockPos
+            rotateStructureRelative(
+                    net.minecraft.core.BlockPos relative,
+                    int rotation) {
+        return switch (Math.floorMod(
+                rotation,
+                4)) {
+            case 1 ->
+                    new net.minecraft.core.BlockPos(
+                            -relative.getZ(),
+                            relative.getY(),
+                            relative.getX());
+            case 2 ->
+                    new net.minecraft.core.BlockPos(
+                            -relative.getX(),
+                            relative.getY(),
+                            -relative.getZ());
+            case 3 ->
+                    new net.minecraft.core.BlockPos(
+                            relative.getZ(),
+                            relative.getY(),
+                            -relative.getX());
+            default ->
+                    relative;
+        };
+    }
+
+    private static net.minecraft.world.level.block.state.BlockState
+            rotateStructureState(
+                    net.minecraft.world.level.block.state.BlockState source,
+                    int rotation) {
+        return switch (Math.floorMod(
+                rotation,
+                4)) {
+            case 1 ->
+                    source.rotate(
+                            net.minecraft.world.level.block.Rotation.CLOCKWISE_90);
+            case 2 ->
+                    source.rotate(
+                            net.minecraft.world.level.block.Rotation.CLOCKWISE_180);
+            case 3 ->
+                    source.rotate(
+                            net.minecraft.world.level.block.Rotation.COUNTERCLOCKWISE_90);
+            default ->
+                    source;
+        };
+    }
+
+    private static int matchingSupplySlot(
             LegacyPoweredLocomotive locomotive,
             String id,
             Set<Integer> assigned) {
-        for (int slot = 20;
-             slot <= 51;
+        for (int slot = 1;
+             slot <= 53;
              slot++) {
-            if (assigned.contains(slot)) {
+            if (!tcDev36R1k12SupplySlot(
+                    slot)
+                    || assigned.contains(
+                            slot)) {
                 continue;
             }
 
             ItemStack stack =
                     locomotive
                             .getPowerInventory()
-                            .getStackInSlot(slot);
+                            .getStackInSlot(
+                                    slot);
+
+            if (matchesStructureItem(
+                    stack,
+                    id)) {
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int emptySupplySlot(
+            LegacyPoweredLocomotive locomotive,
+            Set<Integer> assigned) {
+        for (int slot = 1;
+             slot <= 53;
+             slot++) {
+            if (!tcDev36R1k12SupplySlot(
+                    slot)
+                    || assigned.contains(
+                            slot)) {
+                continue;
+            }
+
+            if (locomotive
+                    .getPowerInventory()
+                    .getStackInSlot(
+                            slot)
+                    .isEmpty()) {
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    private static int availableStructureCount(
+            LegacyPoweredLocomotive locomotive,
+            String id) {
+        int count =
+                0;
+
+        for (int slot = 1;
+             slot <= 77;
+             slot++) {
+            if (slot == 52) {
+                continue;
+            }
+
+            ItemStack stack =
+                    locomotive
+                            .getPowerInventory()
+                            .getStackInSlot(
+                                    slot);
+
+            if (matchesStructureItem(
+                    stack,
+                    id)) {
+                count +=
+                        stack.getCount();
+            }
+        }
+
+        return count;
+    }
+
+    private static boolean matchesStructureItem(
+            ItemStack stack,
+            String id) {
+        if (stack == null
+                || stack.isEmpty()) {
+            return false;
+        }
+
+        ResourceLocation key =
+                ForgeRegistries.ITEMS
+                        .getKey(
+                                stack.getItem());
+
+        return key != null
+                && key.toString()
+                        .equals(
+                                id);
+    }
+    // TC_DEV36_R1K4_REQUIREMENT_TOOLTIPS
+    private static void renderRequirementTooltip(
+            GuiGraphics graphics,
+            Font font,
+            PoweredLocomotiveScreen screen,
+            LegacyPoweredLocomotive locomotive,
+            ItemStack blueprint,
+            int progress,
+            int total,
+            int mouseX,
+            int mouseY) {
+        // TC_DEV36_R1K29V_REQUIREMENT_HITBOX_TRANSFORM
+        int tcDev36R1k29vPhysicalMouseX =
+                mouseX;
+        int tcDev36R1k29vPhysicalMouseY =
+                mouseY;
+
+        mouseX =
+                tcDev36R1k29vLogicalMouseX(
+                        screen,
+                        tcDev36R1k29vPhysicalMouseX);
+        mouseY =
+                tcDev36R1k29vLogicalMouseY(
+                        screen,
+                        tcDev36R1k29vPhysicalMouseY);
+        ItemStack hovered =
+                ItemStack.EMPTY;
+
+        if (progress < total) {
+            LinkedHashMap<String, Need> trackNeeds =
+                    remainingNeeds(
+                            blueprint,
+                            progress,
+                            total);
+
+            Set<Integer> assignedTrack =
+                    new HashSet<>();
+
+            int left =
+                    screen.getGuiLeft();
+            int top =
+                    screen.getGuiTop();
+
+            for (Map.Entry<String, Need> entry :
+                    trackNeeds.entrySet()) {
+                int displaySlot =
+                        matchingRackSlot(
+                                locomotive,
+                                entry.getKey(),
+                                assignedTrack);
+
+                if (displaySlot < 0) {
+                    displaySlot =
+                            emptyRackSlot(
+                                    locomotive,
+                                    assignedTrack);
+                }
+
+                if (displaySlot < 0) {
+                    break;
+                }
+
+                assignedTrack.add(
+                        displaySlot);
+
+                int relative =
+                    tcDev36R1k12BlueprintMaterialDisplayIndex(
+                            displaySlot);
+                int row =
+                        relative / 8;
+                int col =
+                        relative % 8;
+
+                int slotX =
+                        left
+                                + 106
+                                + col * 18;
+                int slotY =
+                        top
+                                + 50
+                                + row * 18;
+
+                if (mouseX >= slotX
+                        && mouseX < slotX + 16
+                        && mouseY >= slotY
+                        && mouseY < slotY + 16) {
+                    hovered =
+                            entry.getValue()
+                                    .stack()
+                                    .copy();
+                    break;
+                }
+            }
+        }
+
+        if (hovered.isEmpty()
+                && traincraft.blueprint.BuilderStructurePlan.count(
+                        blueprint) > 0) {
+            LinkedHashMap<String, Need> structureNeeds =
+                    remainingStructureNeeds(
+                            blueprint);
+
+            Set<Integer> assignedStructure =
+                    new HashSet<>();
+
+            int left =
+                    screen.getGuiLeft();
+            int top =
+                    screen.getGuiTop();
+
+            for (Map.Entry<String, Need> entry :
+                    structureNeeds.entrySet()) {
+                int displaySlot =
+                        matchingSupplySlot(
+                                locomotive,
+                                entry.getKey(),
+                                assignedStructure);
+
+                if (displaySlot < 0) {
+                    displaySlot =
+                            emptySupplySlot(
+                                    locomotive,
+                                    assignedStructure);
+                }
+
+                if (displaySlot < 0) {
+                    break;
+                }
+
+                assignedStructure.add(
+                        displaySlot);
+
+                int relative =
+                    tcDev36R1k12SupplyDisplayIndex(
+                            displaySlot);
+                int row =
+                        relative / 5;
+                int col =
+                        relative % 5;
+
+                int slotX =
+                        left
+                                + 12
+                                + col * 18;
+                int slotY =
+                        top
+                                + 92
+                                + row * 18;
+
+                if (mouseX >= slotX
+                        && mouseX < slotX + 16
+                        && mouseY >= slotY
+                        && mouseY < slotY + 16) {
+                    hovered =
+                            entry.getValue()
+                                    .stack()
+                                    .copy();
+                    break;
+                }
+            }
+        }
+
+        if (hovered.isEmpty()) {
+            // TC_DEV36_R1K4_PATTERN_HOVER_NAMES
+            var patterns =
+                    locomotive.getBuilderStructurePatterns();
+
+            if (patterns != null
+                    && patterns.getSlots() >= 12) {
+                int left =
+                        screen.getGuiLeft();
+                int top =
+                        screen.getGuiTop();
+
+                for (int i = 0;
+                     i < 12;
+                     i++) {
+                    int slotX;
+                    int slotY;
+
+                    if (i < 7) {
+                        slotX =
+                                left
+                                        + 261
+                                        + i * 18;
+                        slotY =
+                                top + 58;
+                    }
+                    else if (i < 9) {
+                        slotX =
+                                left
+                                        + 306
+                                        + (i - 7) * 18;
+                        slotY =
+                                top + 111;
+                    }
+                    else {
+                        slotX =
+                                left
+                                        + 297
+                                        + (i - 9) * 18;
+                        slotY =
+                                top + 164;
+                    }
+
+                    if (mouseX >= slotX
+                            && mouseX < slotX + 16
+                            && mouseY >= slotY
+                            && mouseY < slotY + 16) {
+                        ItemStack template =
+                                patterns.getStackInSlot(
+                                        i);
+
+                        if (!template.isEmpty()) {
+                            hovered =
+                                    template.copy();
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+
+        if (!hovered.isEmpty()) {
+            hovered.setCount(
+                    1);
+
+            graphics.renderTooltip(
+                    font,
+                    hovered,
+                    tcDev36R1k29vPhysicalMouseX,
+                    tcDev36R1k29vPhysicalMouseY);
+        }
+    }
+    // TC_DEV36_R1K12_EXPANDED_REQUIREMENTS
+    // TC_DEV36_R1K14_FINAL_MATERIAL_LAYOUT
+    private static boolean tcDev36R1k12BlueprintMaterialSlot(
+            int slot) {
+        return (slot >= 20
+                        && slot <= 51)
+                || (slot >= 54
+                        && slot <= 77);
+    }
+
+    private static boolean tcDev36R1k12SupplySlot(
+            int slot) {
+        return (slot >= 1
+                        && slot <= 19)
+                || slot == 53;
+    }
+
+    private static int tcDev36R1k12BlueprintMaterialDisplayIndex(
+            int slot) {
+        if (slot >= 20
+                && slot <= 51) {
+            return slot - 20;
+        }
+
+        // Preserve the already-used r1k12 fifth row exactly.
+        if (slot >= 59
+                && slot <= 66) {
+            return 32 + (slot - 59);
+        }
+
+        // Former extra-SUPPLIES slots become first five cells of row 6.
+        if (slot >= 54
+                && slot <= 58) {
+            return 40 + (slot - 54);
+        }
+
+        // Three previously-new r1k12 growth cells complete row 6.
+        if (slot >= 67
+                && slot <= 69) {
+            return 45 + (slot - 67);
+        }
+
+        // New row 7.
+        if (slot >= 70
+                && slot <= 77) {
+            return 48 + (slot - 70);
+        }
+
+        return -1;
+    }
+
+    private static int tcDev36R1k12SupplyDisplayIndex(
+            int slot) {
+        if (slot >= 1
+                && slot <= 19) {
+            return slot - 1;
+        }
+
+        if (slot == 53) {
+            return 19;
+        }
+
+        return -1;
+    }
+    private static int matchingRackSlot(
+            LegacyPoweredLocomotive locomotive,
+            String id,
+            Set<Integer> assigned) {
+        for (int slot = 20;
+             slot <= 77;
+             slot++) {
+            if (!tcDev36R1k12BlueprintMaterialSlot(
+                    slot)
+                    || assigned.contains(
+                            slot)) {
+                continue;
+            }
+
+            ItemStack stack =
+                    locomotive
+                            .getPowerInventory()
+                            .getStackInSlot(
+                                    slot);
 
             if (matches(
                     stack,
@@ -677,15 +1505,19 @@ public final class TracksBuilderBlueprintOverlay {
             LegacyPoweredLocomotive locomotive,
             Set<Integer> assigned) {
         for (int slot = 20;
-             slot <= 51;
+             slot <= 77;
              slot++) {
-            if (assigned.contains(slot)) {
+            if (!tcDev36R1k12BlueprintMaterialSlot(
+                    slot)
+                    || assigned.contains(
+                            slot)) {
                 continue;
             }
 
             if (locomotive
                     .getPowerInventory()
-                    .getStackInSlot(slot)
+                    .getStackInSlot(
+                            slot)
                     .isEmpty()) {
                 return slot;
             }
@@ -697,36 +1529,48 @@ public final class TracksBuilderBlueprintOverlay {
     private static int availableCount(
             LegacyPoweredLocomotive locomotive,
             String id) {
-        int count = 0;
+        int count =
+                0;
 
         for (int slot = 20;
-             slot <= 51;
+             slot <= 77;
              slot++) {
+            if (!tcDev36R1k12BlueprintMaterialSlot(
+                    slot)) {
+                continue;
+            }
+
             ItemStack stack =
                     locomotive
                             .getPowerInventory()
-                            .getStackInSlot(slot);
+                            .getStackInSlot(
+                                    slot);
 
             if (matches(
                     stack,
                     id)) {
-                count += stack.getCount();
+                count +=
+                        stack.getCount();
             }
         }
 
-        int[] legacySlots =
-                {1, 8, 9, 10};
+        int[] legacySlots = {
+                1, 8, 9, 10
+        };
 
-        for (int slot : legacySlots) {
+        for (int slot :
+                legacySlots) {
             ItemStack stack =
                     locomotive
                             .getPowerInventory()
-                            .getStackInSlot(slot);
+                            .getStackInSlot(
+                                    slot);
 
             if (matches(
                     stack,
                     id)) {
-                count += stack.getCount();
+                count +=
+                        stack.getCount();
             }
         }
 

@@ -53,7 +53,7 @@ public final class RecoveredModelV60 extends EntityModel<LegacyPoweredLocomotive
     root.addOrReplaceChild("box37", CubeListBuilder.create().texOffs(213,178).addBox(0.000000000F,0.000000000F,0.000000000F,7.000000000F,1.000000000F,1.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-1.000000000F,25.000000000F,-11.000000000F,-6.056292504F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box38", CubeListBuilder.create().texOffs(153,51).addBox(0.000000000F,0.000000000F,0.000000000F,1.000000000F,3.000000000F,3.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(28.000000000F,7.000000000F,4.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box39", CubeListBuilder.create().texOffs(213,181).addBox(0.000000000F,6.000000000F,0.000000000F,7.000000000F,2.000000000F,1.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-1.000000000F,25.000000000F,-11.000000000F,-6.056292504F,0.000000000F,0.000000000F));
-    root.addOrReplaceChild("box4", CubeListBuilder.create().texOffs(8,176).addBox(0.000000000F,0.000000000F,0.000000000F,33.000000000F,2.000000000F,1.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-17.000000000F,1.000000000F,5.000000000F,0.000000000F,0.000000000F,0.000000000F));
+    root.addOrReplaceChild("box4", CubeListBuilder.create().texOffs(8,176).addBox(0.000000000F,0.000000000F,0.000000000F,33.000000000F,2.000000000F,1.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-17.000000000F,3.000000000F,5.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box40", CubeListBuilder.create().texOffs(153,44).addBox(0.000000000F,0.000000000F,0.000000000F,1.000000000F,3.000000000F,3.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-29.000000000F,7.000000000F,-7.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box41", CubeListBuilder.create().texOffs(199,146).addBox(0.000000000F,0.000000000F,0.000000000F,1.000000000F,1.000000000F,18.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-3.000000000F,32.000000000F,-9.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box42", CubeListBuilder.create().texOffs(153,44).addBox(0.000000000F,0.000000000F,0.000000000F,1.000000000F,3.000000000F,3.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-29.000000000F,7.000000000F,4.000000000F,0.000000000F,0.000000000F,0.000000000F));
@@ -101,7 +101,7 @@ public final class RecoveredModelV60 extends EntityModel<LegacyPoweredLocomotive
     root.addOrReplaceChild("box80", CubeListBuilder.create().texOffs(163,50).addBox(0.000000000F,0.000000000F,0.000000000F,1.000000000F,2.000000000F,2.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(28.000000000F,12.000000000F,-9.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box81", CubeListBuilder.create().texOffs(163,44).addBox(0.000000000F,0.000000000F,0.000000000F,1.000000000F,2.000000000F,2.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-29.000000000F,12.000000000F,-9.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box82", CubeListBuilder.create().texOffs(163,44).addBox(0.000000000F,0.000000000F,0.000000000F,1.000000000F,2.000000000F,2.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-29.000000000F,12.000000000F,7.000000000F,0.000000000F,0.000000000F,0.000000000F));
-    root.addOrReplaceChild("box83", CubeListBuilder.create().texOffs(8,176).addBox(0.000000000F,0.000000000F,0.000000000F,33.000000000F,2.000000000F,1.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-17.000000000F,1.000000000F,-6.000000000F,0.000000000F,0.000000000F,0.000000000F));
+    root.addOrReplaceChild("box83", CubeListBuilder.create().texOffs(8,176).addBox(0.000000000F,0.000000000F,0.000000000F,33.000000000F,2.000000000F,1.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-17.000000000F,3.000000000F,-6.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box84", CubeListBuilder.create().texOffs(0,211).addBox(0.000000000F,0.000000000F,-8.000000000F,47.000000000F,20.000000000F,0.001000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-24.000000000F,4.000000000F,-3.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box85", CubeListBuilder.create().texOffs(0,234).addBox(0.000000000F,0.000000000F,0.000000000F,47.000000000F,20.000000000F,0.001000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-24.000000000F,4.000000000F,11.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box86", CubeListBuilder.create().texOffs(0,0).addBox(0.000000000F,0.000000000F,0.000000000F,2.000000000F,3.000000000F,8.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(0.000000000F,24.000000000F,4.000000000F,0.000000000F,3.141592654F,0.645771823F));
@@ -109,6 +109,47 @@ public final class RecoveredModelV60 extends EntityModel<LegacyPoweredLocomotive
     root.addOrReplaceChild("box88", CubeListBuilder.create().texOffs(203,46).addBox(0.000000000F,0.000000000F,0.000000000F,2.000000000F,0.001000000F,22.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(8.000000000F,13.000000000F,-11.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box89", CubeListBuilder.create().texOffs(168,42).addBox(0.000000000F,0.000000000F,0.000000000F,4.000000000F,2.000000000F,22.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-18.000000000F,7.000000000F,-11.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box9", CubeListBuilder.create().texOffs(2,134).addBox(0.000000000F,0.000000000F,0.000000000F,52.000000000F,8.000000000F,8.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-26.000000000F,2.000000000F,-4.000000000F,0.000000000F,0.000000000F,0.000000000F));
+        // TC_DEV38_R1G1Z5C_V60_WHEEL_FACE_SPLIT
+        // box9 is the authored 52x8x8 underframe block (TEX 2,134).
+        // Its long side face contains the original three visible wheel
+        // regions at the proven axle centers X=-15,-3,+15.
+        //
+        // Negative-Z side: north-face wheel pixels from the authored row.
+        root.addOrReplaceChild("tc_v60_wheel_neg_0",
+                CubeListBuilder.create().texOffs(17,142)
+                        .addBox(0.0F,0.0F,0.0F,8.0F,8.0F,0.02F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-19.0F,2.0F,-4.02F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_v60_wheel_neg_1",
+                CubeListBuilder.create().texOffs(29,142)
+                        .addBox(0.0F,0.0F,0.0F,8.0F,8.0F,0.02F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-7.0F,2.0F,-4.02F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_v60_wheel_neg_2",
+                CubeListBuilder.create().texOffs(47,142)
+                        .addBox(0.0F,0.0F,0.0F,8.0F,8.0F,0.02F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(11.0F,2.0F,-4.02F,0.0F,0.0F,0.0F));
+
+        // Positive-Z side: texOffs shifted so the thin cube's south face
+        // reuses the same authored three wheel regions.
+        root.addOrReplaceChild("tc_v60_wheel_pos_0",
+                CubeListBuilder.create().texOffs(9,142)
+                        .addBox(0.0F,0.0F,0.0F,8.0F,8.0F,0.02F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-19.0F,2.0F,4.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_v60_wheel_pos_1",
+                CubeListBuilder.create().texOffs(21,142)
+                        .addBox(0.0F,0.0F,0.0F,8.0F,8.0F,0.02F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-7.0F,2.0F,4.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_v60_wheel_pos_2",
+                CubeListBuilder.create().texOffs(39,142)
+                        .addBox(0.0F,0.0F,0.0F,8.0F,8.0F,0.02F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(11.0F,2.0F,4.0F,0.0F,0.0F,0.0F));
+    // DEV44 V60: crank-pin heads aligned to rod centerline at Y=4px (axle at Y=6px); reduced 2px crank throw.
+    // The old four 56px x 0.001px sheets stay masked; no extended sheet is exposed.
+    root.addOrReplaceChild("tc_v60_pin_neg_0", CubeListBuilder.create().texOffs(8,176).addBox(-1.0F,-1.0F,-0.5F,2.0F,2.0F,1.0F,new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-15.0F,4.0F,-5.15F,0.0F,0.0F,0.0F));
+    root.addOrReplaceChild("tc_v60_pin_neg_1", CubeListBuilder.create().texOffs(8,176).addBox(-1.0F,-1.0F,-0.5F,2.0F,2.0F,1.0F,new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-3.0F,4.0F,-5.15F,0.0F,0.0F,0.0F));
+    root.addOrReplaceChild("tc_v60_pin_neg_2", CubeListBuilder.create().texOffs(8,176).addBox(-1.0F,-1.0F,-0.5F,2.0F,2.0F,1.0F,new CubeDeformation(0.0F)), PartPose.offsetAndRotation(15.0F,4.0F,-5.15F,0.0F,0.0F,0.0F));
+    root.addOrReplaceChild("tc_v60_pin_pos_0", CubeListBuilder.create().texOffs(8,176).addBox(-1.0F,-1.0F,-0.5F,2.0F,2.0F,1.0F,new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-15.0F,4.0F,5.15F,0.0F,0.0F,0.0F));
+    root.addOrReplaceChild("tc_v60_pin_pos_1", CubeListBuilder.create().texOffs(8,176).addBox(-1.0F,-1.0F,-0.5F,2.0F,2.0F,1.0F,new CubeDeformation(0.0F)), PartPose.offsetAndRotation(-3.0F,4.0F,5.15F,0.0F,0.0F,0.0F));
+    root.addOrReplaceChild("tc_v60_pin_pos_2", CubeListBuilder.create().texOffs(8,176).addBox(-1.0F,-1.0F,-0.5F,2.0F,2.0F,1.0F,new CubeDeformation(0.0F)), PartPose.offsetAndRotation(15.0F,4.0F,5.15F,0.0F,0.0F,0.0F));
     return LayerDefinition.create(mesh,256,256);
   }
   @Override public void setupAnim(LegacyPoweredLocomotive e,float a,float b,float c,float d,float e2){}

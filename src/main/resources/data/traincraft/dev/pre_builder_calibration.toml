@@ -1,0 +1,1315 @@
+# TafariCraft - Trains rolling-stock calibration
+# Generated/updated by the in-game /tccal calibration tool.
+# model_y is the visual body Y offset.
+# Seat 1 uses the legacy seat_* names for backward compatibility.
+# Seat 2 uses seat2_* and Seat 3 uses seat3_*.
+
+[calibration.caboose]
+locked = true
+model_enabled = true
+model_y = 0.0500
+seat_enabled = true
+seat_long = 0.0000
+seat_y = -0.8500
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.gs4_baggage_car]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = false
+seat_long = 0.0000
+seat_y = 0.0000
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.gs4_observatory_car]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = false
+seat_long = 0.0000
+seat_y = 0.0000
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.gs4_passenger_car]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = false
+seat_long = 0.0000
+seat_y = 0.0000
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.livestock_car]
+locked = true
+model_enabled = true
+model_y = 0.3000
+seat_enabled = true
+seat_long = 0.7200
+seat_y = 0.5300
+seat_side = -0.1600
+seat2_enabled = true
+seat2_long = 0.0000
+seat2_y = 0.5300
+seat2_side = 0.1600
+seat3_enabled = true
+seat3_long = -0.7200
+seat3_y = 0.5300
+seat3_side = -0.1600
+
+[calibration.locomotive_diesel_cd742]
+locked = true
+model_enabled = false
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.4900
+seat_y = -1.3491
+seat_side = 0.0115
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_diesel_kof]
+locked = true
+model_enabled = true
+model_y = 0.4000
+seat_enabled = true
+seat_long = -0.2700
+seat_y = -0.4700
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_diesel_sd70]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 2.2800
+seat_y = 0.0800
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_diesel_v60]
+locked = true
+model_enabled = false
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.1093
+seat_y = -0.1425
+seat_side = -0.0189
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_electric_high_speed_zeroed]
+locked = true
+model_enabled = true
+model_y = -0.0500
+seat_enabled = true
+seat_long = 2.3008
+seat_y = 0.1375
+seat_side = 0.0568
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_electric_minetrain]
+locked = true
+model_enabled = true
+model_y = 0.4500
+seat_enabled = true
+seat_long = 0.0361
+seat_y = -0.0625
+seat_side = 0.0380
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_electric_tram]
+locked = true
+model_enabled = false
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.0090
+seat_y = -0.7425
+seat_side = -0.0173
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_electric_tram_ny]
+locked = true
+model_enabled = false
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.4900
+seat_y = -0.0239
+seat_side = 0.0586
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_electric_vl10]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 2.5130
+seat_y = -0.1000
+seat_side = 0.0289
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_262t]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.1862
+seat_y = 0.2181
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_4_4_0]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.0263
+seat_y = 0.0170
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_a4_mallard]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.5730
+seat_y = 0.2847
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_adler]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.0141
+seat_y = -0.3700
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_alco_sc4]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.5415
+seat_y = -0.1200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_alice_0_4_0]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.2386
+seat_y = -0.1200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_berkshire_1225]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -1.2137
+seat_y = -0.0222
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_berkshire_765]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -1.2137
+seat_y = -0.0191
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_br01]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.0500
+seat_y = 0.2000
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_br80]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.3852
+seat_y = -0.0193
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_br_black_5]
+locked = true
+model_enabled = true
+model_y = -0.0500
+seat_enabled = true
+seat_long = -0.4848
+seat_y = -0.2200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_br_britannia]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.7168
+seat_y = -0.1700
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_c11]
+locked = true
+model_enabled = true
+model_y = -0.2000
+seat_enabled = true
+seat_long = 0.0719
+seat_y = -0.0909
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_c41]
+locked = true
+model_enabled = true
+model_y = -0.0500
+seat_enabled = true
+seat_long = -0.4061
+seat_y = -0.0019
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_c41_080]
+locked = true
+model_enabled = true
+model_y = 0.1000
+seat_enabled = true
+seat_long = -0.3662
+seat_y = -0.1700
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_c41t]
+locked = true
+model_enabled = true
+model_y = 0.1000
+seat_enabled = true
+seat_long = -0.3312
+seat_y = -0.0700
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_c62]
+locked = true
+model_enabled = true
+model_y = -0.0500
+seat_enabled = true
+seat_long = -0.3075
+seat_y = 0.1300
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_cherepanov]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.3552
+seat_y = -0.1200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_climax]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.3955
+seat_y = 0.1678
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_climax_2]
+locked = true
+model_enabled = true
+model_y = -0.0500
+seat_enabled = true
+seat_long = -0.7002
+seat_y = -0.0200
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_coronation_class]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.7144
+seat_y = 0.2800
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_d51]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.2587
+seat_y = 0.0925
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_d51_long]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.2587
+seat_y = 0.0925
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_forney]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.2563
+seat_y = 0.0625
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_fowler]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.4961
+seat_y = -0.0200
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_glyn_042t]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.2712
+seat_y = 0.1306
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_gs4]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.1789
+seat_y = 0.2069
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_gwr_101_class]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.4315
+seat_y = 0.0116
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_gwr_42xx]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.1935
+seat_y = 0.0431
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_gwr_72xx]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.8610
+seat_y = 0.0431
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_hall_class]
+locked = true
+model_enabled = true
+model_y = -0.0000
+seat_enabled = true
+seat_long = -0.2962
+seat_y = 0.0300
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_heavy]
+locked = true
+model_enabled = true
+model_y = 0.0500
+seat_enabled = true
+seat_long = -0.6712
+seat_y = -0.0500
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_j50]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.2471
+seat_y = -0.1200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_king_class]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.4393
+seat_y = 0.0303
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_lssp7]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.1902
+seat_y = -0.1200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_midland_compound]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.6140
+seat_y = -0.0259
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_milw_class_a]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.2314
+seat_y = -0.2700
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_mogul]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.4837
+seat_y = -0.0378
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_pannier]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.4466
+seat_y = 0.1300
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_pe]
+locked = true
+model_enabled = true
+model_y = 0.0500
+seat_enabled = true
+seat_long = -0.8577
+seat_y = -0.1200
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_rw_type_2]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.5365
+seat_y = -0.0884
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_rw_type_3]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.0198
+seat_y = -0.0884
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_s100_uk]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.3297
+seat_y = -0.2700
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_s100_us]
+locked = true
+model_enabled = true
+model_y = -0.0500
+seat_enabled = true
+seat_long = -0.2275
+seat_y = -0.2200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_sentinel_y3]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.1473
+seat_y = -0.0884
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_shay]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.3375
+seat_y = 0.0875
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_shay_3_truck]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.2175
+seat_y = -0.2700
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_skookum]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -2.3952
+seat_y = -0.1200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_small]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.8200
+seat_y = -0.1200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_snow_plow]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.1250
+seat_y = -0.0500
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_southern1102]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.3148
+seat_y = 0.1044
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_star_class]
+locked = true
+model_enabled = true
+model_y = -0.1000
+seat_enabled = true
+seat_long = -0.3384
+seat_y = -0.2200
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_u57]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -2.7102
+seat_y = 0.3008
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_ussr]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -0.3638
+seat_y = 0.2500
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_vb_0_4_0]
+locked = true
+model_enabled = true
+model_y = -0.0500
+seat_enabled = true
+seat_long = -0.0915
+seat_y = -0.0700
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_vb_shay]
+locked = true
+model_enabled = true
+model_y = -0.0500
+seat_enabled = true
+seat_long = -1.0010
+seat_y = 0.6300
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_vb_shay_2]
+locked = true
+model_enabled = true
+model_y = -0.3000
+seat_enabled = true
+seat_long = -0.8345
+seat_y = 0.8959
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.locomotive_steam_wwcp_062t]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = 0.3510
+seat_y = -0.1200
+seat_side = -0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.milw_passenger_car]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = false
+seat_long = 0.0000
+seat_y = 0.0000
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.mob_transport_car]
+locked = true
+model_enabled = true
+model_y = 0.3000
+seat_enabled = true
+seat_long = 1.0200
+seat_y = -0.2200
+seat_side = -0.0100
+seat2_enabled = true
+seat2_long = -0.3500
+seat2_y = -0.0700
+seat2_side = 0.1600
+seat3_enabled = true
+seat3_long = -1.1300
+seat3_y = -0.0200
+seat3_side = 0.0600
+
+[calibration.passenger_coach_blue]
+locked = true
+model_enabled = true
+model_y = 0.0000
+seat_enabled = true
+seat_long = -1.0500
+seat_y = -0.6000
+seat_side = 0.2500
+seat2_enabled = true
+seat2_long = -0.2500
+seat2_y = -0.5500
+seat2_side = 0.2000
+seat3_enabled = true
+seat3_long = 0.2000
+seat3_y = -0.5500
+seat3_side = 0.2000
+
+[calibration.steam_tender_heavy]
+locked = true
+model_enabled = true
+model_y = 0.4500
+seat_enabled = false
+seat_long = 0.0000
+seat_y = 0.0000
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+
+[calibration.steam_tender_ussr]
+locked = true
+model_enabled = true
+model_y = 0.4000
+seat_enabled = false
+seat_long = 0.0000
+seat_y = 0.0000
+seat_side = 0.0000
+seat2_enabled = false
+seat2_long = 0.0000
+seat2_y = 0.0000
+seat2_side = 0.0000
+seat3_enabled = false
+seat3_long = 0.0000
+seat3_y = 0.0000
+seat3_side = 0.0000
+

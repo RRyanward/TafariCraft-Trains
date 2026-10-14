@@ -167,11 +167,27 @@ public final class ConceptTransportCarRenderer<T extends FreightCart> extends En
     @Override
     public void render(T entity, float yaw, float partialTicks, PoseStack pose,
             MultiBufferSource buffers, int packedLight) {
-        float railYaw = transportVisualYaw(entity, partialTicks);
+        // TC_DEV38_R1G1L_TRANSPORT_ACCEPTED_RENDER_FACING
+        // FreightCart inherits the accepted SteamTender visual-facing authority.
+        // Use the same facing owner as the rest of the rolling-stock fleet so
+        // Livestock and Mob/Player transport bodies cannot disagree with their
+        // entity/track orientation or the independent wheel layer.
+        float railYaw = entity.getRenderTrainFacingYaw(partialTicks);
 
         pose.pushPose();
+        // TC_DEV38_R1G1N3_TRANSPORT_AXIS_REALIGN_TO_WHEEL
+        // r1g1n2 runtime capture proved the body must share the wheel/fleet axis:
+        // keep the accepted render-facing authority, but remove the r1g1m
+        // 90-degree mismatch between cage body and independent wheel layer.
         pose.mulPose(Axis.YP.rotationDegrees(270.0F - railYaw));
         pose.translate(0.0D, 0.22D, 0.0D);
+        // DEV50D3U_RENDER_REPLACEMENT_FALLBACK: replace only the visible shell.
+        // Keep native cargo/occupants, coupling, locomotion and rail-facing authority.
+        if (Dev50D3UReplacementMeshes.render(entity, partialTicks, pose, buffers, packedLight, prisoner)) {
+            pose.popPose();
+            super.render(entity, yaw, partialTicks, pose, buffers, packedLight);
+            return;
+        }
 
         VertexConsumer out = buffers.getBuffer(RenderType.entityCutoutNoCull(WHITE));
 

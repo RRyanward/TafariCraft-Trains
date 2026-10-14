@@ -89,7 +89,45 @@ public class LegacyPoweredLocomotive extends SmallSteamLocomotive {
             SynchedEntityData.defineId(LegacyPoweredLocomotive.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_CALIBRATION_SEAT_SIDE =
             SynchedEntityData.defineId(LegacyPoweredLocomotive.class, EntityDataSerializers.FLOAT);
-private final ItemStackHandler powerInventory = new ItemStackHandler(53);
+    // TC_DEV36_R1K29E_BUILDER_EXCAVATION
+    // Classic Traincraft's Builder exposed a synchronized "working" state that
+    // drove its seven-piece front rotor. Keep authoritative run state server-side,
+    // but synchronize only the visual drill-active bit to clients.
+    private static final EntityDataAccessor<Boolean> DATA_BUILDER_DRILL_ACTIVE =
+            SynchedEntityData.defineId(
+                    LegacyPoweredLocomotive.class,
+                    EntityDataSerializers.BOOLEAN);
+
+    private boolean tcDev36ExcavationInventoryFullLatched = false;
+    // TC_DEV36_R1K29R_MANUAL_TUNNEL
+    // Separate from Blueprint mode: this bit is synchronized so the GUI switch
+    // and left status panel always show the server-authoritative mode.
+    private static final EntityDataAccessor<Boolean> DATA_BUILDER_MANUAL_TUNNEL =
+            SynchedEntityData.defineId(
+                    LegacyPoweredLocomotive.class,
+                    EntityDataSerializers.BOOLEAN);
+
+    private boolean tcDev36ManualTunnelWarningLatched = false;
+private final ItemStackHandler powerInventory = new ItemStackHandler(78);
+    // TC_DEV34_R1C1A_BUILDER_STRUCTURE_PATTERNS
+    // One-item template/filter slots. Actual construction material continues
+    // to live in rack slots 20..51.
+    private final ItemStackHandler builderStructurePatterns =
+            new ItemStackHandler(
+                    traincraft.builder.BuilderInfrastructureSystem.PATTERN_COUNT) {
+                @Override
+                public int getSlotLimit(int slot) {
+                    return 1;
+                }
+
+                @Override
+                public boolean isItemValid(int slot, ItemStack stack) {
+                    return stack != null
+                            && !stack.isEmpty()
+                            && stack.getItem()
+                                    instanceof net.minecraft.world.item.BlockItem;
+                }
+            };
     private int powerAmount;
     private int poweredWhistleTick = -100;
     @Nullable
@@ -116,6 +154,8 @@ private final ItemStackHandler powerInventory = new ItemStackHandler(53);
     protected void defineSynchedData() {
         super.defineSynchedData();
         this.entityData.define(DATA_POWER, 0);
+        this.entityData.define(DATA_BUILDER_DRILL_ACTIVE, false);
+        this.entityData.define(DATA_BUILDER_MANUAL_TUNNEL, false);
         this.entityData.define(DATA_BUILDER_COAL_BURN, 0);
         this.entityData.define(DATA_BLUEPRINT_PROGRESS, 0);
         this.entityData.define(DATA_BLUEPRINT_TOTAL, 0);
@@ -143,7 +183,62 @@ private final ItemStackHandler powerInventory = new ItemStackHandler(53);
     public boolean isElectric() { return driveType() == DriveType.ELECTRIC; }
     public boolean isBuilder() { return driveType() == DriveType.BUILDER; }
 
+    /** Client-safe visual state for the classic Builder rotor. */
+    public boolean isBuilderDrillActive() {
+        return isBuilder() && this.entityData.get(DATA_BUILDER_DRILL_ACTIVE);
+    }
+
+    public boolean isBuilderManualTunnelMode() {
+        return isBuilder()
+                && this.entityData.get(
+                        DATA_BUILDER_MANUAL_TUNNEL);
+    }
+
+    /**
+     * GUI/server control for the simple straight-ahead tunnel-borer mode.
+     * Mode changes always stop the machine first; Shift-right-click remains
+     * the deliberate START/STOP control after the mode is selected.
+     */
+    public void toggleBuilderManualTunnelMode() {
+        if (!isBuilder()
+                || level().isClientSide) {
+            return;
+        }
+
+        setBuilderRunning(false);
+
+        boolean enabled =
+                !this.entityData.get(
+                        DATA_BUILDER_MANUAL_TUNNEL);
+
+        this.entityData.set(
+                DATA_BUILDER_MANUAL_TUNNEL,
+                enabled);
+
+        tcDev36ManualTunnelWarningLatched =
+                false;
+
+        tcDev36SetBuilderWorkStatus(
+                enabled
+                        ? "MANUAL TUNNEL READY"
+                        : "");
+
+        traincraft.Traincraft.LOGGER.info(
+                "[TC-DEV36-R1K29R][MANUAL] event=MODE entity={} tick={} enabled={} blueprintProgress={}",
+                getId(),
+                tickCount,
+                enabled,
+                builderBlueprintProgress);
+    }
+
     public IItemHandler getPowerInventory() { return powerInventory; }
+    public IItemHandler getBuilderStructurePatterns() {
+        return builderStructurePatterns;
+    }
+
+    public String getBuilderInfrastructureMode() {
+        return traincraft.builder.BuilderInfrastructureSystem.modeName(this);
+    }
     public int getPowerAmount() {
         return level().isClientSide ? this.entityData.get(DATA_POWER) : powerAmount;
     }
@@ -179,8 +274,8 @@ private final ItemStackHandler powerInventory = new ItemStackHandler(53);
                     || electricLinePowerGraceTicks > 0;
         }
         if (isBuilder()) {
-            return getPowerAmount() > 0
-                    || getBuilderCoalBurnTicks() > 0;
+            // TC_DEV36_R1K12_COAL_ONLY_BUILDER
+            return getBuilderCoalBurnTicks() > 0;
         }
 
         return getPowerAmount() > 0;
@@ -290,7 +385,7 @@ double speed = getDeltaMovement().horizontalDistance();
             // the autonomous machine back onto a valid route and let it move on.
             //
             // Classic free-lay mode retains the old speed requirement.
-            if (tcBlueprintMode || speed > 0.015D) {
+            if (tcBlueprintMode || isBuilderManualTunnelMode() || speed > 0.015D) {
                 tryLayBuilderStep();
             }
         }
@@ -327,7 +422,10 @@ double speed = getDeltaMovement().horizontalDistance();
                     this.entityData.get(DATA_BLUEPRINT_TOTAL),
                     builderBlueprintNeed);
         }
-entityData.set(DATA_POWER, powerAmount);
+        // TC_DEV36_R1G_STRUCTURE_DEEP_TRACE
+        tcDev36R1gTickTrace();
+tcDev36SyncBuilderDrillState();
+        entityData.set(DATA_POWER, powerAmount);
         entityData.set(DATA_BUILDER_COAL_BURN, builderCoalBurnTicks);
         debugPoweredRuntime();
     }
@@ -385,54 +483,61 @@ entityData.set(DATA_POWER, powerAmount);
                 powerInventory.getStackInSlot(0);
 
         if (isBuilder()) {
-            // TC_BATCH8_R4A4F_BUILDER_SEPARATE_COAL_DIESEL
-            //
-            // DIESEL -> internal liquid reserve (DATA_POWER / diesel tube)
-            // COAL   -> furnace burn timer only (furnace indicator)
-            //
-            // They share one physical input slot but never share a tank.
-            if (fuel.is(TCItems.DIESEL_FUEL.get())) {
-                if (powerAmount > getPowerCapacity() - 1000) return;
+            // TC_DEV36_R1K12_COAL_ONLY_BUILDER
+            // Builder has no diesel reserve anymore.
+            powerAmount = 0;
 
-                ItemStack left = fuel.copy();
-                left.shrink(1);
-                powerInventory.setStackInSlot(0, left);
-
-                powerAmount =
-                        Math.min(
-                                getPowerCapacity(),
-                                powerAmount + 4000);
-                return;
-            }
-
-            if (fuel.is(Items.COAL)
+            if (fuel.is(
+                            net.minecraft.world.item.Items.COAL)
                     && builderCoalBurnTicks <= 0) {
-                ItemStack left = fuel.copy();
-                left.shrink(1);
-                powerInventory.setStackInSlot(0, left);
+                ItemStack left =
+                        fuel.copy();
+                left.shrink(
+                        1);
+                powerInventory.setStackInSlot(
+                        0,
+                        left);
 
                 // Vanilla-furnace-style coal burn: 80 seconds at 20 TPS.
-                builderCoalBurnTicks = 1600;
+                builderCoalBurnTicks =
+                        1600;
             }
 
             return;
         }
 
-        if (powerAmount > getPowerCapacity() - 1000) return;
-
-        int value = 0;
-        if (fuel.is(TCItems.DIESEL_FUEL.get())) {
-            value = 4000;
-        } else if (fuel.is(Items.COAL)
-                || fuel.is(Items.CHARCOAL)) {
-            value = 800;
+        if (powerAmount
+                > getPowerCapacity() - 1000) {
+            return;
         }
 
-        if (value <= 0) return;
+        int value =
+                0;
 
-        ItemStack left = fuel.copy();
-        left.shrink(1);
-        powerInventory.setStackInSlot(0, left);
+        if (fuel.is(
+                TCItems.DIESEL_FUEL.get())) {
+            value =
+                    4000;
+        }
+        else if (fuel.is(
+                        net.minecraft.world.item.Items.COAL)
+                || fuel.is(
+                        net.minecraft.world.item.Items.CHARCOAL)) {
+            value =
+                    800;
+        }
+
+        if (value <= 0) {
+            return;
+        }
+
+        ItemStack left =
+                fuel.copy();
+        left.shrink(
+                1);
+        powerInventory.setStackInSlot(
+                0,
+                left);
 
         powerAmount =
                 Math.min(
@@ -638,6 +743,12 @@ entityData.set(DATA_POWER, powerAmount);
                 maxZ + 17.0D);
     }
     private void tryLayBuilderStep() {
+        // TC_DEV36_R1K29R_MANUAL_TUNNEL_STEP_OWNER
+        // Manual tunnel mode does NOT mutate Blueprint anchor/rotation/progress.
+        if (isBuilderManualTunnelMode()) {
+            tcDev36ManualTunnelStep();
+            return;
+        }
         ItemStack blueprint = powerInventory.getStackInSlot(52);
         // TC_BATCH8_R4A5A2_BUILDER_LAYING_DIAGNOSTICS
         if (tickCount % 20 == 0) {
@@ -678,7 +789,86 @@ entityData.set(DATA_POWER, powerAmount);
             tryLayBuilderRail();
             return;
         }
-        tryLayBuilderBlueprint(blueprint);
+        // TC_DEV36_R1A_SAVED_STRUCTURE_EXECUTION
+        // TC_DEV36_R1G_STRUCTURE_DEEP_TRACE
+        tcDev36R1gTraceCurrent(
+                "STEP_ENTER",
+                blueprint,
+                "before structure; trackProgress="
+                        + builderBlueprintProgress);
+
+        // Build one saved custom block per normal Blueprint work tick.
+        // If that cell cannot proceed, stop before advancing the track route.
+        // TC_DEV36_R1K27B_LATCH_TRACK_TRANSFORM_BEFORE_STRUCTURE
+        //
+        // Saved BuildBlocks must never mutate the world under the fallback
+        // pre-start transform. The accepted Blueprint track auto-start owns the
+        // authoritative Build Start anchor + rotation. If that transform has
+        // not been committed yet, let exactly that existing track path run once
+        // and defer structure work until the next normal Builder work tick.
+        if (builderBlueprintAnchor == null) {
+            int tcDev36R1k27TrackBefore =
+                    builderBlueprintProgress;
+
+            tryLayBuilderBlueprint(
+                    blueprint);
+
+            tcDev36R1gTraceCurrent(
+                    "STEP_TRACK_LATCH",
+                    blueprint,
+                    "trackProgress="
+                            + tcDev36R1k27TrackBefore
+                            + "->"
+                            + builderBlueprintProgress
+                            + " anchor="
+                            + String.valueOf(
+                                    builderBlueprintAnchor)
+                            + " rotQ="
+                            + builderBlueprintRotationQuarter);
+
+            tcDev36RefreshStructureStatus(
+                    blueprint);
+
+            tcDev36R1gTraceCurrent(
+                    "STEP_STATUS_AFTER",
+                    blueprint,
+                    "status="
+                            + builderBlueprintNeed);
+            return;
+        }
+        if (!tcDev36BuildOneSavedStructureBlock(
+                blueprint)) {
+            tcDev36R1gTraceCurrent(
+                    "STEP_HOLD",
+                    blueprint,
+                    "structure pass returned false; track not advanced");
+            return;
+        }
+
+        int tcDev36R1gTrackBefore =
+                builderBlueprintProgress;
+
+        tryLayBuilderBlueprint(
+                blueprint);
+
+        tcDev36R1gTraceCurrent(
+                "STEP_TRACK_AFTER",
+                blueprint,
+                "trackProgress="
+                        + tcDev36R1gTrackBefore
+                        + "->"
+                        + builderBlueprintProgress);
+
+        // Once track replay is complete, keep the existing Builder running
+        // until the saved structure plan also reaches COMPLETE.
+        tcDev36RefreshStructureStatus(
+                blueprint);
+
+        tcDev36R1gTraceCurrent(
+                "STEP_STATUS_AFTER",
+                blueprint,
+                "status="
+                        + builderBlueprintNeed);
     }
 
     // TC_BATCH8_R4A5G24_BUILDER_LIVE_CONNECTOR_PLACEMENT
@@ -903,6 +1093,926 @@ entityData.set(DATA_POWER, powerAmount);
         }
 
         return result;
+    }
+    // TC_DEV36_R1A_SAVED_STRUCTURE_EXECUTION
+    private static final String TC_DEV36_STRUCTURE_KEY =
+            "TCDev36StructureKey";
+    private static final String TC_DEV36_STRUCTURE_PROGRESS =
+            "TCDev36StructureProgress";
+
+    private int tcDev36StructurePlanSignature(
+            ItemStack blueprint) {
+        int signature = 1;
+        int total =
+                traincraft.blueprint.BuilderStructurePlan.count(
+                        blueprint);
+
+        for (int i = 0;
+             i < total;
+             i++) {
+            net.minecraft.nbt.CompoundTag entry =
+                    traincraft.blueprint.BuilderStructurePlan.entry(
+                            blueprint,
+                            i);
+
+            signature =
+                    31 * signature
+                            + entry.toString().hashCode();
+        }
+
+        return signature;
+    }
+
+    private BlockPos tcDev36StructureAnchor(
+            ItemStack blueprint) {
+        if (traincraft.item.TrackBlueprintItem.hasPreviewAnchor(
+                blueprint)) {
+            return traincraft.item.TrackBlueprintItem.previewAnchor(
+                    blueprint);
+        }
+
+        if (builderBlueprintAnchor != null) {
+            return builderBlueprintAnchor;
+        }
+
+        return builderForwardBlueprintAnchor();
+    }
+
+    private int tcDev36StructureRotation(
+            ItemStack blueprint) {
+        if (traincraft.item.TrackBlueprintItem.hasPreviewAnchor(
+                blueprint)) {
+            return Math.floorMod(
+                    traincraft.item.TrackBlueprintItem.previewRotationQuarter(
+                            blueprint),
+                    4);
+        }
+
+        if (builderBlueprintAnchor != null) {
+            return Math.floorMod(
+                    builderBlueprintRotationQuarter,
+                    4);
+        }
+
+        int recordedQuarter =
+                quarterYaw(
+                        traincraft.item.TrackBlueprintItem.baseYaw(
+                                blueprint));
+        int builderQuarter =
+                quarterYaw(
+                        getYRot());
+
+        return Math.floorMod(
+                builderQuarter - recordedQuarter,
+                4);
+    }
+
+    private String tcDev36StructureRunKey(
+            ItemStack blueprint,
+            BlockPos anchor,
+            int rotation) {
+        return traincraft.item.TrackBlueprintItem.blueprintId(
+                        blueprint)
+                + "|"
+                + anchor.asLong()
+                + "|"
+                + Math.floorMod(rotation, 4)
+                + "|"
+                + traincraft.blueprint.BuilderStructurePlan.count(
+                        blueprint)
+                + "|"
+                + tcDev36StructurePlanSignature(
+                        blueprint);
+    }
+
+    private int tcDev36StructureProgress(
+            ItemStack blueprint,
+            BlockPos anchor,
+            int rotation) {
+        net.minecraft.nbt.CompoundTag persistent =
+                getPersistentData();
+
+        String key =
+                tcDev36StructureRunKey(
+                        blueprint,
+                        anchor,
+                        rotation);
+
+        if (!key.equals(
+                persistent.getString(
+                        TC_DEV36_STRUCTURE_KEY))) {
+            persistent.putString(
+                    TC_DEV36_STRUCTURE_KEY,
+                    key);
+            persistent.putInt(
+                    TC_DEV36_STRUCTURE_PROGRESS,
+                    0);
+            return 0;
+        }
+
+        return Math.max(
+                0,
+                persistent.getInt(
+                        TC_DEV36_STRUCTURE_PROGRESS));
+    }
+
+    private void tcDev36SetStructureProgress(
+            ItemStack blueprint,
+            BlockPos anchor,
+            int rotation,
+            int progress) {
+        net.minecraft.nbt.CompoundTag persistent =
+                getPersistentData();
+
+        persistent.putString(
+                TC_DEV36_STRUCTURE_KEY,
+                tcDev36StructureRunKey(
+                        blueprint,
+                        anchor,
+                        rotation));
+        persistent.putInt(
+                TC_DEV36_STRUCTURE_PROGRESS,
+                Math.max(
+                        0,
+                        progress));
+    }
+
+    private BlockPos tcDev36RotateStructureRelative(
+            BlockPos relative,
+            int rotation) {
+        return switch (Math.floorMod(
+                rotation,
+                4)) {
+            case 1 ->
+                    new BlockPos(
+                            -relative.getZ(),
+                            relative.getY(),
+                            relative.getX());
+            case 2 ->
+                    new BlockPos(
+                            -relative.getX(),
+                            relative.getY(),
+                            -relative.getZ());
+            case 3 ->
+                    new BlockPos(
+                            relative.getZ(),
+                            relative.getY(),
+                            -relative.getX());
+            default ->
+                    relative;
+        };
+    }
+
+    private net.minecraft.world.level.block.state.BlockState
+            tcDev36RotateStructureState(
+                    net.minecraft.world.level.block.state.BlockState source,
+                    int rotation) {
+        return switch (Math.floorMod(
+                rotation,
+                4)) {
+            case 1 ->
+                    source.rotate(
+                            net.minecraft.world.level.block.Rotation.CLOCKWISE_90);
+            case 2 ->
+                    source.rotate(
+                            net.minecraft.world.level.block.Rotation.CLOCKWISE_180);
+            case 3 ->
+                    source.rotate(
+                            net.minecraft.world.level.block.Rotation.COUNTERCLOCKWISE_90);
+            default ->
+                    source;
+        };
+    }
+
+    // TC_DEV36_R1H_STRUCTURE_MATERIAL_SOURCES
+    // TC_DEV36_R1H_STRUCTURE_MATERIAL_SOURCES
+    // TC_DEV36_R1K12_EXPANDED_BUILDER_MATERIALS
+    // TC_DEV36_R1H_STRUCTURE_MATERIAL_SOURCES
+    // TC_DEV36_R1K14_FINAL_MATERIAL_LAYOUT
+    private int tcDev36FindStructureMaterial(
+            net.minecraft.world.level.block.Block block) {
+        net.minecraft.world.item.Item wanted =
+                block.asItem();
+
+        if (wanted == net.minecraft.world.item.Items.AIR) {
+            return -1;
+        }
+
+        // BLUEPRINT MATERIALS:
+        // historical 20..51 + appended 54..77.
+        for (int slot = 20;
+             slot <= 77;
+             slot++) {
+            if (slot == 52
+                    || slot == 53) {
+                continue;
+            }
+
+            ItemStack stack =
+                    powerInventory.getStackInSlot(
+                            slot);
+
+            if (!stack.isEmpty()
+                    && stack.getItem() == wanted) {
+                return slot;
+            }
+        }
+
+        // SUPPLIES: historical 1..19 + one appended cell 53.
+        for (int slot = 1;
+             slot <= 53;
+             slot++) {
+            if ((slot >= 20
+                            && slot <= 52)) {
+                continue;
+            }
+
+            ItemStack stack =
+                    powerInventory.getStackInSlot(
+                            slot);
+
+            if (!stack.isEmpty()
+                    && stack.getItem() == wanted) {
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    // TC_DEV36_R1G_STRUCTURE_DEEP_TRACE
+    private String tcDev36R1gLastTraceSignature =
+            "";
+    private long tcDev36R1gLastTraceAt =
+            0L;
+
+    private String tcDev36R1gRackSummary() {
+        StringBuilder out =
+                new StringBuilder();
+
+        // TC_DEV36_R1K14_FINAL_MATERIAL_LAYOUT
+        for (int slot = 1;
+             slot <= 77;
+             slot++) {
+            if (slot == 52) {
+                continue;
+            }
+
+            ItemStack stack =
+                    powerInventory.getStackInSlot(
+                            slot);
+
+            if (stack.isEmpty()) {
+                continue;
+            }
+
+            if (out.length() > 0) {
+                out.append(",");
+            }
+
+            net.minecraft.resources.ResourceLocation key =
+                    net.minecraftforge.registries.ForgeRegistries.ITEMS
+                            .getKey(
+                                    stack.getItem());
+
+            out.append(slot)
+                    .append("=")
+                    .append(
+                            key == null
+                                    ? stack.getHoverName().getString()
+                                    : key.toString())
+                    .append("x")
+                    .append(
+                            stack.getCount());
+        }
+
+        return out.length() == 0
+                ? "<empty>"
+                : out.toString();
+    }
+
+    private void tcDev36R1gTrace(
+            String event,
+            ItemStack blueprint,
+            int structureTotal,
+            int structureProgress,
+            BlockPos anchor,
+            int rotation,
+            String detail) {
+        if (level().isClientSide) {
+            return;
+        }
+
+        try {
+            String blueprintId =
+                    blueprint.getItem()
+                            instanceof traincraft.item.TrackBlueprintItem
+                            ? traincraft.item.TrackBlueprintItem.blueprintId(
+                                    blueprint)
+                            : "<not-blueprint>";
+
+            int trackTotal =
+                    blueprint.getItem()
+                            instanceof traincraft.item.TrackBlueprintItem
+                            ? traincraft.item.TrackBlueprintItem.segmentCount(
+                                    blueprint)
+                            : 0;
+
+            String preview =
+                    blueprint.getItem()
+                                    instanceof traincraft.item.TrackBlueprintItem
+                            && traincraft.item.TrackBlueprintItem.hasPreviewAnchor(
+                                    blueprint)
+                            ? traincraft.item.TrackBlueprintItem.previewAnchor(
+                                    blueprint).toShortString()
+                                    + "/"
+                                    + traincraft.item.TrackBlueprintItem.previewRotationQuarter(
+                                            blueprint)
+                            : "none";
+
+            String safeDetail =
+                    detail == null
+                            ? ""
+                            : detail;
+
+            String signature =
+                    event
+                            + "|"
+                            + blueprintId
+                            + "|"
+                            + builderBlueprintProgress
+                            + "|"
+                            + structureProgress
+                            + "|"
+                            + structureTotal
+                            + "|"
+                            + String.valueOf(
+                                    anchor)
+                            + "|"
+                            + rotation
+                            + "|"
+                            + builderBlueprintNeed
+                            + "|"
+                            + safeDetail;
+
+            long now =
+                    System.currentTimeMillis();
+
+            if (!signature.equals(
+                    tcDev36R1gLastTraceSignature)
+                    || now - tcDev36R1gLastTraceAt >= 1500L) {
+                tcDev36R1gLastTraceSignature =
+                        signature;
+                tcDev36R1gLastTraceAt =
+                        now;
+
+                org.slf4j.LoggerFactory
+                        .getLogger(
+                                "TafariCraftBuilderStructure")
+                        .info(
+                                "[TC-DEV36-R1G][STRUCT] event={} entity={} tick={} running={} power={}/{} speed={} bpId={} locked={} trackProgress={}/{} structProgress={}/{} anchor={} rotQ={} preview={} builderAnchor={} builderRotQ={} status={} rack={} detail={}",
+                                event,
+                                getId(),
+                                tickCount,
+                                isBuilderRunning(),
+                                powerAmount,
+                                getPowerCapacity(),
+                                String.format(
+                                        java.util.Locale.ROOT,
+                                        "%.5f",
+                                        getDeltaMovement()
+                                                .horizontalDistance()),
+                                blueprintId,
+                                blueprint.getItem()
+                                                instanceof traincraft.item.TrackBlueprintItem
+                                        && traincraft.item.TrackBlueprintItem.isLocked(
+                                                blueprint),
+                                builderBlueprintProgress,
+                                trackTotal,
+                                structureProgress,
+                                structureTotal,
+                                anchor == null
+                                        ? "none"
+                                        : anchor.toShortString(),
+                                rotation,
+                                preview,
+                                String.valueOf(
+                                        builderBlueprintAnchor),
+                                builderBlueprintRotationQuarter,
+                                builderBlueprintNeed,
+                                tcDev36R1gRackSummary(),
+                                safeDetail);
+            }
+        }
+        catch (Throwable debugError) {
+            traincraft.Traincraft.LOGGER.warn(
+                    "[TC-DEV36-R1G][STRUCT] trace failed event={}: {}",
+                    event,
+                    debugError.toString());
+        }
+    }
+
+    private void tcDev36R1gTraceCurrent(
+            String event,
+            ItemStack blueprint,
+            String detail) {
+        int total =
+                blueprint.getItem()
+                                instanceof traincraft.item.TrackBlueprintItem
+                        ? traincraft.blueprint.BuilderStructurePlan.count(
+                                blueprint)
+                        : 0;
+
+        int progress =
+                getPersistentData()
+                        .getInt(
+                                TC_DEV36_STRUCTURE_PROGRESS);
+
+        BlockPos anchor =
+                total > 0
+                        ? tcDev36StructureAnchor(
+                                blueprint)
+                        : null;
+
+        int rotation =
+                total > 0
+                        ? tcDev36StructureRotation(
+                                blueprint)
+                        : -1;
+
+        tcDev36R1gTrace(
+                event,
+                blueprint,
+                total,
+                progress,
+                anchor,
+                rotation,
+                detail);
+    }
+
+    private void tcDev36R1gTickTrace() {
+        if (level().isClientSide
+                || !isBuilder()
+                || tickCount % 20 != 0) {
+            return;
+        }
+
+        ItemStack blueprint =
+                powerInventory.getStackInSlot(
+                        52);
+
+        tcDev36R1gTraceCurrent(
+                "TICK",
+                blueprint,
+                "slot52="
+                        + (blueprint.isEmpty()
+                                ? "EMPTY"
+                                : String.valueOf(
+                                        net.minecraftforge.registries.ForgeRegistries.ITEMS
+                                                .getKey(
+                                                        blueprint.getItem())))
+                        + " pos="
+                        + String.format(
+                                java.util.Locale.ROOT,
+                                "%.3f,%.3f,%.3f",
+                                getX(),
+                                getY(),
+                                getZ())
+                        + " yaw="
+                        + String.format(
+                                java.util.Locale.ROOT,
+                                "%.2f",
+                                getYRot()));
+    }
+    private boolean tcDev36BuildOneSavedStructureBlock(
+            ItemStack blueprint) {
+        if (!(level()
+                instanceof ServerLevel server)) {
+            return true;
+        }
+
+        int total =
+                traincraft.blueprint.BuilderStructurePlan.count(
+                        blueprint);
+
+        if (total <= 0) {
+            tcDev36R1gTrace(
+                    "NO_STRUCTURE_PLAN",
+                    blueprint,
+                    total,
+                    0,
+                    null,
+                    -1,
+                    "BuildBlocks empty");
+
+            getPersistentData()
+                    .remove(
+                            TC_DEV36_STRUCTURE_KEY);
+            getPersistentData()
+                    .remove(
+                            TC_DEV36_STRUCTURE_PROGRESS);
+            return true;
+        }
+
+        BlockPos anchor =
+                tcDev36StructureAnchor(
+                        blueprint);
+        int rotation =
+                tcDev36StructureRotation(
+                        blueprint);
+
+        int progress =
+                tcDev36StructureProgress(
+                        blueprint,
+                        anchor,
+                        rotation);
+
+        tcDev36R1gTrace(
+                "PASS_ENTER",
+                blueprint,
+                total,
+                progress,
+                anchor,
+                rotation,
+                "runKey="
+                        + tcDev36StructureRunKey(
+                                blueprint,
+                                anchor,
+                                rotation));
+
+        if (progress > total) {
+            tcDev36R1gTrace(
+                    "PROGRESS_RESET",
+                    blueprint,
+                    total,
+                    progress,
+                    anchor,
+                    rotation,
+                    "progress exceeded total");
+
+            progress = 0;
+            tcDev36SetStructureProgress(
+                    blueprint,
+                    anchor,
+                    rotation,
+                    progress);
+        }
+
+        // Skip already-built cells without consuming materials.
+        while (progress < total) {
+            net.minecraft.nbt.CompoundTag entry =
+                    traincraft.blueprint.BuilderStructurePlan.entry(
+                            blueprint,
+                            progress);
+
+            net.minecraft.world.level.block.state.BlockState planned =
+                    traincraft.blueprint.BuilderStructurePlan.blockState(
+                            entry);
+
+            if (planned.isAir()) {
+                tcDev36R1gTrace(
+                        "SKIP_AIR",
+                        blueprint,
+                        total,
+                        progress,
+                        anchor,
+                        rotation,
+                        "entry="
+                                + progress
+                                + " nbt="
+                                + entry);
+
+                progress++;
+                tcDev36SetStructureProgress(
+                        blueprint,
+                        anchor,
+                        rotation,
+                        progress);
+                continue;
+            }
+
+            BlockPos relative =
+                    traincraft.blueprint.BuilderStructurePlan.relativePos(
+                            entry);
+
+            // TC_DEV36_R1K24_SKIP_STALE_CLEARANCE_BUILD_BLOCK
+            //
+            // BuildBlocks are persistent Blueprint data. A plan can survive from
+            // an older edit/run even when a saved block now falls inside the
+            // authoritative train-clearance volume. The r1k19 runtime used to
+            // HOLD forever on such an entry before the track route could advance.
+            //
+            // Keep the clearance rule authoritative: NEVER place or consume an
+            // unsafe saved block. But do not deadlock the Builder on stale data.
+            // Advance only the saved-structure progress and continue looking for
+            // the next safe structure entry. Roadbed/foundation belongs to the
+            // separate BuilderInfrastructureSystem, not BuildBlocks.
+            if (traincraft.blueprint.BuilderStructurePlan.tooCloseRelative(
+                    blueprint,
+                    relative)) {
+                tcDev36R1gTrace(
+                        "SKIP_CLEARANCE_SAVED_BLOCK",
+                        blueprint,
+                        total,
+                        progress,
+                        anchor,
+                        rotation,
+                        "entry="
+                                + progress
+                                + " relative="
+                                + relative.toShortString()
+                                + " planned="
+                                + planned
+                                + " action=SKIP_NO_PLACE_NO_CONSUME");
+
+                progress++;
+                tcDev36SetStructureProgress(
+                        blueprint,
+                        anchor,
+                        rotation,
+                        progress);
+
+                syncBuilderBlueprint(
+                        traincraft.item.TrackBlueprintItem.segmentCount(
+                                blueprint),
+                        "SKIP CLEARANCE "
+                                + progress
+                                + "/"
+                                + total);
+
+                continue;
+            }
+
+            BlockPos rotated =
+                    tcDev36RotateStructureRelative(
+                            relative,
+                            rotation);
+            BlockPos target =
+                    anchor.offset(
+                            rotated);
+
+            planned =
+                    tcDev36RotateStructureState(
+                            planned,
+                            rotation);
+
+            net.minecraft.world.level.block.state.BlockState current =
+                    server.getBlockState(
+                            target);
+
+            tcDev36R1gTrace(
+                    "TARGET",
+                    blueprint,
+                    total,
+                    progress,
+                    anchor,
+                    rotation,
+                    "entry="
+                            + progress
+                            + " relative="
+                            + relative.toShortString()
+                            + " rotated="
+                            + rotated.toShortString()
+                            + " target="
+                            + target.toShortString()
+                            + " planned="
+                            + planned
+                            + " current="
+                            + current);
+
+            if (current.equals(
+                    planned)) {
+                tcDev36R1gTrace(
+                        "SKIP_WORLD_MATCH",
+                        blueprint,
+                        total,
+                        progress,
+                        anchor,
+                        rotation,
+                        "target="
+                                + target.toShortString()
+                                + " state="
+                                + current);
+
+                progress++;
+                tcDev36SetStructureProgress(
+                        blueprint,
+                        anchor,
+                        rotation,
+                        progress);
+                continue;
+            }
+
+            // DEV45: no structure work may replace a protected world block.
+            if (current.is(net.minecraft.world.level.block.Blocks.BEDROCK)
+                    || current.is(net.minecraft.world.level.block.Blocks.OBSIDIAN)) {
+                syncBuilderBlueprint(traincraft.item.TrackBlueprintItem.segmentCount(blueprint),
+                        "STRUCT PROTECTED " + target.toShortString());
+                return false;
+            }
+
+            // Dev36 r1b/r1f remains deliberately non-destructive.
+            if (!current.isAir()) {
+                tcDev36R1gTrace(
+                        "HOLD_BLOCKED",
+                        blueprint,
+                        total,
+                        progress,
+                        anchor,
+                        rotation,
+                        "target="
+                                + target.toShortString()
+                                + " planned="
+                                + planned
+                                + " current="
+                                + current);
+
+                syncBuilderBlueprint(
+                        traincraft.item.TrackBlueprintItem.segmentCount(
+                                blueprint),
+                        "STRUCT BLOCKED "
+                                + target.getX()
+                                + " "
+                                + target.getY()
+                                + " "
+                                + target.getZ());
+                setDeltaMovement(
+                        getDeltaMovement()
+                                .multiply(
+                                        0.0D,
+                                        1.0D,
+                                        0.0D));
+                return false;
+            }
+
+            int materialSlot =
+                    tcDev36FindStructureMaterial(
+                            planned.getBlock());
+
+            if (materialSlot < 0) {
+                net.minecraft.resources.ResourceLocation blockKey =
+                        net.minecraftforge.registries.ForgeRegistries.BLOCKS
+                                .getKey(
+                                        planned.getBlock());
+
+                String shortName =
+                        blockKey == null
+                                ? planned.getBlock().getName().getString()
+                                : blockKey.getPath();
+
+                tcDev36R1gTrace(
+                        "HOLD_MISSING",
+                        blueprint,
+                        total,
+                        progress,
+                        anchor,
+                        rotation,
+                        "target="
+                                + target.toShortString()
+                                + " wanted="
+                                + String.valueOf(
+                                        blockKey)
+                                + " planned="
+                                + planned);
+
+                syncBuilderBlueprint(
+                        traincraft.item.TrackBlueprintItem.segmentCount(
+                                blueprint),
+                        "STRUCT NEED "
+                                + shortName);
+                setDeltaMovement(
+                        getDeltaMovement()
+                                .multiply(
+                                        0.0D,
+                                        1.0D,
+                                        0.0D));
+                return false;
+            }
+
+            ItemStack materialBeforeStack =
+                    powerInventory.getStackInSlot(
+                            materialSlot);
+            int materialBefore =
+                    materialBeforeStack.getCount();
+
+            boolean setResult =
+                    server.setBlock(
+                            target,
+                            planned,
+                            3);
+
+            net.minecraft.world.level.block.state.BlockState worldAfterSet =
+                    server.getBlockState(
+                            target);
+
+            consumeOne(
+                    materialSlot);
+
+            int materialAfter =
+                    powerInventory.getStackInSlot(
+                            materialSlot)
+                            .getCount();
+
+            progress++;
+            tcDev36SetStructureProgress(
+                    blueprint,
+                    anchor,
+                    rotation,
+                    progress);
+
+            tcDev36R1gTrace(
+                    "PLACE",
+                    blueprint,
+                    total,
+                    progress,
+                    anchor,
+                    rotation,
+                    "target="
+                            + target.toShortString()
+                            + " planned="
+                            + planned
+                            + " setResult="
+                            + setResult
+                            + " worldAfter="
+                            + worldAfterSet
+                            + " materialSlot="
+                            + materialSlot
+                            + " count="
+                            + materialBefore
+                            + "->"
+                            + materialAfter);
+
+            server.sendParticles(
+                    net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER,
+                    target.getX() + 0.5D,
+                    target.getY() + 0.5D,
+                    target.getZ() + 0.5D,
+                    2,
+                    0.10D,
+                    0.10D,
+                    0.10D,
+                    0.0D);
+
+            // One real saved block per normal Builder work tick.
+            return true;
+        }
+
+        tcDev36R1gTrace(
+                "STRUCTURE_COMPLETE",
+                blueprint,
+                total,
+                progress,
+                anchor,
+                rotation,
+                "all BuildBlocks processed");
+
+        return true;
+    }
+
+    private void tcDev36RefreshStructureStatus(
+            ItemStack blueprint) {
+        int trackTotal =
+                traincraft.item.TrackBlueprintItem.segmentCount(
+                        blueprint);
+
+        // While tracks are still active, preserve the accepted track status.
+        if (builderBlueprintProgress < trackTotal) {
+            return;
+        }
+
+        int total =
+                traincraft.blueprint.BuilderStructurePlan.count(
+                        blueprint);
+
+        if (total <= 0) {
+            return;
+        }
+
+        BlockPos anchor =
+                tcDev36StructureAnchor(
+                        blueprint);
+        int rotation =
+                tcDev36StructureRotation(
+                        blueprint);
+        int progress =
+                tcDev36StructureProgress(
+                        blueprint,
+                        anchor,
+                        rotation);
+
+        if (progress < total) {
+            syncBuilderBlueprint(
+                    trackTotal,
+                    "STRUCTURE "
+                            + progress
+                            + "/"
+                            + total);
+        }
+        else {
+            syncBuilderBlueprint(
+                    trackTotal,
+                    "COMPLETE");
+        }
     }
     private void tryLayBuilderBlueprint(ItemStack blueprint) {
         if (!(level() instanceof ServerLevel server)) return;
@@ -1370,10 +2480,19 @@ if (!foundationProblem.isEmpty()) {
             ItemStack plannedTrackStack,
             BlockPos anchor,
             float placementYaw) {
-        // TC_BATCH8_R3ZZY_BUILDER_BLUEPRINT_FOOTPRINT_FOUNDATION
-        // Blueprint geometry remains authoritative. This only prepares the
-        // construction blocks beneath the cells that the accepted Blueprint
-        // resolver says the saved track piece physically occupies.
+        // TC_DEV34_R1C1A_BUILDER_INFRASTRUCTURE
+        if (traincraft.builder.BuilderInfrastructureSystem
+                .isEnabled(this)) {
+            return traincraft.builder.BuilderInfrastructureSystem
+                    .prepare(
+                            server,
+                            this,
+                            plannedTrackStack,
+                            anchor,
+                            placementYaw);
+        }
+
+        // Accepted r3zzy classic foundation fallback.
         java.util.LinkedHashSet<BlockPos> plannedCells =
                 new java.util.LinkedHashSet<>(
                         traincraft.item.TrackBlueprintItem
@@ -1424,7 +2543,8 @@ if (!foundationProblem.isEmpty()) {
             }
         }
 
-        if (countBuilderSupportItems() < missingSupport) {
+        if (countBuilderSupportItems()
+                < missingSupport) {
             return "NEED BALLAST/SUPPORT x"
                     + missingSupport;
         }
@@ -1433,7 +2553,8 @@ if (!foundationProblem.isEmpty()) {
             BlockPos supportPos =
                     railCell.below();
 
-            if (server.getBlockState(supportPos)
+            if (server.getBlockState(
+                            supportPos)
                     .isAir()) {
                 int supportSlot =
                         findBuilderSupport();
@@ -1456,14 +2577,16 @@ if (!foundationProblem.isEmpty()) {
                         blockItem.getBlock()
                                 .defaultBlockState(),
                         3);
-                consumeOne(supportSlot);
+
+                consumeOne(
+                        supportSlot);
             }
 
-            // Preserve the classic Builder's optional second foundation layer.
             BlockPos lowerSupportPos =
                     supportPos.below();
 
-            if (server.getBlockState(lowerSupportPos)
+            if (server.getBlockState(
+                            lowerSupportPos)
                     .isAir()) {
                 int lowerSlot =
                         findBuilderLowerSupport();
@@ -1480,25 +2603,15 @@ if (!foundationProblem.isEmpty()) {
                                 blockItem.getBlock()
                                         .defaultBlockState(),
                                 3);
-                        consumeOne(lowerSlot);
+
+                        consumeOne(
+                                lowerSlot);
                     }
                 }
             }
         }
 
-                org.slf4j.LoggerFactory
-                .getLogger("TafariCraftBuilderLay")
-                .info(
-                        "[TC-BUILDER-LAY-FOOTPRINT] id={} tick={} anchor={} yaw={} cells={} missingSupport={} availableSupport={} cellsList={}",
-                        getId(),
-                        tickCount,
-                        String.valueOf(anchor),
-                        String.format(java.util.Locale.ROOT, "%.2f", placementYaw),
-                        plannedCells.size(),
-                        missingSupport,
-                        countBuilderSupportItems(),
-                        String.valueOf(plannedCells));
-return "";
+        return "";
     }
 
     private int countBuilderSupportItems() {
@@ -1592,6 +2705,7 @@ return "";
 
     private int findBuilderExactTrack(String itemId) {
         // TC_BATCH8_R4A5G4_BUILDER_29X32X_MATERIAL_LOOKUP
+        // TC_DEV36_R1K14_FINAL_MATERIAL_LAYOUT
         String normalized =
                 itemId == null
                         ? ""
@@ -1605,16 +2719,25 @@ return "";
 
         String wantedCanonical =
                 traincraft.item.TrackBlueprintItem
-                        .canonicalTrackId(normalized);
+                        .canonicalTrackId(
+                                normalized);
 
-        int[] legacyTrackSlots =
-                {1, 8, 9, 10};
+        int[] legacyTrackSlots = {
+                1, 8, 9, 10
+        };
 
-        // First preserve the existing exact/canonical behavior. Prefer the
-        // visible Builder material rack before legacy track slots.
-        for (int slot = 20; slot <= 51; slot++) {
+        // Exact/canonical match: all visible BLUEPRINT MATERIALS.
+        for (int slot = 20;
+             slot <= 77;
+             slot++) {
+            if (slot == 52
+                    || slot == 53) {
+                continue;
+            }
+
             ItemStack stack =
-                    powerInventory.getStackInSlot(slot);
+                    powerInventory.getStackInSlot(
+                            slot);
 
             if (stack.isEmpty()) {
                 continue;
@@ -1622,7 +2745,8 @@ return "";
 
             net.minecraft.resources.ResourceLocation key =
                     net.minecraftforge.registries.ForgeRegistries.ITEMS
-                            .getKey(stack.getItem());
+                            .getKey(
+                                    stack.getItem());
 
             if (key != null
                     && wantedCanonical.equals(
@@ -1633,9 +2757,11 @@ return "";
             }
         }
 
-        for (int slot : legacyTrackSlots) {
+        for (int slot :
+                legacyTrackSlots) {
             ItemStack stack =
-                    powerInventory.getStackInSlot(slot);
+                    powerInventory.getStackInSlot(
+                            slot);
 
             if (stack.isEmpty()) {
                 continue;
@@ -1643,7 +2769,8 @@ return "";
 
             net.minecraft.resources.ResourceLocation key =
                     net.minecraftforge.registries.ForgeRegistries.ITEMS
-                            .getKey(stack.getItem());
+                            .getKey(
+                                    stack.getItem());
 
             if (key != null
                     && wantedCanonical.equals(
@@ -1654,12 +2781,10 @@ return "";
             }
         }
 
-        // 29x/32x Blueprint 2.0 can save the unsuffixed geometry ID while the
-        // Builder rack contains a steel/copper/snow/energy material variant.
-        // Permit that family fallback only for an unsuffixed requested ID.
         net.minecraft.resources.ResourceLocation wantedKey =
                 net.minecraft.resources.ResourceLocation
-                        .tryParse(wantedCanonical);
+                        .tryParse(
+                                wantedCanonical);
 
         String wantedQuarterBase =
                 wantedKey == null
@@ -1673,15 +2798,25 @@ return "";
                                 wantedKey.getNamespace())
                         && !wantedQuarterBase.isEmpty()
                         && wantedKey.getPath()
-                                .equals(wantedQuarterBase);
+                                .equals(
+                                        wantedQuarterBase);
 
         if (!allowMaterialFamily) {
             return -1;
         }
 
-        for (int slot = 20; slot <= 51; slot++) {
+        // Preserve accepted 29x/32x material-family fallback.
+        for (int slot = 20;
+             slot <= 77;
+             slot++) {
+            if (slot == 52
+                    || slot == 53) {
+                continue;
+            }
+
             ItemStack stack =
-                    powerInventory.getStackInSlot(slot);
+                    powerInventory.getStackInSlot(
+                            slot);
 
             if (stack.isEmpty()) {
                 continue;
@@ -1689,7 +2824,8 @@ return "";
 
             net.minecraft.resources.ResourceLocation key =
                     net.minecraftforge.registries.ForgeRegistries.ITEMS
-                            .getKey(stack.getItem());
+                            .getKey(
+                                    stack.getItem());
 
             if (key != null
                     && "traincraft".equals(
@@ -1698,7 +2834,8 @@ return "";
                             builderSingleIdQuarterBase(
                                     key.getPath()))) {
                 org.slf4j.LoggerFactory
-                        .getLogger("TafariCraftBuilderLay")
+                        .getLogger(
+                                "TafariCraftBuilderLay")
                         .info(
                                 "[TC-BUILDER-LAY-MATERIAL-FALLBACK] id={} tick={} requested={} supplied={} slot={}",
                                 getId(),
@@ -1710,9 +2847,11 @@ return "";
             }
         }
 
-        for (int slot : legacyTrackSlots) {
+        for (int slot :
+                legacyTrackSlots) {
             ItemStack stack =
-                    powerInventory.getStackInSlot(slot);
+                    powerInventory.getStackInSlot(
+                            slot);
 
             if (stack.isEmpty()) {
                 continue;
@@ -1720,7 +2859,8 @@ return "";
 
             net.minecraft.resources.ResourceLocation key =
                     net.minecraftforge.registries.ForgeRegistries.ITEMS
-                            .getKey(stack.getItem());
+                            .getKey(
+                                    stack.getItem());
 
             if (key != null
                     && "traincraft".equals(
@@ -1729,7 +2869,8 @@ return "";
                             builderSingleIdQuarterBase(
                                     key.getPath()))) {
                 org.slf4j.LoggerFactory
-                        .getLogger("TafariCraftBuilderLay")
+                        .getLogger(
+                                "TafariCraftBuilderLay")
                         .info(
                                 "[TC-BUILDER-LAY-MATERIAL-FALLBACK] id={} tick={} requested={} supplied={} slot={}",
                                 getId(),
@@ -3148,6 +4289,9 @@ setPoweredSeatPinFromRelativePoint(hitPos.x, hitPos.y, hitPos.z, player, "CLICK"
     private void setBuilderRunning(boolean running) {
         if (!isBuilder()) return;
         getPersistentData().putBoolean("TafariBuilderRunning", running);
+        this.entityData.set(
+                DATA_BUILDER_DRILL_ACTIVE,
+                running && hasTractionPower());
         if (!running) {
             // TC_BATCH8_R4A5G25_BUILDER_AUTONOMOUS_TRACTION_HOLD
             this.setDriverControls(false, false, false);
@@ -3193,6 +4337,12 @@ setPoweredSeatPinFromRelativePoint(hitPos.x, hitPos.y, hitPos.z, player, "CLICK"
         return false;
     }
     private void tickBuilderAutonomousDrive() {
+        // TC_DEV36_R1K29E_DIG_BEFORE_AUTODRIVE
+        // The helper is self-gating for Builder/running/power state.
+        // Atomic preflight guarantees no terrain is changed unless all drops fit.
+        if (!tcDev36ExcavateAhead()) {
+            return;
+        }
         if (!isBuilder()
                 || !isBuilderRunning()) {
             return;
@@ -3660,7 +4810,929 @@ setPoweredSeatPinFromRelativePoint(hitPos.x, hitPos.y, hitPos.z, player, "CLICK"
                         "[TC CAL] Applied config defaults to " + variantId()),
                 false);
     }
-    @Override
+        // ======================================================================
+    // DEV36 r1k29e -- classic Builder excavation
+    // ======================================================================
+
+    // ======================================================================
+    // DEV36 r1k29r -- MANUAL TUNNEL
+    //
+    // Straight-ahead tunnel borer:
+    //   accepted r1k29g front cutter / rotor
+    //   -> accepted BuilderInfrastructureSystem.prepare(...)
+    //      using the GUI's L3/L2/L1/C/R1/R2/R3 + walls + roof filters
+    //   -> one Normal Track
+    //   -> autonomous forward crawl continues
+    //
+    // Empty optional roadbed/wall/roof filters remain empty/unused exactly as
+    // they do in Blueprint mode. FOUNDATION_CENTER is still required because
+    // it is the accepted infrastructure enable/safety anchor.
+    //
+    // Blueprint route/anchor/rotation/progress are intentionally untouched.
+    // ======================================================================
+
+    private void tcDev36ManualTunnelStep() {
+        if (!isBuilderManualTunnelMode()
+                || !isBuilderRunning()
+                || !hasTractionPower()
+                || !(level()
+                        instanceof ServerLevel server)) {
+            return;
+        }
+
+        tcDev36ManualTunnelWarningLatched =
+                false;
+
+        // TC_DEV36_R1K29R_MANUAL_CUT_BEFORE_BUILD
+        // Deterministic work order: cutter/collection always happens before
+        // roadbed/wall/roof/track placement, regardless of tick ordering.
+        if (!tcDev36ExcavateAhead()) {
+            return;
+        }
+
+        BlockPos railPos =
+                builderForwardBlueprintAnchor();
+
+        BlockState railState =
+                server.getBlockState(
+                        railPos);
+
+        if (tcDev36ManualIsTrack(
+                railState)) {
+            tcDev36SetBuilderWorkStatus(
+                    "MANUAL TUNNEL");
+            return;
+        }
+
+        if (railState.is(net.minecraft.world.level.block.Blocks.BEDROCK)
+                || railState.is(net.minecraft.world.level.block.Blocks.OBSIDIAN)) {
+            tcDev36ManualTunnelStop(server, "TRACK BUILDER PROTECTED BLOCK",
+                    "BEDROCK/OBSIDIAN", "MANUAL BLOCKED");
+            return;
+        }
+
+        if (!railState.isAir()
+                && !railState.canBeReplaced()) {
+            tcDev36ManualTunnelStop(
+                    server,
+                    "TRACK BUILDER BLOCKED",
+                    "CLEAR BLOCK AHEAD",
+                    "MANUAL BLOCKED");
+            return;
+        }
+
+        ItemStack centerTemplate =
+                builderStructurePatterns
+                        .getStackInSlot(
+                                traincraft.builder.BuilderInfrastructureSystem
+                                        .FOUNDATION_CENTER);
+
+        if (!(centerTemplate.getItem()
+                instanceof net.minecraft.world.item.BlockItem)) {
+            tcDev36ManualTunnelStop(
+                    server,
+                    "TRACK BUILDER NEEDS MATERIAL",
+                    "SET CENTER SUPPORT",
+                    "NEED FOUNDATION CENTER");
+            return;
+        }
+
+        net.minecraft.world.item.Item normalTrackItem =
+                traincraft.registry.TCBlocks.TRACK_NORMAL
+                        .get()
+                        .asItem();
+
+        int trackSlot =
+                tcDev36ManualFindMaterial(
+                        normalTrackItem);
+
+        if (trackSlot < 0) {
+            tcDev36ManualTunnelStop(
+                    server,
+                    "TRACK BUILDER NEEDS MATERIAL",
+                    "ADD NORMAL TRACK",
+                    "NEED NORMAL TRACK");
+            return;
+        }
+
+        ItemStack railStack =
+                powerInventory
+                        .getStackInSlot(
+                                trackSlot);
+
+        ItemStack plannedTrackStack =
+                railStack.copy();
+
+        plannedTrackStack.setCount(
+                1);
+
+        traincraft.item.TrackBlueprintItem
+                .applyUnifiedDirection(
+                        plannedTrackStack,
+                        false);
+
+        // TC_DEV36_R1K29R_MANUAL_FULL_INFRASTRUCTURE
+        // Reuse the exact accepted Blueprint roadbed/tunnel authority. This is
+        // what makes the existing GUI filters work in MANUAL TUNNEL too.
+        String infrastructureProblem =
+                traincraft.builder.BuilderInfrastructureSystem
+                        .prepare(
+                                server,
+                                this,
+                                plannedTrackStack,
+                                railPos,
+                                getTrainFacingYaw());
+
+        if (!infrastructureProblem.isEmpty()) {
+            tcDev36ManualInfrastructureStop(
+                    server,
+                    infrastructureProblem);
+            return;
+        }
+
+        boolean railPlaced =
+                tryLayBuilderBlueprintTrackItem(
+                        server,
+                        railPos,
+                        railStack,
+                        getTrainFacingYaw(),
+                        false);
+
+        if (!railPlaced) {
+            tcDev36ManualTunnelStop(
+                    server,
+                    "TRACK BUILDER BLOCKED",
+                    "NORMAL TRACK FAILED",
+                    "MANUAL TRACK FAILED");
+            return;
+        }
+
+        consumeOne(
+                trackSlot);
+
+        tcDev36SetBuilderWorkStatus(
+                "MANUAL TUNNEL");
+
+        server.sendParticles(
+                net.minecraft.core.particles.ParticleTypes.HAPPY_VILLAGER,
+                railPos.getX() + 0.5D,
+                railPos.getY() + 0.3D,
+                railPos.getZ() + 0.5D,
+                3,
+                0.12D,
+                0.05D,
+                0.12D,
+                0.0D);
+
+        traincraft.Traincraft.LOGGER.info(
+                "[TC-DEV36-R1K29R][MANUAL] event=PLACE entity={} tick={} rail={} infraMode={} trackSlot={} blueprintProgress={}",
+                getId(),
+                tickCount,
+                railPos,
+                traincraft.builder.BuilderInfrastructureSystem.modeName(this),
+                trackSlot,
+                builderBlueprintProgress);
+    }
+
+    private void tcDev36ManualInfrastructureStop(
+            ServerLevel server,
+            String problem) {
+
+        String upper =
+                problem == null
+                        ? ""
+                        : problem.toUpperCase(
+                                java.util.Locale.ROOT);
+
+        if (upper.contains(
+                "INVENTORY FULL")) {
+            tcDev36ManualTunnelStop(
+                    server,
+                    "TRACK BUILDER INVENTORY FULL",
+                    "CLEAR INVENTORY TO CONTINUE",
+                    "INVENTORY FULL");
+            return;
+        }
+
+        if (upper.contains(
+                "FOUNDATION CENTER")) {
+            tcDev36ManualTunnelStop(
+                    server,
+                    "TRACK BUILDER NEEDS MATERIAL",
+                    "SET CENTER SUPPORT",
+                    problem);
+            return;
+        }
+
+        if (upper.startsWith(
+                        "NEED ")
+                || upper.contains(
+                        "NEED MATERIAL")) {
+            tcDev36ManualTunnelStop(
+                    server,
+                    "TRACK BUILDER NEEDS MATERIAL",
+                    "CHECK ROADBED / TUNNEL MATERIALS",
+                    problem);
+            return;
+        }
+
+        if (upper.startsWith(
+                        "BLOCKED")
+                || upper.contains(
+                        "BLOCKED")) {
+            tcDev36ManualTunnelStop(
+                    server,
+                    "TRACK BUILDER BLOCKED",
+                    "CLEAR TUNNEL PATH",
+                    problem);
+            return;
+        }
+
+        tcDev36ManualTunnelStop(
+                server,
+                "TRACK BUILDER STOPPED",
+                "CHECK ROADBED / TUNNEL SETUP",
+                problem);
+    }
+
+    private boolean tcDev36ManualIsTrack(
+            BlockState state) {
+
+        if (state.is(
+                net.minecraft.tags.BlockTags.RAILS)) {
+            return true;
+        }
+
+        net.minecraft.resources.ResourceLocation key =
+                net.minecraftforge.registries.ForgeRegistries.BLOCKS
+                        .getKey(
+                                state.getBlock());
+
+        return key != null
+                && "traincraft".equals(
+                        key.getNamespace())
+                && key.getPath()
+                        .startsWith(
+                                "track_");
+    }
+
+    private int tcDev36ManualFindMaterial(
+            net.minecraft.world.item.Item wanted) {
+
+        if (wanted == null
+                || wanted == net.minecraft.world.item.Items.AIR) {
+            return -1;
+        }
+
+        for (int slot = 1;
+             slot < powerInventory.getSlots();
+             slot++) {
+
+            // Dedicated Blueprint slot is never manual-tunnel material.
+            if (slot == 52) {
+                continue;
+            }
+
+            ItemStack stack =
+                    powerInventory
+                            .getStackInSlot(
+                                    slot);
+
+            if (!stack.isEmpty()
+                    && stack.getItem()
+                            == wanted) {
+                return slot;
+            }
+        }
+
+        return -1;
+    }
+
+    private void tcDev36ManualTunnelStop(
+            ServerLevel server,
+            String titleText,
+            String subtitleText,
+            String status) {
+
+        tcDev36SetBuilderWorkStatus(
+                status);
+
+        setBuilderRunning(false);
+
+        net.minecraft.world.phys.Vec3 motion =
+                getDeltaMovement();
+
+        setDeltaMovement(
+                0.0D,
+                motion.y,
+                0.0D);
+
+        traincraft.Traincraft.LOGGER.info(
+                "[TC-DEV36-R1K29R][MANUAL] event=STOP entity={} tick={} title={} subtitle={} status={} blueprintProgress={}",
+                getId(),
+                tickCount,
+                titleText,
+                subtitleText,
+                status,
+                builderBlueprintProgress);
+
+        if (tcDev36ManualTunnelWarningLatched) {
+            return;
+        }
+
+        tcDev36ManualTunnelWarningLatched =
+                true;
+
+        net.minecraft.network.chat.Component title =
+                net.minecraft.network.chat.Component
+                        .literal(
+                                titleText)
+                        .withStyle(
+                                net.minecraft.ChatFormatting.RED,
+                                net.minecraft.ChatFormatting.BOLD);
+
+        net.minecraft.network.chat.Component subtitle =
+                net.minecraft.network.chat.Component
+                        .literal(
+                                subtitleText)
+                        .withStyle(
+                                net.minecraft.ChatFormatting.GOLD);
+
+        for (net.minecraft.server.level.ServerPlayer player
+                : server.players()) {
+
+            if (player.distanceToSqr(this)
+                    > 4096.0D) {
+                continue;
+            }
+
+            player.connection.send(
+                    new net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket(
+                            5,
+                            50,
+                            10));
+
+            player.connection.send(
+                    new net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket(
+                            title));
+
+            player.connection.send(
+                    new net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket(
+                            subtitle));
+        }
+    }
+    private void tcDev36SyncBuilderDrillState() {
+        if (!isBuilder() || level().isClientSide) {
+            return;
+        }
+
+        boolean active =
+                isBuilderRunning() && hasTractionPower();
+
+        boolean before =
+                this.entityData.get(
+                        DATA_BUILDER_DRILL_ACTIVE);
+
+        if (before != active) {
+            this.entityData.set(
+                    DATA_BUILDER_DRILL_ACTIVE,
+                    active);
+
+            traincraft.Traincraft.LOGGER.info(
+                    "[TC-DEV36-R1K29E][DIG] event=DRILL_SYNC entity={} tick={} active={} traction={} coalTicks={} dieselPower={} speed={}",
+                    getId(),
+                    tickCount,
+                    active,
+                    hasTractionPower(),
+                    getBuilderCoalBurnTicks(),
+                    powerAmount,
+                    getDeltaMovement().horizontalDistance());
+        }
+    }
+
+    /**
+     * Clears the classic Builder cutter face immediately ahead of the machine.
+     *
+     * The old Traincraft Builder dug a three-wide / three-high face. This port
+     * keeps that classic envelope but performs a modern atomic loot preflight:
+     * every drop from the whole face must fit in Blueprint Materials storage
+     * before any block is changed.
+     */
+    private boolean tcDev36ExcavateAhead() {
+        if (!isBuilder()
+                || !isBuilderRunning()
+                || !hasTractionPower()) {
+            return true;
+        }
+
+        if (!(level() instanceof ServerLevel server)) {
+            return true;
+        }
+
+        // TC_DEV36_R1K29G_COAL_TRACTION_DIG_RUNTIME
+        if (tickCount % 20 == 0) {
+            traincraft.Traincraft.LOGGER.info(
+                    "[TC-DEV36-R1K29G][DIG] event=ACTIVE entity={} tick={} running={} traction={} coalTicks={} dieselPower={} pos=({},{},{})",
+                    getId(),
+                    tickCount,
+                    isBuilderRunning(),
+                    hasTractionPower(),
+                    getBuilderCoalBurnTicks(),
+                    powerAmount,
+                    String.format(java.util.Locale.ROOT, "%.3f", getX()),
+                    String.format(java.util.Locale.ROOT, "%.3f", getY()),
+                    String.format(java.util.Locale.ROOT, "%.3f", getZ()));
+        }
+
+        net.minecraft.world.phys.Vec3 motion =
+                getDeltaMovement();
+
+        double fx = motion.x;
+        double fz = motion.z;
+        double horizontal =
+                Math.sqrt(fx * fx + fz * fz);
+
+        if (horizontal > 0.005D) {
+            fx /= horizontal;
+            fz /= horizontal;
+        } else {
+            double yaw =
+                    Math.toRadians(
+                            getTrainFacingYaw());
+            fx = Math.sin(yaw);
+            fz = -Math.cos(yaw);
+        }
+
+        // Perpendicular vector for the three-wide cutter.
+        double lx = -fz;
+        double lz = fx;
+
+        int baseY =
+                net.minecraft.util.Mth.floor(
+                        getY());
+
+        java.util.LinkedHashSet<BlockPos> cells =
+                new java.util.LinkedHashSet<>();
+
+        // Two cells deep keeps the cutter ahead of the moving entity while
+        // remaining tightly scoped to the classic 3x3 tunnel envelope.
+        for (int depth = 0;
+             depth < 2;
+             depth++) {
+
+            double distance =
+                    1.35D + depth;
+
+            double centerX =
+                    getX() + fx * distance;
+            double centerZ =
+                    getZ() + fz * distance;
+
+            for (int lateral = -1;
+                 lateral <= 1;
+                 lateral++) {
+
+                double sampleX =
+                        centerX
+                                + lx * lateral;
+                double sampleZ =
+                        centerZ
+                                + lz * lateral;
+
+                for (int up = 0;
+                     up <= 2;
+                     up++) {
+
+                    cells.add(
+                            BlockPos.containing(
+                                    sampleX,
+                                    baseY + up,
+                                    sampleZ));
+                }
+            }
+        }
+
+        java.util.LinkedHashMap<
+                BlockPos,
+                java.util.List<ItemStack>> work =
+                new java.util.LinkedHashMap<>();
+
+        net.minecraft.world.item.ItemStack cutter =
+                new net.minecraft.world.item.ItemStack(
+                        net.minecraft.world.item.Items.IRON_PICKAXE);
+
+        for (BlockPos pos : cells) {
+            BlockState state =
+                    server.getBlockState(pos);
+
+            if (state.isAir()) {
+                continue;
+            }
+
+            // DEV45: hard-stop the entire cutter face before any removal.
+            // Obsidian is normally mineable but must never be excavated.
+            if (state.is(net.minecraft.world.level.block.Blocks.BEDROCK)
+                    || state.is(net.minecraft.world.level.block.Blocks.OBSIDIAN)) {
+                tcDev36StopForDigBlock(server, pos, state, "PROTECTED_BEDROCK_OBSIDIAN");
+                return false;
+            }
+
+            // Match classic safety: do not vacuum liquids.
+            if (!state.getFluidState().isEmpty()) {
+                continue;
+            }
+
+            if (state.is(
+                    net.minecraft.tags.BlockTags.RAILS)) {
+                continue;
+            }
+
+            net.minecraft.resources.ResourceLocation key =
+                    net.minecraftforge.registries.ForgeRegistries.BLOCKS.getKey(
+                            state.getBlock());
+
+            if (key != null
+                    && "traincraft".equals(
+                            key.getNamespace())
+                    && key.getPath().startsWith(
+                            "track_")) {
+                continue;
+            }
+
+            // Containers/machines are not terrain and may hold inventory.
+            if (server.getBlockEntity(pos) != null) {
+                tcDev36StopForDigBlock(
+                        server,
+                        pos,
+                        state,
+                        "BLOCK_ENTITY");
+                return false;
+            }
+
+            if (state.getDestroySpeed(
+                            server,
+                            pos)
+                    < 0.0F) {
+                tcDev36StopForDigBlock(
+                        server,
+                        pos,
+                        state,
+                        "UNBREAKABLE");
+                return false;
+            }
+
+            java.util.List<ItemStack> drops =
+                    net.minecraft.world.level.block.Block.getDrops(
+                            state,
+                            server,
+                            pos,
+                            null,
+                            this,
+                            cutter);
+
+            java.util.ArrayList<ItemStack> copied =
+                    new java.util.ArrayList<>();
+
+            for (ItemStack drop : drops) {
+                if (!drop.isEmpty()) {
+                    copied.add(
+                            drop.copy());
+                }
+            }
+
+            work.put(pos, copied);
+        }
+
+        if (work.isEmpty()) {
+            tcDev36ExcavationInventoryFullLatched =
+                    false;
+            return true;
+        }
+
+        // Simulate ALL drops against a complete copy of the actual handler.
+        // The simulation copy may mutate freely; world + real inventory remain
+        // untouched until the entire cutter face is known to fit.
+        ItemStackHandler simulated =
+                new ItemStackHandler(
+                        powerInventory.getSlots());
+
+        for (int slot = 0;
+             slot < powerInventory.getSlots();
+             slot++) {
+            simulated.setStackInSlot(
+                    slot,
+                    powerInventory
+                            .getStackInSlot(slot)
+                            .copy());
+        }
+
+        int totalDropStacks = 0;
+        int totalDropItems = 0;
+
+        for (java.util.List<ItemStack> drops
+                : work.values()) {
+
+            for (ItemStack drop : drops) {
+                totalDropStacks++;
+                totalDropItems +=
+                        drop.getCount();
+
+                ItemStack remainder =
+                        tcDev36InsertExcavated(
+                                simulated,
+                                drop.copy());
+
+                if (!remainder.isEmpty()) {
+                    tcDev36StopInventoryFull(
+                            server,
+                            work.size(),
+                            totalDropItems,
+                            remainder);
+
+                    return false;
+                }
+            }
+        }
+
+        tcDev36ExcavationInventoryFullLatched =
+                false;
+
+        traincraft.Traincraft.LOGGER.info(
+                "[TC-DEV36-R1K29E][DIG] event=SCAN_OK entity={} tick={} cells={} terrainBlocks={} dropStacks={} dropItems={} pos=({},{},{})",
+                getId(),
+                tickCount,
+                cells.size(),
+                work.size(),
+                totalDropStacks,
+                totalDropItems,
+                String.format(
+                        java.util.Locale.ROOT,
+                        "%.3f",
+                        getX()),
+                String.format(
+                        java.util.Locale.ROOT,
+                        "%.3f",
+                        getY()),
+                String.format(
+                        java.util.Locale.ROOT,
+                        "%.3f",
+                        getZ()));
+
+        // Commit only after the full-face storage simulation has succeeded.
+        for (java.util.Map.Entry<
+                BlockPos,
+                java.util.List<ItemStack>> entry
+                : work.entrySet()) {
+
+            BlockPos pos =
+                    entry.getKey();
+
+            BlockState before =
+                    server.getBlockState(pos);
+
+            if (before.isAir()) {
+                continue;
+            }
+
+            boolean removed =
+                    server.setBlock(
+                            pos,
+                            net.minecraft.world.level.block.Blocks.AIR
+                                    .defaultBlockState(),
+                            3);
+
+            if (!removed) {
+                tcDev36StopForDigBlock(
+                        server,
+                        pos,
+                        before,
+                        "SET_BLOCK_FAILED");
+                return false;
+            }
+
+            server.levelEvent(
+                    2001,
+                    pos,
+                    net.minecraft.world.level.block.Block.getId(
+                            before));
+
+            for (ItemStack drop : entry.getValue()) {
+                ItemStack remainder =
+                        tcDev36InsertExcavated(
+                                powerInventory,
+                                drop.copy());
+
+                if (!remainder.isEmpty()) {
+                    // This is deliberately a hard invariant. The exact same
+                    // deterministic insertion order just passed on the copy.
+                    traincraft.Traincraft.LOGGER.error(
+                            "[TC-DEV36-R1K29E][DIG] event=ATOMIC_INSERT_INVARIANT_FAILED entity={} tick={} pos={} remainder={}",
+                            getId(),
+                            tickCount,
+                            pos,
+                            remainder);
+
+                    tcDev36SetBuilderWorkStatus(
+                            "DIG STORAGE ERROR");
+
+                    setBuilderRunning(false);
+                    return false;
+                }
+            }
+
+            net.minecraft.resources.ResourceLocation blockKey =
+                    net.minecraftforge.registries.ForgeRegistries.BLOCKS.getKey(
+                            before.getBlock());
+
+            traincraft.Traincraft.LOGGER.info(
+                    "[TC-DEV36-R1K29E][DIG] event=EXCAVATE entity={} tick={} pos={} block={} drops={}",
+                    getId(),
+                    tickCount,
+                    pos,
+                    blockKey,
+                    entry.getValue());
+        }
+
+        return true;
+    }
+
+    /**
+     * Mining output is intentionally restricted to the accepted r1k14+
+     * Blueprint Materials rack: slots 20..51 and 54..77.
+     * Fuel slot 0, Blueprint slot 52, and Supplies slots 1..19 + 53
+     * are never touched by excavation.
+     */
+    private ItemStack tcDev36InsertExcavated(
+            ItemStackHandler handler,
+            ItemStack incoming) {
+
+        ItemStack remainder =
+                incoming;
+
+        for (int slot = 20;
+             slot <= 51
+                     && slot < handler.getSlots();
+             slot++) {
+
+            if (remainder.isEmpty()) {
+                return ItemStack.EMPTY;
+            }
+
+            remainder =
+                    handler.insertItem(
+                            slot,
+                            remainder,
+                            false);
+        }
+
+        for (int slot = 54;
+             slot <= 77
+                     && slot < handler.getSlots();
+             slot++) {
+
+            if (remainder.isEmpty()) {
+                return ItemStack.EMPTY;
+            }
+
+            remainder =
+                    handler.insertItem(
+                            slot,
+                            remainder,
+                            false);
+        }
+
+        return remainder;
+    }
+
+    private void tcDev36StopInventoryFull(
+            ServerLevel server,
+            int terrainBlocks,
+            int simulatedDropItems,
+            ItemStack remainder) {
+
+        tcDev36SetBuilderWorkStatus(
+                "INVENTORY FULL");
+
+        setBuilderRunning(false);
+
+        net.minecraft.world.phys.Vec3 motion =
+                getDeltaMovement();
+
+        setDeltaMovement(
+                0.0D,
+                motion.y,
+                0.0D);
+
+        traincraft.Traincraft.LOGGER.info(
+                "[TC-DEV36-R1K29E][DIG] event=INVENTORY_FULL entity={} tick={} terrainBlocks={} simulatedDropItems={} remainder={} trackProgress={}",
+                getId(),
+                tickCount,
+                terrainBlocks,
+                simulatedDropItems,
+                remainder,
+                builderBlueprintProgress);
+
+        if (tcDev36ExcavationInventoryFullLatched) {
+            return;
+        }
+
+        tcDev36ExcavationInventoryFullLatched =
+                true;
+
+        net.minecraft.network.chat.Component title =
+                net.minecraft.network.chat.Component
+                        .literal(
+                                "TRACK BUILDER INVENTORY FULL")
+                        .withStyle(
+                                net.minecraft.ChatFormatting.RED,
+                                net.minecraft.ChatFormatting.BOLD);
+
+        net.minecraft.network.chat.Component subtitle =
+                net.minecraft.network.chat.Component
+                        .literal(
+                                "CLEAR INVENTORY TO CONTINUE")
+                        .withStyle(
+                                net.minecraft.ChatFormatting.GOLD);
+
+        for (net.minecraft.server.level.ServerPlayer player
+                : server.players()) {
+
+            if (player.distanceToSqr(this)
+                    > 4096.0D) {
+                continue;
+            }
+
+            player.connection.send(
+                    new net.minecraft.network.protocol.game.ClientboundSetTitlesAnimationPacket(
+                            5,
+                            50,
+                            10));
+
+            player.connection.send(
+                    new net.minecraft.network.protocol.game.ClientboundSetTitleTextPacket(
+                            title));
+
+            player.connection.send(
+                    new net.minecraft.network.protocol.game.ClientboundSetSubtitleTextPacket(
+                            subtitle));
+        }
+    }
+
+    private void tcDev36StopForDigBlock(
+            ServerLevel server,
+            BlockPos pos,
+            BlockState state,
+            String reason) {
+
+        tcDev36SetBuilderWorkStatus(
+                "DIG BLOCKED "
+                        + pos.getX()
+                        + " "
+                        + pos.getY()
+                        + " "
+                        + pos.getZ());
+
+        setBuilderRunning(false);
+
+        net.minecraft.world.phys.Vec3 motion =
+                getDeltaMovement();
+
+        setDeltaMovement(
+                0.0D,
+                motion.y,
+                0.0D);
+
+        net.minecraft.resources.ResourceLocation key =
+                net.minecraftforge.registries.ForgeRegistries.BLOCKS.getKey(
+                        state.getBlock());
+
+        traincraft.Traincraft.LOGGER.info(
+                "[TC-DEV36-R1K29E][DIG] event=BLOCKED entity={} tick={} reason={} pos={} block={}",
+                getId(),
+                tickCount,
+                reason,
+                pos,
+                key);
+    }
+
+    private void tcDev36SetBuilderWorkStatus(
+            String status) {
+
+        ItemStack blueprint =
+                powerInventory.getStackInSlot(52);
+
+        int total =
+                blueprint.getItem()
+                                instanceof traincraft.item.TrackBlueprintItem
+                        ? traincraft.item.TrackBlueprintItem.segmentCount(
+                                blueprint)
+                        : 0;
+
+        syncBuilderBlueprint(
+                total,
+                status);
+    }
+@Override
     protected double getRealismBaseAccelerationMps2() {
         return switch (variantId()) {
             case "locomotive_diesel_kof" -> 0.66D;
@@ -3741,10 +5813,14 @@ setPoweredSeatPinFromRelativePoint(hitPos.x, hitPos.y, hitPos.z, player, "CLICK"
     @Override
     protected void addAdditionalSaveData(CompoundTag tag) {
         super.addAdditionalSaveData(tag);
-        tag.putInt("LegacyPower",powerAmount);
+        tag.putInt("LegacyPower", powerAmount);
+        tag.putBoolean(
+                "BuilderManualTunnel",
+                isBuilderManualTunnelMode());
         tag.putBoolean("BuilderFuelSplitV2", true);
         tag.putInt("BuilderCoalBurn", builderCoalBurnTicks);
         tag.put("LegacyPowerInventory",powerInventory.serializeNBT());
+        if (isBuilder()) tag.put("BuilderStructurePatterns", builderStructurePatterns.serializeNBT());
         tag.putInt("BuilderBlueprintProgress", builderBlueprintProgress);
         tag.putInt("BuilderBlueprintRotation", builderBlueprintRotationQuarter);
         tag.putString("BuilderBlueprintId", builderBlueprintId);
@@ -3798,7 +5874,22 @@ setPoweredSeatPinFromRelativePoint(hitPos.x, hitPos.y, hitPos.z, player, "CLICK"
         entityData.set(DATA_BLUEPRINT_PROGRESS, builderBlueprintProgress);
         entityData.set(DATA_BLUEPRINT_TOTAL, 0);
         entityData.set(DATA_BLUEPRINT_NEED, builderBlueprintNeed);
-        entityData.set(DATA_POWER,powerAmount);
+                // TC_DEV36_R1K12_COAL_ONLY_BUILDER
+        if (isBuilder()) {
+            powerAmount = 0;
+        }
+entityData.set(DATA_POWER, powerAmount);
+        entityData.set(
+                DATA_BUILDER_MANUAL_TUNNEL,
+                isBuilder()
+                        && tag.getBoolean(
+                                "BuilderManualTunnel"));
         entityData.set(DATA_BUILDER_COAL_BURN, builderCoalBurnTicks);
-    }
+    
+        // TC_DEV34_R1C1D_STRUCTURE_PATTERN_LOAD
+        if (isBuilder() && tag.contains("BuilderStructurePatterns")) {
+            builderStructurePatterns.deserializeNBT(
+                    tag.getCompound("BuilderStructurePatterns"));
+        }
+}
 }

@@ -10,6 +10,7 @@ import net.minecraft.client.model.geom.ModelLayerLocation;
 import net.minecraft.client.model.geom.ModelPart;
 import net.minecraft.client.model.geom.PartPose;
 import net.minecraft.client.model.geom.builders.CubeListBuilder;
+import net.minecraft.client.model.geom.builders.CubeDeformation;
 import net.minecraft.client.model.geom.builders.LayerDefinition;
 import net.minecraft.client.model.geom.builders.MeshDefinition;
 import net.minecraft.client.model.geom.builders.PartDefinition;
@@ -590,6 +591,28 @@ public final class ForneySteamLocomotiveModel {
                 CubeListBuilder.create().texOffs(89, 178)
                         .addBox(0.0F, 0.0F, 0.0F, 18.0F, 2.0F, 35.0F),
                 PartPose.offset(-9.0F, 11.0F, -1.0F));
+        // TC_DEV38_R1G1Z5C_FORNEY_REAR_WHEEL_FACE_SPLIT
+        // Original outer rear side panels are part_055 / part_072:
+        //   1x6x14, TEX 41,143, Z 15..29.
+        // Their 14x6 outer side UV contains two 6x6 wheel regions with
+        // the original 2-pixel spacing.  These thin faces sit just outside
+        // the authored panel and reuse those exact wheel pixels.
+        root.addOrReplaceChild("tc_forney_rear_left_0",
+                CubeListBuilder.create().texOffs(41,151)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-7.02F,0.0F,15.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_forney_rear_left_1",
+                CubeListBuilder.create().texOffs(49,151)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-7.02F,0.0F,23.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_forney_rear_right_0",
+                CubeListBuilder.create().texOffs(50,151)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(7.0F,0.0F,15.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_forney_rear_right_1",
+                CubeListBuilder.create().texOffs(58,151)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(7.0F,0.0F,23.0F,0.0F,0.0F,0.0F));
 
         return LayerDefinition.create(mesh, 256, 256);
     }

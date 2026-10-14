@@ -65,7 +65,7 @@ public final class TrackOneCoreAuditCommand {
     private record SpecField(String fieldName, LegacyBatchTrackSpec spec) {
     }
 
-    @SubscribeEvent
+    // TC_DEV38_R1D_COMMAND_DISABLED_RELEASE
     public static void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("tc_one_core_audit")

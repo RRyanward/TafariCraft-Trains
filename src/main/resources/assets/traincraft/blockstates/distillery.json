@@ -1,7 +1,8 @@
 {
-  "variants": {
-    "": {
-      "model": "traincraft:block/distillery"
-    }
+  "variants":{
+    "facing=north":{"model":"traincraft:block/distillery_classic"},
+    "facing=east":{"model":"traincraft:block/distillery_classic","y":90},
+    "facing=south":{"model":"traincraft:block/distillery_classic","y":180},
+    "facing=west":{"model":"traincraft:block/distillery_classic","y":270}
   }
 }

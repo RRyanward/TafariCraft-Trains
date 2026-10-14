@@ -1,0 +1,21 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "category":  "misc",
+    "pattern":  [
+                    "W W",
+                    " I ",
+                    "W W"
+                ],
+    "key":  {
+                "I":  {
+                          "item":  "minecraft:iron_ingot"
+                      },
+                "W":  {
+                          "item":  "minecraft:white_wool"
+                      }
+            },
+    "result":  {
+                   "item":  "traincraft:crossing_gate_crossbuck",
+                   "count":  1
+               }
+}

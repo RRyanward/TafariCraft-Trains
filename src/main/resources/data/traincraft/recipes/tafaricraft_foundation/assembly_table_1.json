@@ -1,22 +1,24 @@
 {
-  "type": "minecraft:crafting_shaped",
-  "pattern": [
-    "IPI",
-    "S S",
-    "SPS"
-  ],
-  "key": {
-    "I": {
-      "item": "minecraft:iron_ingot"
-    },
-    "P": {
-      "item": "minecraft:piston"
-    },
-    "S": {
-      "item": "minecraft:stone"
-    }
-  },
-  "result": {
-    "item": "traincraft:assembly_table_1"
-  }
+    "type":  "minecraft:crafting_shaped",
+    "category":  "misc",
+    "pattern":  [
+                    "IPI",
+                    "S S",
+                    "SPS"
+                ],
+    "key":  {
+                "I":  {
+                          "item":  "minecraft:iron_ingot"
+                      },
+                "P":  {
+                          "item":  "minecraft:piston"
+                      },
+                "S":  {
+                          "item":  "minecraft:stone"
+                      }
+            },
+    "result":  {
+                   "item":  "traincraft:assembly_table_1",
+                   "count":  1
+               }
 }

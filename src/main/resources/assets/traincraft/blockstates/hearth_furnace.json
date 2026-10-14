@@ -1,7 +1,8 @@
 {
-  "variants": {
-    "": {
-      "model": "traincraft:block/hearth_furnace"
-    }
+  "variants":{
+    "facing=north":{"model":"traincraft:block/hearth_furnace_classic"},
+    "facing=east":{"model":"traincraft:block/hearth_furnace_classic","y":90},
+    "facing=south":{"model":"traincraft:block/hearth_furnace_classic","y":180},
+    "facing=west":{"model":"traincraft:block/hearth_furnace_classic","y":270}
   }
 }

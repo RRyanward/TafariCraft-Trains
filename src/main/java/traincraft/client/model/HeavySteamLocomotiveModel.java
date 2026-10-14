@@ -98,10 +98,19 @@ public final class HeavySteamLocomotiveModel {
                         .addBox(0.0F, 0.0F, 0.0F, 1.0F, 4.0F, 20.0F),
                 PartPose.offset(-57.0F, 6.0F, -10.0F));
 
-        root.addOrReplaceChild("part_014",
+        PartDefinition tcPosDriveWheel = root.addOrReplaceChild("part_014",
                 CubeListBuilder.create().texOffs(106, 82)
                         .addBox(0.0F, 0.0F, 0.0F, 11.0F, 11.0F, 1.0F),
                 PartPose.offset(-22.0F, -1.0F, 6.0F));
+        // DEV38 y18g: the recovered CE 7.1 Heavy Steam wheel has no authored
+        // crankpin mesh.  This child is centered on the runtime-proven rod
+        // endpoint and inherits the wheel's native Z rotation automatically.
+        // It bridges wheel outer face z=7 through rod z=8..9 and adds a small
+        // outside cap, without changing the accepted wheel or rod animation.
+        tcPosDriveWheel.addOrReplaceChild("tc_crankpin",
+                CubeListBuilder.create().texOffs(94, 109)
+                        .addBox(-0.75F, -0.75F, 1.0F, 1.5F, 1.5F, 2.25F),
+                PartPose.offset(3.978851F, 5.8943834F, 0.0F));
 
         root.addOrReplaceChild("part_015",
                 CubeListBuilder.create().texOffs(58, 212)
@@ -203,10 +212,15 @@ public final class HeavySteamLocomotiveModel {
                         .addBox(0.0F, 0.0F, 0.0F, 16.0F, 9.0F, 1.0F),
                 PartPose.offset(-59.0F, 15.0F, 9.0F));
 
-        root.addOrReplaceChild("part_034",
+        PartDefinition tcNegDriveWheel = root.addOrReplaceChild("part_034",
                 CubeListBuilder.create().texOffs(106, 82)
                         .addBox(0.0F, 0.0F, 0.0F, 11.0F, 11.0F, 1.0F),
                 PartPose.offset(-22.0F, -1.0F, -7.0F));
+        // Mirrored outside bridge: wheel outer face z=-7 through rod z=-8..-9.
+        tcNegDriveWheel.addOrReplaceChild("tc_crankpin",
+                CubeListBuilder.create().texOffs(94, 109)
+                        .addBox(-0.75F, -0.75F, -2.25F, 1.5F, 1.5F, 2.25F),
+                PartPose.offset(3.978851F, 5.8943834F, 0.0F));
 
         root.addOrReplaceChild("part_035",
                 CubeListBuilder.create().texOffs(77, 125)

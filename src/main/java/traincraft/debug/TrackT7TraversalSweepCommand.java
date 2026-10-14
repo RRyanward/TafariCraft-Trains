@@ -187,7 +187,7 @@ public final class TrackT7TraversalSweepCommand {
     private TrackT7TraversalSweepCommand() {
     }
 
-    @SubscribeEvent
+    // TC_DEV38_R1D_COMMAND_DISABLED_RELEASE
     public static void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("tc_t7_traversal_sweep")

@@ -3,6 +3,7 @@ package traincraft.config;
 import net.minecraftforge.fml.loading.FMLPaths;
 
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
@@ -311,6 +312,20 @@ public final class RollingStockCalibrationConfig {
 
         Path path = path();
         if (!Files.isRegularFile(path)) {
+            // TC_DEV38_R1D_RELEASE_FACTORY_DEFAULTS
+            // Fresh installs receive the exact runtime-accepted BODY + SEATS
+            // baseline. Existing config files are never replaced here.
+            if (installBundledReleaseDefaults(path)) {
+                loaded = false;
+                ENTRIES.clear();
+                ensureLoaded();
+                LOG.info("[TC-CAL-CONFIG] installed release factory defaults at {}",
+                        path.toAbsolutePath());
+                return;
+            }
+
+            // Safety fallback only if the packaged resource is unexpectedly
+            // unavailable.
             seedApprovedDefaults();
             writeFile();
             LOG.info("[TC-CAL-CONFIG] created {}", path.toAbsolutePath());
@@ -379,6 +394,31 @@ public final class RollingStockCalibrationConfig {
                 ENTRIES.size(), path.toAbsolutePath());
     }
 
+    private static boolean installBundledReleaseDefaults(Path path) {
+        final String resource =
+                "/data/traincraft/calibration/default_rolling_stock_calibration.toml";
+
+        try (InputStream input =
+                     RollingStockCalibrationConfig.class.getResourceAsStream(resource)) {
+
+            if (input == null) {
+                LOG.error("[TC-CAL-CONFIG] missing bundled release defaults {}", resource);
+                return false;
+            }
+
+            Path parent = path.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
+
+            Files.copy(input, path, StandardCopyOption.REPLACE_EXISTING);
+            return true;
+        } catch (IOException ex) {
+            LOG.error("[TC-CAL-CONFIG] failed installing bundled release defaults to {}",
+                    path.toAbsolutePath(), ex);
+            return false;
+        }
+    }
     private static void seedApprovedDefaults() {
         putSeat1Only("locomotive_diesel_cd742",
                 0.4900D, -1.3491D, 0.0115D, true);

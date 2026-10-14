@@ -42,7 +42,52 @@ public class ConnectorItem extends Item {
         return super.use(level, player, hand);
     }
 
+        // TC_COUPLER_INTERACTION_SOUND_R1
     public static InteractionResult handleRollingStockClick(Entity clicked, Player player, InteractionHand hand) {
+        int before = tcCoupledNeighborCount(clicked);
+        InteractionResult result = handleRollingStockClickInternal(clicked, player, hand);
+
+        if (!clicked.level().isClientSide) {
+            int after = tcCoupledNeighborCount(clicked);
+            if (after > before) {
+                tcPlayCouplerSound(clicked, true);
+            } else if (after < before) {
+                tcPlayCouplerSound(clicked, false);
+            }
+        }
+        return result;
+    }
+
+    private static int tcCoupledNeighborCount(net.minecraft.world.entity.Entity entity) {
+        if (!(entity instanceof traincraft.entity.train.CoupleableRollingStock stock)) return 0;
+        int count = 0;
+        for (net.minecraft.world.entity.Entity other :
+                entity.level().getEntities(
+                        entity,
+                        entity.getBoundingBox().inflate(96.0D),
+                        candidate ->
+                                candidate instanceof traincraft.entity.train.CoupleableRollingStock
+                                        && candidate.isAlive()
+                                        && candidate != entity)) {
+            if (stock.isCoupledTo(other.getUUID())) count++;
+        }
+        return count;
+    }
+
+    private static void tcPlayCouplerSound(net.minecraft.world.entity.Entity entity, boolean coupling) {
+        entity.level().playSound(
+                null,
+                entity.getX(),
+                entity.getY() + 0.35D,
+                entity.getZ(),
+                coupling
+                        ? net.minecraft.sounds.SoundEvents.CHAIN_PLACE
+                        : net.minecraft.sounds.SoundEvents.CHAIN_BREAK,
+                net.minecraft.sounds.SoundSource.BLOCKS,
+                coupling ? 1.15F : 1.0F,
+                coupling ? 0.72F : 0.88F);
+    }
+public static InteractionResult handleRollingStockClickInternal(Entity clicked, Player player, InteractionHand hand) {
         ItemStack connector = player.getItemInHand(hand);
         if (!(connector.getItem() instanceof ConnectorItem)) {
             return InteractionResult.PASS;

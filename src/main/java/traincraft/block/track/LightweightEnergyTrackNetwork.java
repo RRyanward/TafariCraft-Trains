@@ -34,7 +34,11 @@ if (!isLightweightEnergy(level, pos)) {
         while (!queue.isEmpty()) {
             Node node = queue.removeFirst();
 
-            if (level.hasNeighborSignal(node.pos())) {
+            // TC_DEV38_R1F2C_ONE_BLOCK_RAIL_POWER_INTERFACE
+            // Keep external cables attached to the TC interface below the rail.
+            // The rail network performs one explicit vertical handoff only.
+            if (level.hasNeighborSignal(node.pos())
+                    || hasPoweredInterfaceBelow(level, node.pos())) {
                 return true;
             }
 
@@ -100,6 +104,12 @@ if (!isLightweightEnergy(level, pos)) {
     }
 
 
+    private static boolean hasPoweredInterfaceBelow(Level level, BlockPos trackPos) {
+        BlockState below = level.getBlockState(trackPos.below());
+        return below.getBlock() instanceof traincraft.block.integration.RailPowerInterfaceBlock
+                && below.hasProperty(traincraft.block.integration.RailPowerInterfaceBlock.POWERED)
+                && below.getValue(traincraft.block.integration.RailPowerInterfaceBlock.POWERED);
+    }
     private static Set<BlockPos> neighbors(BlockPos pos) {
         Set<BlockPos> out = new HashSet<>();
 

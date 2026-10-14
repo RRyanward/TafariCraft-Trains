@@ -1,0 +1,19 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "category":  "misc",
+    "ingredients":  [
+                        {
+                            "item":  "traincraft:track_slope_curve_large_right"
+                        },
+                        {
+                            "item":  "traincraft:track_energy"
+                        },
+                        {
+                            "item":  "minecraft:redstone"
+                        }
+                    ],
+    "result":  {
+                   "item":  "traincraft:track_slope_curve_large_right_energy",
+                   "count":  1
+               }
+}

@@ -82,7 +82,7 @@ public final class BatchTrackDiagnostics {
         }
     }
 
-    @SubscribeEvent
+    // TC_DEV38_R1D_COMMAND_DISABLED_RELEASE
     public static void register(RegisterCommandsEvent event) {
         event.getDispatcher().register(Commands.literal("tc_track_debug")
                 .requires(source -> source.hasPermission(2))

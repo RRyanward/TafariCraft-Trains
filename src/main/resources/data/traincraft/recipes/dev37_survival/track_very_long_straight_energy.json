@@ -1,0 +1,19 @@
+{
+    "type":  "minecraft:crafting_shapeless",
+    "category":  "misc",
+    "ingredients":  [
+                        {
+                            "item":  "traincraft:track_very_long_straight"
+                        },
+                        {
+                            "item":  "traincraft:track_energy"
+                        },
+                        {
+                            "item":  "minecraft:redstone"
+                        }
+                    ],
+    "result":  {
+                   "item":  "traincraft:track_very_long_straight_energy",
+                   "count":  1
+               }
+}

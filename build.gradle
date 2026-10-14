@@ -100,3 +100,68 @@ tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
     options.release = 17
 }
+// TC_DEV38_R1E6_JEI_OPTIONAL_INTEGRATION
+repositories {
+    maven {
+        name = "BlameJared"
+        url = "https://maven.blamejared.com/"
+    }
+}
+dependencies {
+    compileOnly fg.deobf("mezz.jei:jei-1.20.1-common-api:15.56.0.205")
+    compileOnly fg.deobf("mezz.jei:jei-1.20.1-forge-api:15.56.0.205")
+    runtimeOnly fg.deobf("mezz.jei:jei-1.20.1-forge:15.56.0.205")
+}
+// TC_DEV38_R1E6_JEI_OPTIONAL_INTEGRATION_END
+// TC_DEV38_R1F1B_AE2_RAIL_POWER
+repositories {
+    mavenCentral()
+    maven { url = "https://www.cursemaven.com" }
+}
+dependencies {
+    // Compile against the official Forge 1.20.1 AE2 15.4.11 CurseForge file.
+    // This stays compile-only and is NOT bundled into the TafariCraft jar.
+    compileOnly fg.deobf("curse.maven:applied-energistics-2-223794:8991271")
+
+    // Development runtime only so runClient can validate the native ME-power bridge.
+    runtimeOnly fg.deobf("curse.maven:guideme-1173950:8204776")
+    runtimeOnly fg.deobf("curse.maven:applied-energistics-2-223794:8991271")
+}
+// TC_DEV38_R1F1B_AE2_RAIL_POWER_END
+// TC_DEV38_R1F1C_AE2_DEV_REFMAP_REMAP
+// Required only by the ForgeGradle deobfuscated development runtime when a
+// released mod dependency (AE2) ships production mixin refmaps.
+// Production Minecraft/modpack environments do not need this workaround.
+minecraft {
+    runs {
+        client {
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+        }
+    }
+}
+// TC_DEV38_R1F1C_AE2_DEV_REFMAP_REMAP_END
+// TC_DEV38_R1F2A_MEKANISM_RUNTIME
+dependencies {
+    // Development-only interoperability validation.
+    // Mekanism 10.4.16.80 - Minecraft 1.20.1 Forge
+    runtimeOnly fg.deobf("curse.maven:mekanism-268560:6552911")
+
+    // Applied Mekanistics 1.4.3 - Minecraft 1.20.1 Forge
+    runtimeOnly fg.deobf("curse.maven:applied-mekanistics-574300:7244744")
+}
+// TC_DEV38_R1F2A_MEKANISM_RUNTIME_END
+// TC_DEV38_R1G1S2_SERVER_REFMAP
+// ForgeGradle development-server only.
+// AE2 15.4.11 ships production/SRG mixin refmaps.  runClient already remaps
+// those refmaps; runServer must do the same or AE2 asks for m_129815_ in the
+// deobfuscated MinecraftServer class and aborts before Traincraft starts.
+minecraft {
+    runs {
+        server {
+            property 'mixin.env.remapRefMap', 'true'
+            property 'mixin.env.refMapRemappingFile', "${projectDir}/build/createSrgToMcp/output.srg"
+        }
+    }
+}
+// TC_DEV38_R1G1S2_SERVER_REFMAP_END

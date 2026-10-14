@@ -75,10 +75,37 @@ public final class RollingStockSeatCalibrationEvents {
 
     private RollingStockSeatCalibrationEvents() {}
 
+
+    /**
+     * DEV38 seat-pass bridge.
+     * slot 1..3 selects the existing accepted seat preview; slot <= 0 clears it.
+     * Test harness only -- normal riding behavior is unchanged.
+     */
+    public static void tcDev38PreviewSeat(
+            ServerPlayer player,
+            int slot) {
+        if (slot <= 0) {
+            PREVIEW_SLOTS.remove(player.getUUID());
+            return;
+        }
+        PREVIEW_SLOTS.put(
+                player.getUUID(),
+                Math.max(1, Math.min(3, slot)));
+    }
+    /**
+     * DEV38 r1c2: true only while the temporary seat-perfect-pass preview is active.
+     * Normal gameplay does not set this map entry.
+     */
+    public static boolean tcDev38HasPreview(java.util.UUID playerId) {
+        return PREVIEW_SLOTS.containsKey(playerId);
+    }
+
     @SubscribeEvent
     public static void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("tc")
+                        // TC_DEV38_R1D_OP_ONLY_VISUAL
+                        .requires(source -> source.hasPermission(2))
                         .then(Commands.literal("visual")
                                 .then(Commands.literal("select")
                                         .then(Commands.argument(
@@ -396,7 +423,7 @@ public final class RollingStockSeatCalibrationEvents {
         player.displayClientMessage(
                 Component.literal(
                         "[TC VISUAL] SEAT " + s +
-                        " mode. Use /tc visual up/down/left/right/front/back."),
+                        " mode. Use /tc visual seat " + s + " up/down/front/back/left/right."),
                 false);
         showSeatStatus(player, target, s);
         return 1;
@@ -779,17 +806,30 @@ public final class RollingStockSeatCalibrationEvents {
             int slot) {
         String id = registryId(target);
 
-        boolean enabled =
-                RollingStockCalibrationConfig.hasSeat(id, slot);
-        double longitudinal =
-                RollingStockCalibrationConfig.seatLong(
-                        id, slot, 0.0D);
-        double y =
-                RollingStockCalibrationConfig.seatY(
-                        id, slot, 0.0D);
-        double side =
-                RollingStockCalibrationConfig.seatSide(
-                        id, slot, 0.0D);
+        boolean enabled;
+        double longitudinal;
+        double y;
+        double side;
+
+        // TC_DEV38_R1F2F_POWERED_SEAT_STATUS
+        // Powered locomotives use their synchronized physical Seat 1 backend,
+        // not the shared TOML seat table. Report the values that the seat
+        // direction commands actually modify so BR E69/KOF/etc. no longer
+        // misleadingly display enabled=false / 0 / 0 / 0.
+        if (target instanceof LegacyPoweredLocomotive powered && slot == 1) {
+            enabled = powered.tcCalibrationHasSeat();
+            longitudinal = powered.tcCalibrationSeatLong();
+            y = powered.tcCalibrationSeatFootY();
+            side = powered.tcCalibrationSeatLateral();
+        } else {
+            enabled = RollingStockCalibrationConfig.hasSeat(id, slot);
+            longitudinal = RollingStockCalibrationConfig.seatLong(
+                    id, slot, 0.0D);
+            y = RollingStockCalibrationConfig.seatY(
+                    id, slot, 0.0D);
+            side = RollingStockCalibrationConfig.seatSide(
+                    id, slot, 0.0D);
+        }
 
         player.displayClientMessage(
                 Component.literal(String.format(Locale.ROOT,
@@ -799,7 +839,6 @@ public final class RollingStockSeatCalibrationEvents {
                         longitudinal, y, side)),
                 false);
     }
-
     public static int previewSeatFor(
             UUID playerUuid,
             int normalSlot) {

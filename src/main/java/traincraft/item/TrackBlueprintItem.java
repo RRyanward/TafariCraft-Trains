@@ -103,6 +103,23 @@ public final class TrackBlueprintItem extends Item {
         return root.getCompound(ROOT);
     }
 
+    // TC_DEV35_R1C6F_RELIABLE_EDIT_REOPEN
+    private static void tcDev35SyncBlueprintState(
+            Player player) {
+        if (player instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+            serverPlayer.getInventory()
+                    .setChanged();
+
+            serverPlayer.inventoryMenu
+                    .broadcastChanges();
+
+            if (serverPlayer.containerMenu
+                    != serverPlayer.inventoryMenu) {
+                serverPlayer.containerMenu
+                        .broadcastChanges();
+            }
+        }
+    }
     private static void updateVisualModel(ItemStack stack) {
         CompoundTag root = stack.getOrCreateTag();
         CompoundTag data = existingData(stack);
@@ -3212,6 +3229,18 @@ BlueprintPlacement batchPlacement =
                 previous,
                 origin);
     }
+    // TC_DEV34_R1C4_VISIBLE_INCOMPATIBLE_PREVIEW
+    public static BlueprintPlacement incompatiblePreviewPlacement(
+            ItemStack blueprint,
+            ItemStack selected,
+            BlockPos requested,
+            float playerYaw) {
+        return freePlacement(
+                blueprint,
+                selected,
+                requested,
+                playerYaw);
+    }
     public static BlueprintPlacement previewPlacement(
             ItemStack blueprint,
             ItemStack selected,
@@ -4670,6 +4699,149 @@ TcBatchCandidate chosen =
         return occupied;
     }
 
+    // TC_DEV34_R1C4_CONNECTOR_PROXY_OVERLAP
+    private static java.util.Set<BlockPos> lastRecordedPlacementCells(
+            ItemStack blueprint) {
+        java.util.LinkedHashSet<BlockPos> out =
+                new java.util.LinkedHashSet<>();
+
+        CompoundTag data =
+                existingData(blueprint);
+
+        if (data == null
+                || !data.contains(ORIGIN)) {
+            return out;
+        }
+
+        ListTag segments =
+                data.getList(
+                        SEGMENTS,
+                        CompoundTag.TAG_COMPOUND);
+
+        if (segments.isEmpty()) {
+            return out;
+        }
+
+        CompoundTag last =
+                segments.getCompound(
+                        segments.size() - 1);
+
+        BlockPos origin =
+                BlockPos.of(
+                        data.getLong(ORIGIN));
+
+        BlockPos anchor =
+                origin.offset(
+                        last.getInt("X"),
+                        last.getInt("Y"),
+                        last.getInt("Z"));
+
+        out.addAll(
+                placementCells(
+                        segmentTrackStack(last),
+                        anchor,
+                        last.getFloat("Yaw")));
+
+        return out;
+    }
+
+    private static boolean legalSharedConnectorOverlap(
+            ItemStack blueprint,
+            ItemStack selected,
+            java.util.List<BlockPos> overlapCells) {
+        if (overlapCells == null
+                || overlapCells.isEmpty()) {
+            return true;
+        }
+
+        // Runtime-proven TC4.5 connector handoffs share at most two gag/proxy
+        // cells. Anything larger remains a real body/body collision.
+        if (overlapCells.size() > 2) {
+            return false;
+        }
+
+        CompoundTag data =
+                existingData(blueprint);
+
+        if (data == null
+                || !data.contains(ORIGIN)) {
+            return false;
+        }
+
+        ListTag segments =
+                data.getList(
+                        SEGMENTS,
+                        CompoundTag.TAG_COMPOUND);
+
+        if (segments.isEmpty()) {
+            return false;
+        }
+
+        CompoundTag last =
+                segments.getCompound(
+                        segments.size() - 1);
+
+        ItemStack previous =
+                segmentTrackStack(last);
+
+        ItemStack previousResolved =
+                previewPlacementStack(
+                        previous.copy());
+
+        ItemStack selectedResolved =
+                previewPlacementStack(
+                        selected.copy());
+
+        boolean multipartPair =
+                previousResolved.getItem()
+                        instanceof traincraft.item.track.LegacyBatchTrackItem
+                        || selectedResolved.getItem()
+                                instanceof traincraft.item.track.LegacyBatchTrackItem;
+
+        if (!multipartPair) {
+            return false;
+        }
+
+        BlockPos origin =
+                BlockPos.of(
+                        data.getLong(ORIGIN));
+
+        RouteEndpoint source =
+                routeExitFromStored(
+                        last,
+                        origin);
+
+        if (source == null
+                || source.segment == null) {
+            return false;
+        }
+
+        for (BlockPos pos : overlapCells) {
+            int connectorDistance =
+                    Math.abs(
+                            pos.getX()
+                                    - source.segment.getX())
+                            + Math.abs(
+                                    pos.getY()
+                                            - source.segment.getY())
+                            + Math.abs(
+                                    pos.getZ()
+                                            - source.segment.getZ());
+
+            if (connectorDistance > 2) {
+                return false;
+            }
+        }
+
+        traincraft.Traincraft.LOGGER.info(
+                "[TC-DEV34-R1C4-SHARED-PROXY] allowed cells={} source={} selected={}",
+                overlapCells,
+                source.segment,
+                net.minecraftforge.registries.ForgeRegistries.ITEMS
+                        .getKey(selected.getItem()));
+
+        return true;
+    }
     public static OverlapResult placementOverlap(
             Level level,
             ItemStack blueprint,
@@ -4687,22 +4859,51 @@ TcBatchCandidate chosen =
         }
 
         java.util.Set<BlockPos> recorded =
-                recordedPlacementCells(blueprint);
+                recordedPlacementCells(
+                        blueprint);
+
+        java.util.Set<BlockPos> lastRecorded =
+                lastRecordedPlacementCells(
+                        blueprint);
+
+        java.util.ArrayList<BlockPos> lastOverlaps =
+                new java.util.ArrayList<>();
 
         for (BlockPos pos : candidate) {
             if (recorded.contains(pos)) {
-                return new OverlapResult(
-                        true,
-                        pos,
-                        "BLUEPRINT");
+                if (lastRecorded.contains(pos)) {
+                    lastOverlaps.add(pos);
+                }
+                else {
+                    return new OverlapResult(
+                            true,
+                            pos,
+                            "BLUEPRINT");
+                }
             }
 
-            if (worldTrackAt(level, pos)) {
+            // Existing world rails remain authoritative blockers. The special
+            // exception is only for virtual shared proxy/gag ownership between
+            // the candidate and the immediately previous Blueprint piece.
+            if (worldTrackAt(
+                    level,
+                    pos)) {
                 return new OverlapResult(
                         true,
                         pos,
                         "WORLD");
             }
+        }
+
+        if (!lastOverlaps.isEmpty()
+                && !legalSharedConnectorOverlap(
+                        blueprint,
+                        selected,
+                        lastOverlaps)) {
+            return new OverlapResult(
+                    true,
+                    lastOverlaps.get(0),
+                    "BLUEPRINT");
         }
 
         return OverlapResult.clear();
@@ -5170,9 +5371,27 @@ TcBatchCandidate chosen =
 
         if (data.getBoolean(LOCKED)) {
             if (player.isShiftKeyDown()) {
+                // TC_DEV35_R1C6F_RELIABLE_EDIT_REOPEN
+                // Editing a completed Blueprint must not depend on aiming at air.
+                data.putBoolean(
+                        LOCKED,
+                        false);
+                data.remove(
+                        PREVIEW_ANCHOR);
+                data.remove(
+                        PREVIEW_ROTATION);
+
+                updateVisualModel(
+                        blueprint);
+
+                tcDev35SyncBlueprintState(
+                        player);
+
                 player.displayClientMessage(
-                        Component.literal("Blueprint complete. Sneak + right-click air to edit."),
+                        Component.literal(
+                                "Blueprint EDITING: saved route and structure plan reopened."),
                         true);
+
                 return InteractionResult.CONSUME;
             }
 
@@ -5332,8 +5551,7 @@ TcBatchCandidate chosen =
     @Override
     public InteractionResultHolder<ItemStack> use(Level level, Player player, InteractionHand hand) {
         ItemStack stack = player.getItemInHand(hand);
-
-        // TC_BATCH8_R3ZU_BLUEPRINT_NAMING_POPUP
+// TC_BATCH8_R3ZU_BLUEPRINT_NAMING_POPUP
         // When an editable, non-empty Blueprint is completed, open a small
         // client naming dialog. The server still owns the actual lock state
         // and applies the submitted name through the Blueprint network.
@@ -5367,6 +5585,9 @@ TcBatchCandidate chosen =
 
                     updateVisualModel(stack);
 
+
+
+                    tcDev35SyncBlueprintState(player);
                     player.displayClientMessage(
                             Component.literal(locked ? "Blueprint complete." : "Blueprint unlocked for editing."),
                             true);
@@ -5381,8 +5602,7 @@ TcBatchCandidate chosen =
                 cycleTrack(stack, player);
             }
         }
-
-        return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
+return InteractionResultHolder.sidedSuccess(stack, level.isClientSide);
     }
 
 

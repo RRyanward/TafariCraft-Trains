@@ -225,6 +225,7 @@ public final class TrackT7FullCourseCommand {
     }
 
     @SubscribeEvent
+    // TC_DEV38_R1G1Z3C_T7_REENABLED - TEMP WHEEL TEST ONLY
     public static void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("tc_t7_full_test_track")

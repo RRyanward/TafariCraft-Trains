@@ -20,6 +20,7 @@ public abstract class LegacyMultiMeshRenderer<T extends Entity> extends EntityRe
     protected static final class Part {
         final ResourceLocation texture;
         final LegacyStaticMesh mesh;
+        final ResourceLocation meshId;
         final double tx, ty, tz;
         final float rx, ry, rz, sx, sy, sz;
 
@@ -28,6 +29,7 @@ public abstract class LegacyMultiMeshRenderer<T extends Entity> extends EntityRe
              float rx, float ry, float rz,
              float sx, float sy, float sz) {
             this.mesh = LegacyStaticMesh.load(meshLocation);
+            this.meshId = meshLocation;
             this.texture = texture;
             this.tx = tx; this.ty = ty; this.tz = tz;
             this.rx = rx; this.ry = ry; this.rz = rz;
@@ -95,6 +97,8 @@ public abstract class LegacyMultiMeshRenderer<T extends Entity> extends EntityRe
             }
             VertexConsumer vertices = buffers.getBuffer(RenderType.entityTranslucentCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, p.texture)));
             p.mesh.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+            Dev44TrainLightVisuals.draw(p.meshId, entity, poseStack, buffers,
+                    p.mesh.minX(), p.mesh.maxX(), p.mesh.minY());
             poseStack.popPose();
         }
 

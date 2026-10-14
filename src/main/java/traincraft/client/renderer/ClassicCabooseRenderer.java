@@ -44,6 +44,13 @@ public final class ClassicCabooseRenderer extends EntityRenderer<ClassicCaboose>
         poseStack.scale(MODEL_SCALE, MODEL_SCALE, MODEL_SCALE);
 
         VertexConsumer vertices = buffers.getBuffer(RenderType.entityCutoutNoCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, TEXTURE)));
+        // TC_DEV38_R1G1Z_CABOOSE_NATIVE_WHEEL_PHASE
+        // Same frozen signed-distance phase convention as accepted Freight
+        // and Passenger native Z-axis wheels.
+        ClassicCabooseModel.animateWheels(
+                this.model,
+                (float) traincraft.client.renderer.animation.RollingStockWheelAnimation
+                        .sampleNativePhase(entity, partialTicks));
         this.model.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
 
         poseStack.popPose();

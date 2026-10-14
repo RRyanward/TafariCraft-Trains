@@ -1,0 +1,21 @@
+{
+  "parent":"minecraft:block/block",
+  "textures":{
+    "particle":"traincraft:block/tc_hearth_side",
+    "top":"traincraft:block/tc_hearth_top",
+    "bottom":"traincraft:block/tc_hearth_bottom",
+    "side":"traincraft:block/tc_hearth_side",
+    "front":"traincraft:block/tc_hearth_front"
+  },
+  "elements":[{
+    "from":[0,0,0],"to":[16,16,16],
+    "faces":{
+      "down":{"texture":"#bottom","cullface":"down"},
+      "up":{"texture":"#top","cullface":"up"},
+      "north":{"texture":"#front","cullface":"north"},
+      "south":{"texture":"#side","cullface":"south"},
+      "west":{"texture":"#side","cullface":"west"},
+      "east":{"texture":"#side","cullface":"east"}
+    }
+  }]
+}

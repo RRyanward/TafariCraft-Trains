@@ -1,22 +1,24 @@
 {
-  "type": "minecraft:crafting_shaped",
-  "pattern": [
-    "GPG",
-    "O O",
-    "OPO"
-  ],
-  "key": {
-    "G": {
-      "item": "minecraft:gold_ingot"
-    },
-    "P": {
-      "item": "minecraft:piston"
-    },
-    "O": {
-      "item": "minecraft:obsidian"
-    }
-  },
-  "result": {
-    "item": "traincraft:assembly_table_2"
-  }
+    "type":  "minecraft:crafting_shaped",
+    "category":  "misc",
+    "pattern":  [
+                    "GPG",
+                    "O O",
+                    "OPO"
+                ],
+    "key":  {
+                "G":  {
+                          "item":  "minecraft:gold_ingot"
+                      },
+                "P":  {
+                          "item":  "minecraft:piston"
+                      },
+                "O":  {
+                          "item":  "minecraft:obsidian"
+                      }
+            },
+    "result":  {
+                   "item":  "traincraft:assembly_table_2",
+                   "count":  1
+               }
 }

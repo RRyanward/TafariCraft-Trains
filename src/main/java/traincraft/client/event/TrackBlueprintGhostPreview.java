@@ -68,6 +68,8 @@ public final class TrackBlueprintGhostPreview {
 
     // TC_BATCH8_R3ZZB_OVERLAP_VISUALS
     private static boolean OVERLAP_PREVIEW_ACTIVE = false;
+    // TC_DEV34_R1C4_VISIBLE_INCOMPATIBLE_TRACK_CURSOR
+    private static boolean INCOMPATIBLE_PREVIEW_ACTIVE = false;
 
     public static boolean isOverlapPreviewActive() {
         return OVERLAP_PREVIEW_ACTIVE;
@@ -90,6 +92,125 @@ public final class TrackBlueprintGhostPreview {
 
     private record PreviewPart(BlockPos offset, BlockState state) {}
 
+    // TC_DEV35_R1C6J_LOCKED_PREVIEW_FREEZE
+    private record TcDev35LockedPlacement(
+            BlockPos anchor,
+            int rotation) {}
+
+    private static final java.util.Map<String, TcDev35LockedPlacement>
+            TC_DEV35_LAST_LOCKED_PLACEMENT =
+                    new java.util.HashMap<>();
+
+    private static boolean tcDev35SameBlueprint(
+            ItemStack first,
+            ItemStack second) {
+        if (!(first.getItem()
+                instanceof TrackBlueprintItem)
+                || !(second.getItem()
+                        instanceof TrackBlueprintItem)) {
+            return false;
+        }
+
+        String firstId =
+                TrackBlueprintItem.blueprintId(
+                        first);
+        String secondId =
+                TrackBlueprintItem.blueprintId(
+                        second);
+
+        return !firstId.isEmpty()
+                && firstId.equals(
+                        secondId);
+    }
+
+    private static boolean tcDev35BlueprintInHand(
+            Minecraft mc,
+            ItemStack blueprint) {
+        return mc != null
+                && mc.player != null
+                && (tcDev35SameBlueprint(
+                        blueprint,
+                        mc.player.getMainHandItem())
+                || tcDev35SameBlueprint(
+                        blueprint,
+                        mc.player.getOffhandItem()));
+    }
+
+    private static TcDev35LockedPlacement tcDev35LockedPlacement(
+            Minecraft mc,
+            ItemStack blueprint,
+            BlockHitResult hit) {
+        if (!(blueprint.getItem()
+                instanceof TrackBlueprintItem)
+                || !TrackBlueprintItem.isLocked(
+                        blueprint)) {
+            return null;
+        }
+
+        String id =
+                TrackBlueprintItem.blueprintId(
+                        blueprint);
+
+        if (TrackBlueprintItem.hasPreviewAnchor(
+                blueprint)) {
+            TcDev35LockedPlacement committed =
+                    new TcDev35LockedPlacement(
+                            TrackBlueprintItem.previewAnchor(
+                                    blueprint),
+                            TrackBlueprintItem.previewRotationQuarter(
+                                    blueprint));
+
+            if (!id.isEmpty()) {
+                TC_DEV35_LAST_LOCKED_PLACEMENT.put(
+                        id,
+                        committed);
+            }
+
+            return committed;
+        }
+
+        if (tcDev35BlueprintInHand(
+                mc,
+                blueprint)
+                && hit != null) {
+            TcDev35LockedPlacement live =
+                    new TcDev35LockedPlacement(
+                            hit.getBlockPos()
+                                    .relative(
+                                            hit.getDirection()),
+                            TrackBlueprintItem.previewRotationQuarter(
+                                    blueprint,
+                                    mc.player.getYRot()));
+
+            if (!id.isEmpty()) {
+                TC_DEV35_LAST_LOCKED_PLACEMENT.put(
+                        id,
+                        live);
+            }
+
+            return live;
+        }
+
+        if (!id.isEmpty()) {
+            TcDev35LockedPlacement remembered =
+                    TC_DEV35_LAST_LOCKED_PLACEMENT.get(
+                            id);
+
+            if (remembered != null) {
+                return remembered;
+            }
+        }
+
+        if (TrackBlueprintItem.hasOrigin(
+                blueprint)) {
+            return new TcDev35LockedPlacement(
+                    TrackBlueprintItem.origin(
+                            blueprint),
+                    0);
+        }
+
+        return null;
+    }
     private TrackBlueprintGhostPreview() {}
 
     @SubscribeEvent
@@ -99,6 +220,8 @@ public final class TrackBlueprintGhostPreview {
         }
 
         OVERLAP_PREVIEW_ACTIVE = false;
+        INCOMPATIBLE_PREVIEW_ACTIVE = false;
+
 
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.player == null) return;
@@ -113,15 +236,20 @@ public final class TrackBlueprintGhostPreview {
         BlockPos anchor = null;
         int rotation = 0;
 
-        if (TrackBlueprintItem.isLocked(blueprint)) {
-            if (TrackBlueprintItem.hasPreviewAnchor(blueprint)) {
-                anchor = TrackBlueprintItem.previewAnchor(blueprint);
-                rotation = TrackBlueprintItem.previewRotationQuarter(blueprint);
-            } else if (hit != null) {
-                anchor = hit.getBlockPos().relative(hit.getDirection());
-                rotation = TrackBlueprintItem.previewRotationQuarter(
-                        blueprint,
-                        mc.player.getYRot());
+        if (TrackBlueprintItem.isLocked(
+                blueprint)) {
+            TcDev35LockedPlacement placement =
+                    tcDev35LockedPlacement(
+                            mc,
+                            blueprint,
+                            hit);
+
+            if (placement != null) {
+                anchor =
+                        placement.anchor();
+
+                rotation =
+                        placement.rotation();
             }
         } else if (TrackBlueprintItem.hasOrigin(blueprint)) {
             anchor = TrackBlueprintItem.origin(blueprint);
@@ -197,7 +325,19 @@ public final class TrackBlueprintGhostPreview {
 
         // Orange cursor preview = the exact placed BlockStates that the selected
         // track item would write if the player clicked this support block now.
-        if (!TrackBlueprintItem.isLocked(blueprint) && hit != null) {
+                // TC_DEV34_R1B2_KEEP_SAVED_ROUTE_VISIBLE
+        // Saved route rendering above always runs. Only the LIVE selected-track
+        // cursor/overlap/deep-debug branch sleeps during ordinary block Build Mode.
+                // TC_DEV34_R1C5_MULTI_BLUEPRINT_SAVED_ROUTES
+        renderAdditionalHotbarBlueprintRoutes(
+                mc,
+                pose,
+                buffers,
+                blueprint,
+                camera);
+if (!TrackBlueprintItem.isLocked(blueprint)
+                && hit != null
+                && tcDev34TrackEditMode()) {
             ItemStack selected =
                     TrackBlueprintItem.selectedTrackStack(blueprint);
 
@@ -219,14 +359,27 @@ public final class TrackBlueprintGhostPreview {
                         requested,
                         mc.player.getYRot(),
                         tcPlacement);
-                // TC_BATCH8_R3ZZM2_NULL_PLACEMENT_CONTRACT_FIX
-                // No legal continuation means no live cursor ghost. Flush all
-                // stored Blueprint ghost geometry already queued this frame,
-                // then leave before tcPlacement is dereferenced.
+                // TC_DEV34_R1C4_VISIBLE_INCOMPATIBLE_TRACK_CURSOR
+                boolean tcIncompatible =
+                        tcPlacement == null;
+
+                if (tcIncompatible) {
+                    tcPlacement =
+                            TrackBlueprintItem
+                                    .incompatiblePreviewPlacement(
+                                            blueprint,
+                                            selected,
+                                            requested,
+                                            mc.player.getYRot());
+                }
+
                 if (tcPlacement == null) {
                     buffers.endBatch();
                     return;
                 }
+
+                INCOMPATIBLE_PREVIEW_ACTIVE =
+                        tcIncompatible;
 
                 TrackBlueprintItem.OverlapResult tcOverlap =
                         TrackBlueprintItem.placementOverlap(
@@ -237,7 +390,12 @@ public final class TrackBlueprintGhostPreview {
                                 tcPlacement.yaw());
 
                 boolean tcBlocked =
-                        tcOverlap.blocked();
+                        !tcIncompatible
+                                && tcOverlap.blocked();
+
+                boolean tcInvalid =
+                        tcBlocked
+                                || tcIncompatible;
 
                 OVERLAP_PREVIEW_ACTIVE =
                         tcBlocked;
@@ -251,10 +409,10 @@ public final class TrackBlueprintGhostPreview {
                         tcPlacement.anchor(),
                         Direction.fromYRot(tcPlacement.yaw()),
                         camera,
-                        tcBlocked ? 1.00F : 1.00F,
-                        tcBlocked ? 0.12F : 1.00F,
-                        tcBlocked ? 0.10F : 1.00F,
-                        tcBlocked ? 0.88F : 0.74F);
+                        tcInvalid ? 1.00F : 1.00F,
+                        tcInvalid ? 0.12F : 1.00F,
+                        tcInvalid ? 0.10F : 1.00F,
+                        tcInvalid ? 0.88F : 0.74F);
             }
         }
 
@@ -264,7 +422,8 @@ public final class TrackBlueprintGhostPreview {
     @SubscribeEvent
     public static void onRenderGui(
             RenderGuiEvent.Post event) {
-        if (!OVERLAP_PREVIEW_ACTIVE) {
+        if (!OVERLAP_PREVIEW_ACTIVE
+                && !INCOMPATIBLE_PREVIEW_ACTIVE) {
             return;
         }
 
@@ -277,7 +436,9 @@ public final class TrackBlueprintGhostPreview {
         }
 
         String text =
-                "CAN'T PLACE - OVERLAP DETECTED";
+                INCOMPATIBLE_PREVIEW_ACTIVE
+                        ? "INCOMPATIBLE TRACK CONNECTION"
+                        : "CAN'T PLACE - OVERLAP DETECTED";
 
         int screenWidth =
                 mc.getWindow().getGuiScaledWidth();
@@ -306,6 +467,220 @@ public final class TrackBlueprintGhostPreview {
                 y,
                 0xFFFF5555,
                 true);
+    }
+    // TC_DEV34_R1B_STRUCTURE_MODE_SUPPRESS_TRACK_CURSOR
+    private static boolean tcDev34TrackEditMode() {
+        Minecraft mc =
+                Minecraft.getInstance();
+
+        if (mc.player == null) {
+            return false;
+        }
+
+        ItemStack main =
+                mc.player.getMainHandItem();
+
+        return main.getItem()
+                        instanceof TrackBlueprintItem
+                && !TrackBlueprintItem.isLocked(
+                        main);
+    }
+    private static boolean tcDev34StructureBuildMode() {
+        // TC_DEV34_R1C2_GHOST_HAND_MODE_SPLIT
+        // Match BuilderStructureBlueprintEditor exactly:
+        // only BLOCK MAIN + unlocked BLUEPRINT OFFHAND is structure mode.
+        Minecraft mc =
+                Minecraft.getInstance();
+
+        if (mc.player == null) {
+            return false;
+        }
+
+        ItemStack main =
+                mc.player.getMainHandItem();
+
+        ItemStack off =
+                mc.player.getOffhandItem();
+
+        boolean offBlueprint =
+                off.getItem()
+                        instanceof TrackBlueprintItem
+                        && !TrackBlueprintItem
+                                .isLocked(off);
+
+        if (!offBlueprint) {
+            return false;
+        }
+
+        return main.getItem()
+                        instanceof net.minecraft.world.item.BlockItem
+                && !TrackBlueprintItem
+                        .isTrackStack(main);
+    }
+    // TC_DEV34_R1C5_MULTI_BLUEPRINT_SAVED_ROUTES
+    // TC_DEV34_R1C5_MULTI_BLUEPRINT_SAVED_ROUTES
+    private static void renderSavedBlueprintRoute(
+            Minecraft mc,
+            PoseStack pose,
+            MultiBufferSource.BufferSource buffers,
+            ItemStack blueprint,
+            Vec3 camera) {
+        if (!(blueprint.getItem()
+                instanceof TrackBlueprintItem)) {
+            return;
+        }
+
+        int total =
+                TrackBlueprintItem.segmentCount(
+                        blueprint);
+
+        if (total <= 0) {
+            return;
+        }
+
+        BlockPos anchor = null;
+        int rotation = 0;
+
+        if (TrackBlueprintItem.isLocked(
+                blueprint)) {
+            BlockHitResult hit =
+                    mc.hitResult
+                            instanceof BlockHitResult blockHit
+                                    ? blockHit
+                                    : null;
+
+            TcDev35LockedPlacement placement =
+                    tcDev35LockedPlacement(
+                            mc,
+                            blueprint,
+                            hit);
+
+            if (placement != null) {
+                anchor =
+                        placement.anchor();
+
+                rotation =
+                        placement.rotation();
+            }
+        }
+        else if (TrackBlueprintItem.hasOrigin(
+                blueprint)) {
+            anchor =
+                    TrackBlueprintItem.origin(
+                            blueprint);
+        }
+
+        if (anchor == null) {
+            return;
+        }
+
+        int stride =
+                Math.max(
+                        1,
+                        total / 384);
+
+        for (int i = 0;
+             i < total;
+             i += stride) {
+            CompoundTag segment =
+                    TrackBlueprintItem.segment(
+                            blueprint,
+                            i);
+
+            int[] xz =
+                    rotate(
+                            segment.getInt("X"),
+                            segment.getInt("Z"),
+                            rotation);
+
+            BlockPos manualAnchor =
+                    anchor.offset(
+                            xz[0],
+                            segment.getInt("Y"),
+                            xz[1]);
+
+            ItemStack track =
+                    stackFromSegment(
+                            segment);
+
+            float yaw =
+                    segment.getFloat("Yaw")
+                            + rotation * 90.0F;
+
+            float red = 1.0F;
+            float green = 1.0F;
+            float blue = 1.0F;
+            float alpha = 0.30F;
+
+            if (i == 0) {
+                red = 0.45F;
+                green = 1.00F;
+                blue = 0.50F;
+                alpha = 0.42F;
+            }
+            else if (i + stride >= total) {
+                red = 1.00F;
+                green = 0.42F;
+                blue = 0.38F;
+                alpha = 0.42F;
+            }
+
+            renderRealPlacement(
+                    mc,
+                    pose,
+                    buffers,
+                    track,
+                    manualAnchor,
+                    Direction.fromYRot(
+                            yaw),
+                    camera,
+                    red,
+                    green,
+                    blue,
+                    alpha);
+        }
+    }
+
+    private static void renderAdditionalHotbarBlueprintRoutes(
+            Minecraft mc,
+            PoseStack pose,
+            MultiBufferSource.BufferSource buffers,
+            ItemStack activeBlueprint,
+            Vec3 camera) {
+        for (int slot = 0;
+             slot < 9;
+             slot++) {
+            ItemStack candidate =
+                    mc.player.getInventory()
+                            .getItem(slot);
+
+            if (!(candidate.getItem()
+                    instanceof TrackBlueprintItem)
+                    || candidate == activeBlueprint) {
+                continue;
+            }
+
+            renderSavedBlueprintRoute(
+                    mc,
+                    pose,
+                    buffers,
+                    candidate,
+                    camera);
+        }
+
+        ItemStack off =
+                mc.player.getOffhandItem();
+
+        if (off.getItem()
+                instanceof TrackBlueprintItem
+                && off != activeBlueprint) {
+            renderSavedBlueprintRoute(
+                    mc,
+                    pose,
+                    buffers,
+                    off,
+                    camera);
+        }
     }
     private static void renderRealPlacement(
             Minecraft mc,
@@ -402,6 +777,12 @@ public final class TrackBlueprintGhostPreview {
                             BATCH_BLOCK_SUPPLIER.get(item);
 
             AbstractLegacyBatchRailBlock block = supplier.get();
+            // TC_DEV34_R1C5_MEDIUM_DIAGONAL_VISUAL_ROOT
+            // Visual-only parity with the accepted connected Medium Diagonal
+            // blockstate. No root/endpoint/snap/path calculation changes.
+            boolean tcMediumDiagonalVisualRoot =
+                    "track_diagonal_straight_medium".equals(
+                            spec.id());
 
             BlockPos manualAnchor = BlockPos.ZERO;
             BlockPos root;
@@ -441,7 +822,7 @@ public final class TrackBlueprintGhostPreview {
                                         facing,
                                         part,
                                         false,
-                                        false);
+                                        tcMediumDiagonalVisualRoot);
 
                 parts.add(
                         new PreviewPart(offset, state));
@@ -586,10 +967,35 @@ public final class TrackBlueprintGhostPreview {
                         state,
                         ModelData.EMPTY);
 
+                // TC_DEV34_R1C5_VANILLA_RAIL_ALPHA_TEXTURE
+        // Vanilla rail baked models rely on transparent pixels in their
+        // minecraft block-atlas sprite. Keep those UV/alpha pixels intact.
+        // Traincraft's custom meshes retain the accepted solid-white ghost.
+        net.minecraft.resources.ResourceLocation tcGhostBlockId =
+                net.minecraftforge.registries.ForgeRegistries.BLOCKS
+                        .getKey(state.getBlock());
+
+        // TC_DEV35_R1C6_ALL_VANILLA_RAIL_GHOSTS
+        // RailBlock alone only matched the ordinary rail. PoweredRailBlock,
+        // DetectorRailBlock and Activator Rail are BaseRailBlock siblings.
+        // Keep the minecraft namespace guard so Traincraft custom track meshes
+        // continue using the accepted solid-white Blueprint ghost texture.
+        boolean tcVanillaRailTexture =
+                state.getBlock()
+                        instanceof net.minecraft.world.level.block.BaseRailBlock
+                        && tcGhostBlockId != null
+                        && "minecraft".equals(
+                                tcGhostBlockId.getNamespace());
+
+        net.minecraft.resources.ResourceLocation tcGhostTexture =
+                tcVanillaRailTexture
+                        ? net.minecraft.world.inventory.InventoryMenu.BLOCK_ATLAS
+                        : BLUEPRINT_GHOST_WHITE_TEXTURE;
+
         VertexConsumer consumer =
                 buffers.getBuffer(
                         RenderType.entityTranslucent(
-                                BLUEPRINT_GHOST_WHITE_TEXTURE));
+                                tcGhostTexture));
 
         pose.pushPose();
         pose.translate(
@@ -665,14 +1071,42 @@ public final class TrackBlueprintGhostPreview {
                 1.0F
         };
 
+        // TC_DEV35_R1C6_VANILLA_RAIL_BLUEPRINT_WASH
+        // Natural rail RGB is retained, but the neutral white Blueprint state
+        // gets a subtle cool wash so it reads as the same translucent planning
+        // layer as the Traincraft ghosts. Status red/green colors are untouched.
+        net.minecraft.resources.ResourceLocation tcEmitBlockId =
+                net.minecraftforge.registries.ForgeRegistries.BLOCKS
+                        .getKey(state.getBlock());
+        boolean tcVanillaRailGhost =
+                state.getBlock()
+                        instanceof net.minecraft.world.level.block.BaseRailBlock
+                        && tcEmitBlockId != null
+                        && "minecraft".equals(tcEmitBlockId.getNamespace());
+        boolean tcNeutralBlueprintColor =
+                statusRed >= 0.98F
+                        && statusGreen >= 0.98F
+                        && statusBlue >= 0.98F;
+        float tcStatusRed =
+                tcVanillaRailGhost && tcNeutralBlueprintColor
+                        ? 0.86F
+                        : statusRed;
+        float tcStatusGreen =
+                tcVanillaRailGhost && tcNeutralBlueprintColor
+                        ? 0.96F
+                        : statusGreen;
+        float tcStatusBlue =
+                tcVanillaRailGhost && tcNeutralBlueprintColor
+                        ? 1.00F
+                        : statusBlue;
         for (BakedQuad quad : quads) {
             consumer.putBulkData(
                     pose.last(),
                     quad,
                     shade,
-                    statusRed,
-                    statusGreen,
-                    statusBlue,
+                    tcStatusRed,
+                    tcStatusGreen,
+                    tcStatusBlue,
                     alpha,
                     light,
                     OverlayTexture.NO_OVERLAY,
@@ -737,10 +1171,29 @@ public final class TrackBlueprintGhostPreview {
         ItemStack off =
                 mc.player.getOffhandItem();
 
-        return off.getItem()
-                instanceof TrackBlueprintItem
-                ? off
-                : ItemStack.EMPTY;
+        if (off.getItem()
+                instanceof TrackBlueprintItem) {
+            return off;
+        }
+
+        // TC_DEV34_R1C5_MULTI_BLUEPRINT_SAVED_ROUTES
+        // Keep saved route rendering alive while the player swaps away from
+        // a Blueprint. This fallback is for SAVED ghosts only; r1c4c still
+        // requires the Blueprint itself in MAIN hand for the live cursor.
+        for (int slot = 0;
+             slot < 9;
+             slot++) {
+            ItemStack candidate =
+                    mc.player.getInventory()
+                            .getItem(slot);
+
+            if (candidate.getItem()
+                    instanceof TrackBlueprintItem) {
+                return candidate;
+            }
+        }
+
+        return ItemStack.EMPTY;
     }
 
     private static int[] rotate(

@@ -937,6 +937,26 @@ public final class TCEntities {
                             .updateInterval(1)
                             .build(Traincraft.MOD_ID + ":locomotive_steam_c11"));
 
+    // DEV46 - new-from-scratch TCT tankers. Rail-fit phase: fluid capability follows.
+    public static final RegistryObject<EntityType<traincraft.entity.train.freight.TctTanker>> TCT_TANKER_UNIVERSAL =
+            ENTITY_TYPES.register("tct_tanker_universal", () ->
+                    EntityType.Builder.<traincraft.entity.train.freight.TctTanker>of(
+                            traincraft.entity.train.freight.TctTanker::new, MobCategory.MISC)
+                            .sized(1.85F, 3.30F).clientTrackingRange(12).updateInterval(1)
+                            .build(Traincraft.MOD_ID + ":tct_tanker_universal"));
+    public static final RegistryObject<EntityType<traincraft.entity.train.freight.TctTanker>> TCT_TANKER_WATER =
+            ENTITY_TYPES.register("tct_tanker_water", () ->
+                    EntityType.Builder.<traincraft.entity.train.freight.TctTanker>of(
+                            traincraft.entity.train.freight.TctTanker::new, MobCategory.MISC)
+                            .sized(1.85F, 3.30F).clientTrackingRange(12).updateInterval(1)
+                            .build(Traincraft.MOD_ID + ":tct_tanker_water"));
+    public static final RegistryObject<EntityType<traincraft.entity.train.freight.TctTanker>> TCT_TANKER_LAVA =
+            ENTITY_TYPES.register("tct_tanker_lava", () ->
+                    EntityType.Builder.<traincraft.entity.train.freight.TctTanker>of(
+                            traincraft.entity.train.freight.TctTanker::new, MobCategory.MISC)
+                            .sized(1.85F, 3.30F).clientTrackingRange(12).updateInterval(1)
+                            .build(Traincraft.MOD_ID + ":tct_tanker_lava"));
+
     /** Step 7.3.0 first classic non-tender rolling-stock vehicle. */
     public static final RegistryObject<EntityType<FreightCart>> FREIGHT_CART =
             ENTITY_TYPES.register("freight_cart", () ->

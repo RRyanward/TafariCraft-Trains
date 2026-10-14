@@ -204,7 +204,7 @@ public final class TrackT7ConsistValidationCommand {
         }
     }
 
-    @SubscribeEvent
+    // TC_DEV38_R1D_COMMAND_DISABLED_RELEASE
     public static void register(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("tc_t7_consist_trace")

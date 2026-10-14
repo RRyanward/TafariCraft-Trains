@@ -46,6 +46,8 @@
  */
 package traincraft.entity.train.tender;
 
+import traincraft.worldgen.RailwayHeadlessTurnoutTest;
+
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
@@ -348,7 +350,9 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
         }
 
         if (!this.level().isClientSide) {
+            RailwayHeadlessTurnoutTest.coachPhaseProbe(this,"PRE_CONSTRAINT");
             this.applyCouplingConstraint();
+            RailwayHeadlessTurnoutTest.coachPhaseProbe(this,"POST_CONSTRAINT");
         }
 
         // STEP_9_3G_T4_R8_CONSIST_SWITCH_ROUTE_OWNERSHIP
@@ -356,9 +360,13 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
         Vec3 r8SwitchPreRailMotion = this.getDeltaMovement();
 
         super.tick();
+        if (!this.level().isClientSide) {
+            RailwayHeadlessTurnoutTest.coachPhaseProbe(this,"POST_VANILLA");
+        }
 
         if (!this.level().isClientSide) {
             this.applyPostMoveCouplingCatchup();
+            RailwayHeadlessTurnoutTest.coachPhaseProbe(this,"POST_CATCHUP");
 
             // Give every SteamTender-derived follower its own switch session.
             // common/toe -> current Straight/Divert state
@@ -376,6 +384,7 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
 
             traincraft.block.track.LegacyContinuousTrackPath
                     .applyFollowerSwitchRouting(this, r8SwitchPreRailMotion);
+            RailwayHeadlessTurnoutTest.coachPhaseProbe(this,"POST_SWITCH");
 
             if (fc6PathLeader != null) {
                 double fc6AfterPathDistance =
@@ -397,6 +406,7 @@ public class SteamTender extends Minecart implements CoupleableRollingStock, Men
                     this.setDeltaMovement(fc6BeforePathMotion);
                 }
             }
+            RailwayHeadlessTurnoutTest.coachPhaseProbe(this,"POST_FC6_GUARD");
             this.logCouplerTelemetry();
             this.logMovementFlightRecorder();
             this.processWaterContainerInput();

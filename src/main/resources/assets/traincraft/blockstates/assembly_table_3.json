@@ -1,7 +1,19 @@
 {
-  "variants": {
-    "": {
-      "model": "traincraft:block/assembly_table_3"
-    }
-  }
+    "variants":  {
+                     "facing=north":  {
+                                          "model":  "traincraft:block/assembly_table_3"
+                                      },
+                     "facing=east":  {
+                                         "model":  "traincraft:block/assembly_table_3",
+                                         "y":  90
+                                     },
+                     "facing=south":  {
+                                          "model":  "traincraft:block/assembly_table_3",
+                                          "y":  180
+                                      },
+                     "facing=west":  {
+                                         "model":  "traincraft:block/assembly_table_3",
+                                         "y":  270
+                                     }
+                 }
 }

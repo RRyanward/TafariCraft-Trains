@@ -57,6 +57,9 @@ public class UssrSteamLocomotiveRenderer extends EntityRenderer<UssrSteamLocomot
         VertexConsumer vertices = buffers.getBuffer(
                 RenderType.entityCutoutNoCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, TEXTURE)));
         this.model.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+        // TC_DEV38_R1G1Z7W5_RENDERER_WHEEL_FACE_HOOK
+        traincraft.client.renderer.animation.StructuralWheelFaceOverlayRenderer.renderNative(
+                this.model, poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
 
         poseStack.popPose();
         super.render(entity, entityYaw, partialTicks, poseStack, buffers, packedLight);

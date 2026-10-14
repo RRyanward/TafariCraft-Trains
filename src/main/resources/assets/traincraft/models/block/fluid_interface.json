@@ -1,0 +1,12 @@
+{
+  "parent": "minecraft:block/cube",
+  "textures": {
+    "particle": "traincraft:block/fluid_port_side",
+    "north": "traincraft:block/fluid_port_side",
+    "south": "traincraft:block/fluid_port_side",
+    "west": "traincraft:block/fluid_port_side",
+    "east": "traincraft:block/fluid_port_side",
+    "up": "traincraft:block/fluid_port_top",
+    "down": "traincraft:block/fluid_port_bottom"
+  }
+}

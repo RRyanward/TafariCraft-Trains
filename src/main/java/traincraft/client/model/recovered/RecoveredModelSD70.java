@@ -146,6 +146,65 @@ public final class RecoveredModelSD70 extends EntityModel<LegacyPoweredLocomotiv
     root.addOrReplaceChild("box97", CubeListBuilder.create().texOffs(201,2).addBox(0.000000000F,0.000000000F,0.000000000F,10.000000000F,1.000000000F,13.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(-5.000000000F,31.000000000F,-26.000000000F,0.000000000F,0.000000000F,0.000000000F));
     root.addOrReplaceChild("box98", CubeListBuilder.create().texOffs(204,23).addBox(0.000000000F,0.000000000F,0.000000000F,5.000000000F,1.000000000F,12.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(5.000000000F,32.000000000F,-13.000000000F,-3.141592654F,0.000000000F,-0.453785606F));
     root.addOrReplaceChild("box99", CubeListBuilder.create().texOffs(204,41).addBox(0.000000000F,0.000000000F,0.000000000F,5.000000000F,1.000000000F,1.000000000F, new CubeDeformation(0.000000000F)), PartPose.offsetAndRotation(5.000000000F,32.000000000F,-25.000000000F,-3.176499239F,-0.191986218F,-0.453785606F));
+        // TC_DEV38_R1G1Z5C_SD_WHEEL_FACE_SPLIT
+        // Original bogie-side panels use TEX 0,2 and are 1x6x20.
+        // Each 20x6 outer face contains three authored 6x6 wheel regions
+        // at longitudinal centers 3 / 10 / 17 within the panel.
+        //
+        // LEFT / negative X: use the authored west-face regions directly.
+        root.addOrReplaceChild("tc_wheel_left_f0",
+                CubeListBuilder.create().texOffs(0,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-6.02F,0.0F,-30.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_wheel_left_f1",
+                CubeListBuilder.create().texOffs(7,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-6.02F,0.0F,-23.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_wheel_left_f2",
+                CubeListBuilder.create().texOffs(14,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-6.02F,0.0F,-16.0F,0.0F,0.0F,0.0F));
+
+        root.addOrReplaceChild("tc_wheel_left_r0",
+                CubeListBuilder.create().texOffs(0,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-6.02F,0.0F,10.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_wheel_left_r1",
+                CubeListBuilder.create().texOffs(7,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-6.02F,0.0F,17.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_wheel_left_r2",
+                CubeListBuilder.create().texOffs(14,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(-6.02F,0.0F,24.0F,0.0F,0.0F,0.0F));
+
+        // RIGHT / positive X: texOffs are shifted so the thin cube's east
+        // face resolves to the authored east-face regions 21 / 28 / 35.
+        root.addOrReplaceChild("tc_wheel_right_f0",
+                CubeListBuilder.create().texOffs(15,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(6.0F,0.0F,-30.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_wheel_right_f1",
+                CubeListBuilder.create().texOffs(22,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(6.0F,0.0F,-23.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_wheel_right_f2",
+                CubeListBuilder.create().texOffs(29,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(6.0F,0.0F,-16.0F,0.0F,0.0F,0.0F));
+
+        root.addOrReplaceChild("tc_wheel_right_r0",
+                CubeListBuilder.create().texOffs(15,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(6.0F,0.0F,10.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_wheel_right_r1",
+                CubeListBuilder.create().texOffs(22,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(6.0F,0.0F,17.0F,0.0F,0.0F,0.0F));
+        root.addOrReplaceChild("tc_wheel_right_r2",
+                CubeListBuilder.create().texOffs(29,16)
+                        .addBox(0.0F,0.0F,0.0F,0.02F,6.0F,6.0F,new CubeDeformation(0.0F)),
+                PartPose.offsetAndRotation(6.0F,0.0F,24.0F,0.0F,0.0F,0.0F));
     return LayerDefinition.create(mesh,256,256);
   }
   @Override public void setupAnim(LegacyPoweredLocomotive e,float a,float b,float c,float d,float e2){}

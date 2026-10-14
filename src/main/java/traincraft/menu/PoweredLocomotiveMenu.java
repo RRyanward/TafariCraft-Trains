@@ -22,9 +22,9 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
         super(TCMenus.POWERED_LOCOMOTIVE.get(), id);
         this.locomotive = locomotive;
         if (locomotive.isBuilder()) {
-            machineSlots = 53;
+            machineSlots = 78;
             addBuilderSlots();
-            addPlayerInventory(playerInventory, 47, 174, 232);
+            addPlayerInventory(playerInventory, 47, 192, 250);
         } else {
             addSlot(new SlotItemHandler(locomotive.getPowerInventory(), 0, 8, 53) {
                 @Override public boolean mayPlace(ItemStack stack) {
@@ -41,25 +41,35 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
     }
 
     private void addBuilderSlots() {
-        var inv = locomotive.getPowerInventory();
+        var inv =
+                locomotive.getPowerInventory();
 
         // TC_BATCH8_R4A4_BLUEPRINT_FIRST_BUILDER_GUI
-        // Core: fuel + Blueprint.
-        // TC_BATCH8_R4A4F_BUILDER_SHARED_INPUT_SEPARATE_STORES
-        addSlot(new SlotItemHandler(inv, 0, 12, 58) {
+        // TC_DEV36_R1K14_FINAL_MATERIAL_LAYOUT
+        addSlot(new SlotItemHandler(
+                inv,
+                0,
+                12,
+                58) {
+            // TC_DEV36_R1K12_COAL_ONLY_BUILDER
             @Override
-            public boolean mayPlace(ItemStack stack) {
-                return stack.is(Items.COAL)
-                        || stack.is(TCItems.DIESEL_FUEL.get());
+            public boolean mayPlace(
+                    ItemStack stack) {
+                return stack.is(
+                        net.minecraft.world.item.Items.COAL);
             }
         });
 
-        // Preserve slots 1..19 because current Builder foundation/support/
-        // tunnel/material logic still consumes them. They are now presented
-        // generically as Supplies instead of old manual-builder categories.
-        int supplySlot = 1;
-        for (int row = 0; row < 4; row++) {
-            for (int col = 0; col < 5 && supplySlot <= 19; col++) {
+        // Historical SUPPLIES 1..19.
+        int supplySlot =
+                1;
+        for (int row = 0;
+             row < 4;
+             row++) {
+            for (int col = 0;
+                 col < 5
+                         && supplySlot <= 19;
+                 col++) {
                 addSlot(new SlotItemHandler(
                         inv,
                         supplySlot++,
@@ -68,10 +78,15 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
             }
         }
 
-        // Blueprint material/storage rack: slots 20..51.
-        int storageSlot = 20;
-        for (int row = 0; row < 4; row++) {
-            for (int col = 0; col < 8; col++) {
+        // Historical BLUEPRINT MATERIALS 20..51.
+        int storageSlot =
+                20;
+        for (int row = 0;
+             row < 4;
+             row++) {
+            for (int col = 0;
+                 col < 8;
+                 col++) {
                 addSlot(new SlotItemHandler(
                         inv,
                         storageSlot++,
@@ -80,11 +95,18 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
             }
         }
 
-        // Dedicated Blueprint slot remains handler slot 52.
-        addSlot(new SlotItemHandler(inv, 52, -2000, -2000) {
+        // Handler/menu slot 52 stays the real Blueprint storage slot, but is
+        // intentionally offscreen. The large Blueprint holder is its UI target.
+        addSlot(new SlotItemHandler(
+                inv,
+                52,
+                -1000,
+                -1000) {
             @Override
-            public boolean mayPlace(ItemStack stack) {
-                return stack.is(TCItems.TRACK_BLUEPRINT.get());
+            public boolean mayPlace(
+                    ItemStack stack) {
+                return stack.is(
+                        TCItems.TRACK_BLUEPRINT.get());
             }
 
             @Override
@@ -92,6 +114,137 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
                 return 1;
             }
         });
+
+        // One appended SUPPLIES cell completes the clean 4x5 grid.
+        addSlot(new SlotItemHandler(
+                inv,
+                53,
+                84,
+                146));
+
+        // Preserve r1k12 row-5 material data exactly where it already lived.
+        // handler 59..66 -> visible material row 5.
+        for (int extra = 0;
+             extra < 8;
+             extra++) {
+            addSlot(new SlotItemHandler(
+                    inv,
+                    59 + extra,
+                    106 + extra * 18,
+                    122));
+        }
+
+        // Reuse former extra-SUPPLIES storage 54..58, then 67..69,
+        // as visible material row 6 without losing saved stacks.
+        for (int extra = 0;
+             extra < 8;
+             extra++) {
+            int handlerSlot =
+                    extra < 5
+                            ? 54 + extra
+                            : 67 + (extra - 5);
+
+            addSlot(new SlotItemHandler(
+                    inv,
+                    handlerSlot,
+                    106 + extra * 18,
+                    140));
+        }
+
+        // New handler 70..77 -> visible material row 7.
+        for (int extra = 0;
+             extra < 8;
+             extra++) {
+            addSlot(new SlotItemHandler(
+                    inv,
+                    70 + extra,
+                    106 + extra * 18,
+                    158));
+        }
+
+        // Pattern/filter menu slots now follow all 78 Builder main slots.
+        var structure =
+                locomotive.getBuilderStructurePatterns();
+
+        for (int i = 0;
+             i < 7;
+             i++) {
+            addSlot(new SlotItemHandler(
+                    structure,
+                    i,
+                    263 + i * 18,
+                    58) {
+                @Override
+                public boolean mayPlace(
+                        ItemStack stack) {
+                    return stack.getItem()
+                            instanceof net.minecraft.world.item.BlockItem;
+                }
+
+                @Override
+                public int getMaxStackSize() {
+                    return 1;
+                }
+            });
+        }
+
+        addSlot(new SlotItemHandler(
+                structure,
+                7,
+                306,
+                111) {
+            @Override
+            public boolean mayPlace(
+                    ItemStack stack) {
+                return stack.getItem()
+                        instanceof net.minecraft.world.item.BlockItem;
+            }
+
+            @Override
+            public int getMaxStackSize() {
+                return 1;
+            }
+        });
+
+        addSlot(new SlotItemHandler(
+                structure,
+                8,
+                324,
+                111) {
+            @Override
+            public boolean mayPlace(
+                    ItemStack stack) {
+                return stack.getItem()
+                        instanceof net.minecraft.world.item.BlockItem;
+            }
+
+            @Override
+            public int getMaxStackSize() {
+                return 1;
+            }
+        });
+
+        for (int i = 0;
+             i < 3;
+             i++) {
+            addSlot(new SlotItemHandler(
+                    structure,
+                    9 + i,
+                    297 + i * 18,
+                    164) {
+                @Override
+                public boolean mayPlace(
+                        ItemStack stack) {
+                    return stack.getItem()
+                            instanceof net.minecraft.world.item.BlockItem;
+                }
+
+                @Override
+                public int getMaxStackSize() {
+                    return 1;
+                }
+            });
+        }
     }
     private void addPlayerInventory(Inventory inventory,int x,int y,int hotbarY){
         for(int row=0;row<3;row++)for(int col=0;col<9;col++)addSlot(new Slot(inventory,col+row*9+9,x+col*18,y+row*18));
@@ -145,11 +298,123 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
 
     @Override
     public boolean clickMenuButton(Player player, int id) {
+        // TC_DEV36_R1K29R_MANUAL_TUNNEL_MENU
+        if (id == 91
+                && locomotive.isBuilder()) {
+            locomotive.toggleBuilderManualTunnelMode();
+            return true;
+        }
         if (id == 90 && locomotive.isBuilder()) {
             locomotive.resetBuilderBlueprintProgress();
             return true;
         }
         return super.clickMenuButton(player, id);
+    }
+    // TC_DEV36_R1K4_PATTERN_SWAP_SHIFT
+    @Override
+    public void clicked(
+            int slotId,
+            int button,
+            net.minecraft.world.inventory.ClickType clickType,
+            Player player) {
+        // TC_DEV36_R1K14_LARGE_BLUEPRINT_HOLDER
+        // TC_DEV36_R1K4_PATTERN_SWAP_SHIFT
+        int patternStart =
+                locomotive.isBuilder()
+                        ? 78
+                        : -1;
+
+        int patternEnd =
+                locomotive.isBuilder()
+                        ? 90
+                        : -1;
+
+        if (locomotive.isBuilder()
+                && slotId == 52
+                && (clickType
+                                == net.minecraft.world.inventory.ClickType.QUICK_MOVE
+                        || (clickType
+                                        == net.minecraft.world.inventory.ClickType.PICKUP
+                                && getCarried().isEmpty()))) {
+            ItemStack moved =
+                    quickMoveStack(
+                            player,
+                            slotId);
+
+            if (!moved.isEmpty()) {
+                broadcastChanges();
+                return;
+            }
+        }
+
+        if (locomotive.isBuilder()
+                && slotId >= patternStart
+                && slotId < patternEnd
+                && clickType
+                        == net.minecraft.world.inventory.ClickType.PICKUP
+                && (button == 0
+                        || button == 1)
+                && slotId >= 0
+                && slotId < slots.size()) {
+            Slot patternSlot =
+                    slots.get(
+                            slotId);
+
+            ItemStack carried =
+                    getCarried();
+
+            ItemStack oldTemplate =
+                    patternSlot.getItem();
+
+            if (!carried.isEmpty()
+                    && carried.getItem()
+                            instanceof net.minecraft.world.item.BlockItem
+                    && patternSlot.mayPlace(
+                            carried)
+                    && !oldTemplate.isEmpty()
+                    && !ItemStack.isSameItemSameTags(
+                            carried,
+                            oldTemplate)) {
+                ItemStack replacement =
+                        carried.copy();
+                replacement.setCount(
+                        1);
+
+                ItemStack returned =
+                        oldTemplate.copy();
+
+                patternSlot.set(
+                        replacement);
+                patternSlot.setChanged();
+
+                if (!player.getAbilities()
+                        .instabuild) {
+                    carried.shrink(
+                            1);
+                }
+
+                if (carried.isEmpty()) {
+                    setCarried(
+                            returned);
+                }
+                else if (!player.getInventory()
+                        .add(
+                                returned)) {
+                    player.drop(
+                            returned,
+                            false);
+                }
+
+                broadcastChanges();
+                return;
+            }
+        }
+
+        super.clicked(
+                slotId,
+                button,
+                clickType,
+                player);
     }
     @Override
     public ItemStack quickMoveStack(
@@ -169,19 +434,56 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
 
         ItemStack source =
                 slot.getItem();
-
         ItemStack copy =
                 source.copy();
 
-        if (index < machineSlots) {
+        int patternStart =
+                locomotive.isBuilder()
+                        ? 78
+                        : -1;
+
+        int patternEnd =
+                locomotive.isBuilder()
+                        ? 90
+                        : -1;
+
+        int playerStart =
+                locomotive.isBuilder()
+                        ? patternEnd
+                        : machineSlots;
+
+        // TC_DEV36_R1K14_LARGE_BLUEPRINT_HOLDER
+        if (locomotive.isBuilder()
+                && index == 52) {
             if (!moveItemStackTo(
                     source,
-                    machineSlots,
+                    playerStart,
                     slots.size(),
                     true)) {
                 return ItemStack.EMPTY;
             }
-        } else if (locomotive.isBuilder()
+        }
+        else if (locomotive.isBuilder()
+                && index >= patternStart
+                && index < patternEnd) {
+            if (!moveItemStackTo(
+                    source,
+                    playerStart,
+                    slots.size(),
+                    true)) {
+                return ItemStack.EMPTY;
+            }
+        }
+        else if (index < machineSlots) {
+            if (!moveItemStackTo(
+                    source,
+                    playerStart,
+                    slots.size(),
+                    true)) {
+                return ItemStack.EMPTY;
+            }
+        }
+        else if (locomotive.isBuilder()
                 && source.is(
                         TCItems.TRACK_BLUEPRINT.get())) {
             if (!moveItemStackTo(
@@ -191,13 +493,10 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
                     false)) {
                 return ItemStack.EMPTY;
             }
-        } else if (locomotive.isBuilder()
-                && (source.is(Items.COAL)
-                        || source.is(
-                                TCItems.DIESEL_FUEL.get()))) {
-            // TC_BATCH8_R4A4F_BUILDER_FUEL_SLOT_PRIORITY
-            // Both fuels use the same physical input, but remain separate
-            // internally after insertion.
+        }
+        else if (locomotive.isBuilder()
+                && source.is(
+                        net.minecraft.world.item.Items.COAL)) {
             if (!moveItemStackTo(
                     source,
                     0,
@@ -205,26 +504,60 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
                     false)) {
                 return ItemStack.EMPTY;
             }
-        } else if (locomotive.isBuilder()
+        }
+        else if (locomotive.isBuilder()
+                && source.is(
+                        TCItems.DIESEL_FUEL.get())) {
+            return ItemStack.EMPTY;
+        }
+        else if (locomotive.isBuilder()
                 && TrackBlueprintItem
-                        .isTrackStack(source)) {
-            // TC_BATCH8_R3ZZZ_BLUEPRINT_STORAGE_SHIFTCLICK
-            if (!moveItemStackTo(
-                    source,
-                    20,
-                    52,
-                    false)) {
+                        .isTrackStack(
+                                source)) {
+            boolean moved =
+                    moveItemStackTo(
+                            source,
+                            20,
+                            52,
+                            false);
+
+            if (!source.isEmpty()) {
+                moved =
+                        moveItemStackTo(
+                                source,
+                                54,
+                                78,
+                                false)
+                                || moved;
+            }
+
+            if (!moved) {
                 return ItemStack.EMPTY;
             }
-        } else if (locomotive.isBuilder()) {
-            if (!moveItemStackTo(
-                    source,
-                    1,
-                    52,
-                    false)) {
+        }
+        else if (locomotive.isBuilder()) {
+            boolean moved =
+                    moveItemStackTo(
+                            source,
+                            1,
+                            52,
+                            false);
+
+            if (!source.isEmpty()) {
+                moved =
+                        moveItemStackTo(
+                                source,
+                                53,
+                                78,
+                                false)
+                                || moved;
+            }
+
+            if (!moved) {
                 return ItemStack.EMPTY;
             }
-        } else if (!moveItemStackTo(
+        }
+        else if (!moveItemStackTo(
                 source,
                 0,
                 machineSlots,
@@ -235,7 +568,8 @@ public final class PoweredLocomotiveMenu extends AbstractContainerMenu {
         if (source.isEmpty()) {
             slot.set(
                     ItemStack.EMPTY);
-        } else {
+        }
+        else {
             slot.setChanged();
         }
 

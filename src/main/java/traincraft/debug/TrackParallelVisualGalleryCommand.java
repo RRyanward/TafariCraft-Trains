@@ -54,7 +54,7 @@ public final class TrackParallelVisualGalleryCommand {
     private TrackParallelVisualGalleryCommand() {
     }
 
-    @SubscribeEvent
+    // TC_DEV38_R1D_COMMAND_DISABLED_RELEASE
     public static void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("tc_parallel_gallery")

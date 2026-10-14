@@ -29,7 +29,7 @@ public final class TrackVariantRegressionCommand {
 
     private TrackVariantRegressionCommand() {}
 
-    @SubscribeEvent
+    // TC_DEV38_R1D_COMMAND_DISABLED_RELEASE
     public static void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
                 Commands.literal("tc_track_variant_test")

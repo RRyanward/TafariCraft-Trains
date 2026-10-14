@@ -1,0 +1,24 @@
+{
+    "type":  "minecraft:crafting_shaped",
+    "category":  "misc",
+    "pattern":  [
+                    "CRC",
+                    "RIR",
+                    "CRC"
+                ],
+    "key":  {
+                "C":  {
+                          "item":  "traincraft:copper_ingot"
+                      },
+                "I":  {
+                          "item":  "minecraft:iron_ingot"
+                      },
+                "R":  {
+                          "item":  "minecraft:redstone"
+                      }
+            },
+    "result":  {
+                   "item":  "traincraft:battery",
+                   "count":  1
+               }
+}
