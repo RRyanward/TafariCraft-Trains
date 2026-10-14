@@ -32,6 +32,8 @@ The core train and track systems are now substantially implemented. Current work
 
 The source repository is active development. A public release build has not yet been published.
 
+**October 13, 2026 source update:** The latest repository sync includes newer DEV37–DEV52 work on railway villages, trackside services, villager professions, special-purpose tracks, tanker logistics, crafting progression, wheel animation, train lighting, and the in-game guide. See the [Changelog](CHANGELOG.md) for the detailed development snapshot. Features still undergoing world-specific testing are identified below.
+
 ---
 
 ## Major Features
@@ -118,6 +120,46 @@ Track geometry and train ride/path behavior are treated as protected systems dur
 - Runtime and headless validation tooling
 
 The Builder/Blueprint system is one of the areas receiving final runtime regression testing before release.
+
+### 🚉 Railway Stations, Villagers & Services (development)
+- Village-linked railway station pilot with station buildings, enclosed ticket-office upgrades, lantern lighting, and railway infrastructure
+- Station survey, track-network preview/placement/audit, clearance, and terrain/grade diagnostic tools
+- Six railway professions: **Station Chief, Train Conductor, Track Worker, Railway Engineer, Freight Yard Clerk, and Fuel Depot Operator**
+- Six corresponding job-site workstations, villager trades, and Minecraft-style spawn eggs organized in the vanilla Spawn Eggs tab
+- Configurable railway station/staff options, including abandoned-station variants and station-generated worker replacement
+- Railway service activation, status, and staffing commands, with test locomotive/passenger consists
+
+**Development boundary:** Station and service prototypes have been exercised in controlled worlds, but broad automatic inter-village networks, schedules, and fully autonomous operation remain under development. Some generation experiments are opt-in and intentionally restricted to disposable test saves.
+
+### 🚦 Specialty Tracks & Railway Safety
+The current source includes **15 specialty track handlers**, covering:
+- Freight, passenger, locomotive, steam, diesel, and tanker detectors
+- Coupling and uncoupling rail
+- Animal and mob boarding rails, plus disembarking rail
+- Locomotive speed-controller and holding rails
+- Station-stop rail, automatic horn rail, and crossing-approach rail
+
+Additional trackside content includes crossing equipment, warning effects, and train buffers. A guarded automated handler test exists for the 15 specialty tracks; that does **not** constitute a completed real-world pass for every behavior or locomotive.
+
+### 🛢️ Tank Cars, Freight & Mod Integration
+- Dedicated **water** and **lava** tanker cars plus a **universal-fluid** tanker, each with 64,000 mB storage
+- Persisted tanker contents, manual fluid-container interactions, and fluid-dependent loaded-mass calculations
+- Cargo load/unload rails with cargo interfaces; fluid load/unload rails with fluid interfaces and stationary-car transfer behavior
+- Rail-power interfaces and interoperability code using Forge item, fluid, and energy capabilities
+
+Individual integrations and external mod combinations require their own compatibility testing.
+
+### 🏭 Crafting, Workshop & Guidebook
+- Restored **Tier I / II / III Assembly Tables**, Train Workbench, and classic workshop/machine blocks
+- Extended crafting and assembly recipe coverage, staged progression, and JEI integration code
+- In-game **TafariCraft Guide** interface and guide item provided once when a player first joins
+- Organized **Trains**, **Tracks**, and **Misc** creative tabs, with railway workstations grouped in Misc
+
+### 🚂 Animation, Headlights & Visual Fixes
+- Expanded wheel rotation, connecting rods, piston/linkage animation, and alignment work across the restored locomotive fleet
+- Directional locomotive headlamp beams, ground illumination, and day/night operation under active visual validation
+- Specific light/occlusion improvements validated on selected locomotives; full-fleet wall collision and all viewing conditions are not universally certified
+- Medium parallel-curve rail-side mesh repair and medium-diagonal placement ghost seam fixes
 
 ### 🎛️ Classic Traincraft Feel
 Where practical, TafariCraft - Trains preserves the classic Traincraft presentation:
