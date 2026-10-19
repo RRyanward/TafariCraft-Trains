@@ -26,7 +26,7 @@ This is not a compatibility wrapper around an old JAR. The current project conta
 
 ## Current Development State
 
-**Status: Final development / release-candidate validation** !!!About too Release Stable Build!!! Get ready its about to be reborn!
+**Status: Final development / release-candidate validation** !!!Testing is completed/cleaning up for release!!! 
 
 The core train and track systems are now substantially implemented. Current work is focused on final runtime regression testing, polish, compatibility, documentation, and release preparation.
 
