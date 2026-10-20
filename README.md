@@ -26,13 +26,15 @@ This is not a compatibility wrapper around an old JAR. The current project conta
 
 ## Current Development State
 
-**Status: Final development / release-candidate validation** !!!Testing is completed/cleaning up for release!!! 
+**Status: Late-stage development / release preparation — active regression and world-generation testing.**
 
-The core train and track systems are now substantially implemented. Current work is focused on final runtime regression testing, polish, compatibility, documentation, and release preparation.
+The Minecraft 1.20.1 / Forge / Java 17 port has substantial playable locomotive, rolling-stock, track, crafting, and railway infrastructure systems. Targeted checks have passed for many components, but not every locomotive, world seed, mod combination, or automated railway scenario has been certified.
 
-The source repository is active development. A public release build has not yet been published.
+**Latest source sync: October 20, 2026.** GitHub `main` now includes additional DEV51B station work and DEV53–DEV55 improvements to passenger/driver seating, locomotive running gear, lighting, fluid-transfer rail presentation, and operational sounds. This describes **source development**, not a published release or a guarantee that every feature has passed full-world runtime testing.
 
-**October 13, 2026 source update:** The latest repository sync includes newer DEV37–DEV52 work on railway villages, trackside services, villager professions, special-purpose tracks, tanker logistics, crafting progression, wheel animation, train lighting, and the in-game guide. See the [Changelog](CHANGELOG.md) for the detailed development snapshot. Features still undergoing world-specific testing are identified below.
+**Current DEV56–DEV57 focus:** improving village/station discovery and expanding safely generated railway structure variety while preserving existing worlds. The proposed newer village-trigger approach and additional structure/worldgen work remain under investigation; they are **not** described here as completed production behavior.
+
+No approved public release JAR has been published yet. See the [Changelog](CHANGELOG.md) for earlier milestone detail.
 
 ---
 
@@ -121,15 +123,18 @@ Track geometry and train ride/path behavior are treated as protected systems dur
 
 The Builder/Blueprint system is one of the areas receiving final runtime regression testing before release.
 
-### 🚉 Railway Stations, Villagers & Services (development)
-- Village-linked railway station pilot with station buildings, enclosed ticket-office upgrades, lantern lighting, and railway infrastructure
-- Station survey, track-network preview/placement/audit, clearance, and terrain/grade diagnostic tools
+### 🚉 Railway Stations, Villagers & Services (active development)
+- Village-linked station pilot with ticket offices, railway platforms, lantern lighting, and railway infrastructure
+- **Surface station variety (DEV51B R37):** regular, abandoned, overgrown, and under-construction variants, selected deterministically from the world seed and station location; within eligible *surface-station* selections, the current variant roll is 60% / 15% / 15% / 10%, respectively
+- **Underground stations (DEV51B R38):** a player-operated subway design, attempted at 10% of eligible newly placed station sites when enabled
+- **Circular underground hubs (DEV51B R39):** a 25-block-diameter station hall with two side rooms, attempted at 5% of eligible new station sites when enabled; selected sites must pass excavation and chunk-safety checks
+- Underground placement attempts can fall back to a safer eligible station design when their read-only site preflight rejects the location; these percentages are **selection rolls, not guaranteed spawn rates** across all villages
+- Biome/style-aware station architecture, station survey and route diagnostics, clearance checks, and guarded player-operated station testing
 - Six railway professions: **Station Chief, Train Conductor, Track Worker, Railway Engineer, Freight Yard Clerk, and Fuel Depot Operator**
-- Six corresponding job-site workstations, villager trades, and Minecraft-style spawn eggs organized in the vanilla Spawn Eggs tab
-- Configurable railway station/staff options, including abandoned-station variants and station-generated worker replacement
-- Railway service activation, status, and staffing commands, with test locomotive/passenger consists
+- Corresponding workstations, villager trades, and Minecraft-style spawn eggs in the vanilla Spawn Eggs tab
+- Experimental route planning, read-only audits, guarded service/dispatch studies, and controlled station-operation test suites
 
-**Development boundary:** Station and service prototypes have been exercised in controlled worlds, but broad automatic inter-village networks, schedules, and fully autonomous operation remain under development. Some generation experiments are opt-in and intentionally restricted to disposable test saves.
+**Worldgen boundaries:** New station placement is eligibility-, configuration-, and terrain-dependent. Existing saves are not automatically retrofitted by the new station variants. Abandoned/overgrown stations do not receive normal station staff. Subway and circular-hub structures are player-operated designs, **not** automatically connected inter-village railways. Automated networks, schedules, and unsupervised train dispatch remain unfinished and under safety review.
 
 ### 🚦 Specialty Tracks & Railway Safety
 The current source includes **15 specialty track handlers**, covering:
@@ -156,10 +161,13 @@ Individual integrations and external mod combinations require their own compatib
 - Organized **Trains**, **Tracks**, and **Misc** creative tabs, with railway workstations grouped in Misc
 
 ### 🚂 Animation, Headlights & Visual Fixes
-- Expanded wheel rotation, connecting rods, piston/linkage animation, and alignment work across the restored locomotive fleet
-- Directional locomotive headlamp beams, ground illumination, and day/night operation under active visual validation
-- Specific light/occlusion improvements validated on selected locomotives; full-fleet wall collision and all viewing conditions are not universally certified
-- Medium parallel-curve rail-side mesh repair and medium-diagonal placement ghost seam fixes
+- DEV54 fleet running-gear work on wheel rotation, connecting rods, piston linkages, and static mesh masking, with targeted review commands and accepted locomotive-specific fixes
+- DEV55 lighting work on headlamp direction, beam/ground-light placement, rear-lamp review, and in-world lighting diagnostics
+- Passenger and driver seating calibration improvements, including wooden passenger tram driver-control safeguards and seat-alignment tools
+- Fluid-loading and unloading rail direction markings, plus event-driven tanker pumping and mob-transport sound cues
+- Earlier medium parallel-curve rail-side mesh repair and medium-diagonal placement-ghost seam fixes
+
+**Visual-test boundaries:** Some locomotives and lighting setups are accepted in targeted tests, while other rod/mesh combinations and fleet-wide ground illumination still need review. In particular, the Berkshire 1225 ground light remains a known issue; no full-fleet lighting or rod-animation certification is claimed.
 
 ### 🎛️ Classic Traincraft Feel
 Where practical, TafariCraft - Trains preserves the classic Traincraft presentation:
@@ -179,7 +187,7 @@ Where practical, TafariCraft - Trains preserves the classic Traincraft presentat
 | Mod Loader | **Forge** |
 | Forge | **47.3.22** |
 | Java | **17** |
-| Project Status | **Final development / runtime validation** |
+| Project Status | **Late-stage development / release preparation; active worldgen and visual validation** |
 
 ---
 
