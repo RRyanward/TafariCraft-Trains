@@ -1,4 +1,8 @@
 {
+    "dev55_tanker_pump_load": {"sounds": [{"name": "traincraft:dev55/tct_pump_load", "stream": false}]},
+    "dev55_tanker_pump_unload": {"sounds": [{"name": "traincraft:dev55/tct_pump_unload", "stream": false}]},
+    "dev55_mob_lock": {"sounds": [{"name": "traincraft:dev55/mob_lock", "stream": false}]},
+    "dev55_mob_unlock": {"sounds": [{"name": "traincraft:dev55/mob_unlock", "stream": false}]},
     "742_horn":  {
                      "category":  "master",
                      "sounds":  [

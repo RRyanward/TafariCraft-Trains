@@ -139,6 +139,34 @@ public class PassengerCoachBlue extends SteamTender {
     }
 
     @Override
+    public double getCouplerTouchTargetDistance(Entity leader) {
+        double accepted = super.getCouplerTouchTargetDistance(leader);
+        // R27d scoped correction: only the disposable-world station's newly
+        // staged, mutually linked GP7 + one Blue Coach pair. Every normal
+        // passenger coach and the accepted FC12 consist remain unchanged.
+        if (leader == null || this.level().isClientSide) return accepted;
+        net.minecraft.nbt.CompoundTag coachTag = this.getPersistentData();
+        net.minecraft.nbt.CompoundTag leadTag = leader.getPersistentData();
+        boolean tagged = traincraft.worldgen.Dev51BStageSpacingR27d.scoped(
+                coachTag.getString("TC_DEV51B_R27D_SPACING"),
+                leadTag.getString("TC_DEV51B_R27D_SPACING"),
+                coachTag.getString("TC_RAILWAY_SERVICE_STAGE"),
+                leadTag.getString("TC_RAILWAY_SERVICE_STAGE"),
+                coachTag.getString("TC_RAILWAY_SERVICE_ROLE"),
+                leadTag.getString("TC_RAILWAY_SERVICE_ROLE"),
+                coachTag.getLong("TC_RAILWAY_SERVICE_STATION"),
+                leadTag.getLong("TC_RAILWAY_SERVICE_STATION"),
+                coachTag.contains("TC_RAILWAY_SERVICE_STATION")
+                    && leadTag.contains("TC_RAILWAY_SERVICE_STATION"),
+                leader instanceof traincraft.entity.train.power.LegacyPoweredLocomotive
+                    && "traincraft:locomotive_diesel_gp7".equals(
+                    String.valueOf(net.minecraft.core.registries.BuiltInRegistries.ENTITY_TYPE.getKey(leader.getType()))),
+                this.isCoupledTo(leader.getUUID()),
+                this.level() == leader.level());
+        return traincraft.worldgen.Dev51BStageSpacingR27d.touchTarget(accepted,tagged);
+    }
+
+    @Override
     protected double getTrailingCouplerReach() {
         return PASSENGER_COUPLER_REACH;
     }

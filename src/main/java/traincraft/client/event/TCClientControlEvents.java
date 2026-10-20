@@ -14,6 +14,7 @@ import traincraft.client.TCKeyMappings;
 import traincraft.client.screen.SteamLocomotiveScreen;
 import traincraft.client.screen.PoweredLocomotiveScreen;
 import traincraft.entity.train.steam.small.SmallSteamLocomotive;
+import traincraft.entity.train.power.LegacyPoweredLocomotive;
 import traincraft.network.TCNetwork;
 import traincraft.network.packet.LocomotiveControlPacket;
 import traincraft.network.packet.OpenSteamLocomotiveMenuPacket;
@@ -45,6 +46,14 @@ public final class TCClientControlEvents {
         }
 
         if (!(minecraft.player.getVehicle() instanceof SmallSteamLocomotive locomotive)) {
+            resetLocalState();
+            return;
+        }
+        // DEV53E3G: Tram Seat 1 is the driver; Seats 2 and 3 are passengers.
+        // All other locomotive input remains unchanged.
+        if (locomotive instanceof LegacyPoweredLocomotive powered
+                && powered.isWoodenPassengerTram()
+                && !powered.tcIsWoodenTramDriver(minecraft.player)) {
             resetLocalState();
             return;
         }

@@ -41,6 +41,17 @@ public class SmallSteamLocomotiveRenderer extends EntityRenderer<SmallSteamLocom
     // 12 / 16 * MODEL_SCALE(0.8) = 0.60 blocks.
     private static final double NATIVE_AXLE_SPACING =
             (12.0D / 16.0D) * MODEL_SCALE;
+    // DEV54H15AK: native Small Steam connector ONLY; accepted wheel phase intact.
+    private static final boolean DEV54H15AK_NATIVE_LINKS_ON = h15akNativeLinksMarker();
+    private static boolean h15akNativeLinksMarker(){
+        try{
+            var p=net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                .resolve("DEV54H15AK-SMALL-STEAM-LINKS-ON.txt");
+            return java.nio.file.Files.isRegularFile(p) &&
+                java.nio.file.Files.readString(p,java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("\uFEFF", "").trim().equals("DEV54H15AK-SMALL-ON-V1");
+        }catch(Exception ignored){return false;}
+    }
     private final ModelPart model;
 
     public SmallSteamLocomotiveRenderer(EntityRendererProvider.Context context) {
@@ -162,10 +173,12 @@ public class SmallSteamLocomotiveRenderer extends EntityRenderer<SmallSteamLocom
         // TC_DEV38_R1G1R3A_NATIVE_WHEEL_DIRECTION
         // Native Small Steam wheels rotate around X. Reverse the legacy
         // steam-phase polarity locally; Freight/shared phase remain frozen.
-        SmallSteamLocomotiveModel.animateWheels(
-                this.model,
+        float h15akAcceptedWheelPhase =
                 -(float) traincraft.client.renderer.animation.RollingStockWheelAnimation
-                        .sampleNativePhase(entity, partialTicks));
+                        .sampleNativePhase(entity, partialTicks);
+        SmallSteamLocomotiveModel.animateWheels(this.model,h15akAcceptedWheelPhase);
+        SmallSteamLocomotiveModel.animateFrontCrankLinks(
+                this.model,h15akAcceptedWheelPhase,DEV54H15AK_NATIVE_LINKS_ON);
 
         VertexConsumer vertices = buffers.getBuffer(RenderType.entityCutoutNoCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, TEXTURE)));
         this.model.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);

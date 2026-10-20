@@ -29,9 +29,36 @@ public final class FluidTransferTrackBlock extends RailBlock {
     private static final double STOPPED_SPEED_SQR = 0.0001D;
     private final Mode mode;
 
+    // DEV55S2: independent arrow direction; never use RailShape as the player-facing indicator.
+    // player_oriented=false is the backward-compatible state for existing saved rails.
+    public static final net.minecraft.world.level.block.state.properties.DirectionProperty ARROW_FACING =
+            net.minecraft.world.level.block.state.properties.BlockStateProperties.HORIZONTAL_FACING;
+    public static final net.minecraft.world.level.block.state.properties.BooleanProperty PLAYER_ORIENTED =
+            net.minecraft.world.level.block.state.properties.BooleanProperty.create("player_oriented");
+
     public FluidTransferTrackBlock(Mode mode, Properties properties) {
         super(properties);
         this.mode = mode;
+        this.registerDefaultState(this.defaultBlockState()
+                .setValue(ARROW_FACING, net.minecraft.core.Direction.NORTH)
+                .setValue(PLAYER_ORIENTED, false));
+    }
+
+    @Override
+    protected void createBlockStateDefinition(
+            net.minecraft.world.level.block.state.StateDefinition.Builder<
+                    net.minecraft.world.level.block.Block, BlockState> builder) {
+        super.createBlockStateDefinition(builder);
+        builder.add(ARROW_FACING, PLAYER_ORIENTED);
+    }
+
+    @Override
+    public BlockState getStateForPlacement(net.minecraft.world.item.context.BlockPlaceContext context) {
+        BlockState rail = super.getStateForPlacement(context);
+        // getHorizontalDirection() is the direction the player looks TOWARD.
+        // Arrow therefore points AWAY from the player's standing position.
+        return rail == null ? null : rail.setValue(ARROW_FACING, context.getHorizontalDirection().getOpposite())
+                .setValue(PLAYER_ORIENTED, true);
     }
 
     @Override
@@ -131,7 +158,11 @@ public final class FluidTransferTrackBlock extends RailBlock {
         int moved = mode == Mode.LOAD
                 ? transfer(buffer, car, MB_PER_CYCLE)
                 : transfer(car, buffer, MB_PER_CYCLE);
-        if (moved > 0) dock.setChanged();
+        if (moved > 0) {
+            dock.setChanged();
+            // DEV55S1: play only for mB actually moved (never for a rejected/idle dock).
+            traincraft.audio.Dev55OperationalSounds.pump(level, tanker, mode == Mode.LOAD);
+        }
     }
 
     private static int transfer(IFluidHandler source, IFluidHandler target, int limit) {

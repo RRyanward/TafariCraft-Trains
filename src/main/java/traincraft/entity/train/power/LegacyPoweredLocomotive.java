@@ -89,6 +89,14 @@ public class LegacyPoweredLocomotive extends SmallSteamLocomotive {
             SynchedEntityData.defineId(LegacyPoweredLocomotive.class, EntityDataSerializers.FLOAT);
     private static final EntityDataAccessor<Float> DATA_CALIBRATION_SEAT_SIDE =
             SynchedEntityData.defineId(LegacyPoweredLocomotive.class, EntityDataSerializers.FLOAT);
+    // DEV53E3F: Three independently synced wooden-tram passenger slots.
+    // Occupancy is per entity, never stored in the frozen calibration TOML.
+    private static final EntityDataAccessor<Integer> DATA_WOOD_TRAM_SEAT_1 =
+            SynchedEntityData.defineId(LegacyPoweredLocomotive.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_WOOD_TRAM_SEAT_2 =
+            SynchedEntityData.defineId(LegacyPoweredLocomotive.class, EntityDataSerializers.INT);
+    private static final EntityDataAccessor<Integer> DATA_WOOD_TRAM_SEAT_3 =
+            SynchedEntityData.defineId(LegacyPoweredLocomotive.class, EntityDataSerializers.INT);
     // TC_DEV36_R1K29E_BUILDER_EXCAVATION
     // Classic Traincraft's Builder exposed a synchronized "working" state that
     // drove its seven-piece front rotor. Keep authoritative run state server-side,
@@ -166,6 +174,9 @@ private final ItemStackHandler powerInventory = new ItemStackHandler(78);
         this.entityData.define(DATA_CALIBRATION_SEAT_LONG, 0.0F);
         this.entityData.define(DATA_CALIBRATION_SEAT_Y, 0.0F);
         this.entityData.define(DATA_CALIBRATION_SEAT_SIDE, 0.0F);
+        this.entityData.define(DATA_WOOD_TRAM_SEAT_1, -1);
+        this.entityData.define(DATA_WOOD_TRAM_SEAT_2, -1);
+        this.entityData.define(DATA_WOOD_TRAM_SEAT_3, -1);
     }
 
     public String variantId() {
@@ -182,6 +193,13 @@ private final ItemStackHandler powerInventory = new ItemStackHandler(78);
     public boolean isDiesel() { return driveType() == DriveType.DIESEL; }
     public boolean isElectric() { return driveType() == DriveType.ELECTRIC; }
     public boolean isBuilder() { return driveType() == DriveType.BUILDER; }
+
+    // Both classic wooden trams: one driver seat + two independent passenger seats.
+    public boolean isWoodenPassengerTram() {
+        String id = variantId();
+        return "locomotive_electric_tram".equals(id)
+                || "locomotive_electric_tram_ny".equals(id);
+    }
 
     /** Client-safe visual state for the classic Builder rotor. */
     public boolean isBuilderDrillActive() {
@@ -329,6 +347,11 @@ private final ItemStackHandler powerInventory = new ItemStackHandler(78);
     }
     @Override
     protected void tickPowerSystem() {
+        // DEV53E3G: Keep the three synchronized seat assignments, but do NOT
+        // erase the driver's W/S/brake controls. Seat 1 operates the tram.
+        if (isWoodenPassengerTram()) {
+            tcUpdateWoodenTramSeatAssignments();
+        }
         if (!level().isClientSide && isBuilder()) tickBuilderAutonomousDrive();
         syncPoweredCalibrationState();
         if (level().isClientSide) return;
@@ -465,17 +488,211 @@ tcDev36SyncBuilderDrillState();
                 getTrainFacingYaw(), getDeltaMovement().horizontalDistance(),
                 isElectric(), isOnPoweredEnergyTrack(), backupName, backup.getCount(), powerAmount);
     }
-    // r1e11 diagnostic only: preserve vanilla/current rider placement exactly,
-    // then log the resulting position. No seat correction is applied here.
-    // TC_R2E5_STABLE_POWERED_SEAT
-    // Powered locomotives share the proven SmallSteam chassis/path, so rider
-    // placement uses that same authoritative frame. Do not independently rotate
-    // a powered-seat pin around render/calibration yaw here; that can put the
-    // player beside the locomotive after compound/long turns.
+    // DEV53E3C GP7 ONLY: make the existing pin and six calibration commands
+    // move the physical rider (first and third person), not merely stored NBT.
+    // Every other powered locomotive, and GP7 with no seat pin, retains the
+    // accepted SmallSteam chassis seat method unchanged.
+    // DEV53E3E: Only skip the render-only camera bridge when the real
+    // mounted passenger already uses the saved powered rider seat.
+    public boolean tcDev53E3EHasAuthoritativePhysicalSeat() {
+        // GP7 and CHME3 (and future pinned non-Builder powered engines)
+        // use the actual mounted passenger seat, not the old camera bridge.
+        // Wooden trams always use their own three physical passenger seats.
+        return isWoodenPassengerTram() || (!isBuilder() && hasPoweredSeatPin());
+    }
+    // DEV53E3F: Stable three-place seating on BOTH wooden tram variants.
+    // Seat ownership is indexed by synced rider entity ID, not passenger order:
+    // another passenger leaving never slides the remaining riders over.
+    private EntityDataAccessor<Integer> tcWoodTramSeatAccessor(int slot) {
+        return switch (slot) {
+            case 0 -> DATA_WOOD_TRAM_SEAT_1;
+            case 1 -> DATA_WOOD_TRAM_SEAT_2;
+            default -> DATA_WOOD_TRAM_SEAT_3;
+        };
+    }
+
+    private void tcUpdateWoodenTramSeatAssignments() {
+        if (!isWoodenPassengerTram() || level().isClientSide) return;
+        for (int seat = 0; seat < 3; seat++) {
+            EntityDataAccessor<Integer> accessor = tcWoodTramSeatAccessor(seat);
+            int id = this.entityData.get(accessor);
+            if (id >= 0 && getPassengers().stream().noneMatch(p -> p.getId() == id)) {
+                this.entityData.set(accessor, -1);
+            }
+        }
+        for (net.minecraft.world.entity.Entity passenger : getPassengers()) {
+            boolean assigned = false;
+            for (int seat = 0; seat < 3; seat++) {
+                if (this.entityData.get(tcWoodTramSeatAccessor(seat)) == passenger.getId()) {
+                    assigned = true;
+                    break;
+                }
+            }
+            if (assigned) continue;
+            for (int seat = 0; seat < 3; seat++) {
+                EntityDataAccessor<Integer> accessor = tcWoodTramSeatAccessor(seat);
+                if (this.entityData.get(accessor) == -1) {
+                    this.entityData.set(accessor, passenger.getId());
+                    break;
+                }
+            }
+        }
+    }
+
+    // DEV53E3G: Only the actual Seat 1 occupant has driving authority;
+    // simply becoming the first remaining passenger does not grant controls.
+    public boolean tcIsWoodenTramDriver(net.minecraft.world.entity.Entity rider) {
+        return isWoodenPassengerTram()
+                && rider != null
+                && hasPassenger(rider)
+                && this.entityData.get(DATA_WOOD_TRAM_SEAT_1) == rider.getId();
+    }
+
+    // DEV53E3H: Wooden trams support click-to-choose, not just first-free boarding.
+    // The tiny original collision box means a cabin seat may be unclickable;
+    // sneak-right-click with an empty hand cycles the requested seat instead.
+    private String tcWoodenSeatPreferenceKey() {
+        return "TCTWoodenSeatChoice_" + getUUID();
+    }
+
+    private int tcChooseWoodenSeat(net.minecraft.world.entity.player.Player player,
+            net.minecraft.world.phys.Vec3 localHit) {
+        String preference = tcWoodenSeatPreferenceKey();
+        if (player.getPersistentData().contains(preference)) {
+            return net.minecraft.util.Mth.clamp(player.getPersistentData().getInt(preference), 1, 3);
+        }
+        double dx = localHit == null ? player.getX() - getX() : localHit.x;
+        double dz = localHit == null ? player.getZ() - getZ() : localHit.z;
+        double yaw = Math.toRadians(getRenderTrainFacingYaw(1.0F));
+        double along = dx * Math.sin(yaw) - dz * Math.cos(yaw);
+        String key = variantId();
+        int nearest = 1;
+        double best = Double.POSITIVE_INFINITY;
+        for (int i = 1; i <= 3; i++) {
+            double fallback = (i - 2) * ("locomotive_electric_tram_ny".equals(key) ? 1.0D : 0.70D);
+            double seatLong = traincraft.config.RollingStockCalibrationConfig.seatLong(key, i, fallback);
+            double error = Math.abs(seatLong - along);
+            if (error < best) {best=error;nearest=i;}
+        }
+        return nearest;
+    }
+
+    private net.minecraft.world.InteractionResult tcBoardChosenWoodenSeat(
+            net.minecraft.world.entity.player.Player player,
+            net.minecraft.world.InteractionHand hand,
+            net.minecraft.world.phys.Vec3 localHit) {
+        if (hand != net.minecraft.world.InteractionHand.MAIN_HAND) return net.minecraft.world.InteractionResult.PASS;
+        if (player.getItemInHand(hand).getItem() instanceof traincraft.item.ConnectorItem) {
+            return super.interact(player, hand);
+        }
+        if (!level().isClientSide) {
+            tcUpdateWoodenTramSeatAssignments();
+            String key = tcWoodenSeatPreferenceKey();
+            if (player.isShiftKeyDown() && player.getItemInHand(hand).isEmpty()) {
+                int previous = player.getPersistentData().contains(key) ? player.getPersistentData().getInt(key) : 0;
+                int next = previous % 3 + 1;
+                player.getPersistentData().putInt(key, next);
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                        "Wooden Tram: selected Seat " + next + "/3. Right-click to board."), true);
+                return net.minecraft.world.InteractionResult.CONSUME;
+            }
+            if (player.getVehicle() == this || player.isPassenger()) {
+                return net.minecraft.world.InteractionResult.CONSUME;
+            }
+            int slot = tcChooseWoodenSeat(player,localHit);
+            EntityDataAccessor<Integer> accessor = tcWoodTramSeatAccessor(slot - 1);
+            if (this.entityData.get(accessor) != -1) {
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                        "Wooden Tram: Seat " + slot + " is occupied. Choose another seat."), true);
+                return net.minecraft.world.InteractionResult.CONSUME;
+            }
+            this.entityData.set(accessor,player.getId());
+            if (!player.startRiding(this)) {
+                this.entityData.set(accessor,-1);
+            } else {
+                player.getPersistentData().remove(key);
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal(
+                        "Wooden Tram: " + (slot == 1 ? "Driver" : "Passenger") + " Seat " + slot + "/3"), true);
+            }
+        }
+        return net.minecraft.world.InteractionResult.sidedSuccess(level().isClientSide);
+    }
+
+    private int tcWoodenTramSeatFor(net.minecraft.world.entity.Entity passenger) {
+        for (int seat = 0; seat < 3; seat++) {
+            if (this.entityData.get(tcWoodTramSeatAccessor(seat)) == passenger.getId()) {
+                return seat;
+            }
+        }
+        // Client may see the passenger a tick before seat IDs synchronize.
+        return Math.max(0, Math.min(2, getPassengers().indexOf(passenger)));
+    }
+
+    private void tcPositionWoodenTramPassenger(net.minecraft.world.entity.Entity passenger,
+            net.minecraft.world.entity.Entity.MoveFunction moveFunction) {
+        if (!hasPassenger(passenger)) return;
+        int seat = tcWoodenTramSeatFor(passenger);
+        int slot = seat + 1;
+        String id = variantId();
+        // Read existing three-slot calibration; NEVER replace NY tram settings.
+        // Defaults only apply to slots not yet configured in the live TOML.
+        boolean calibrated = traincraft.config.RollingStockCalibrationConfig.hasSeat(id, slot);
+        double defaultLong = (seat - 1) * ("locomotive_electric_tram_ny".equals(id) ? 1.0D : 0.70D);
+        double longitudinal = calibrated
+                ? traincraft.config.RollingStockCalibrationConfig.seatLong(id, slot, defaultLong)
+                : defaultLong;
+        double seatY = calibrated
+                ? traincraft.config.RollingStockCalibrationConfig.seatY(id, slot, -0.30D)
+                : -0.30D;
+        double side = calibrated
+                ? traincraft.config.RollingStockCalibrationConfig.seatSide(id, slot, 0.0D)
+                : 0.0D;
+        double modelY = traincraft.config.RollingStockCalibrationConfig.modelY(id, 0.0D);
+        double yaw = Math.toRadians(getRenderTrainFacingYaw(1.0F));
+        double fx = Math.sin(yaw);
+        double fz = -Math.cos(yaw);
+        double rx = -fz;
+        double rz = fx;
+        moveFunction.accept(passenger,
+                getX() + fx * longitudinal + rx * side,
+                // seatY in the accepted three-seat TOML denotes the
+                // passenger FEET location; do not add ridingOffset again.
+                getY() + modelY + seatY,
+                getZ() + fz * longitudinal + rz * side);
+    }
+
     @Override
     protected void positionRider(net.minecraft.world.entity.Entity passenger,
                                  net.minecraft.world.entity.Entity.MoveFunction moveFunction) {
-        super.positionRider(passenger, moveFunction);
+        if (isWoodenPassengerTram()) {
+            tcPositionWoodenTramPassenger(passenger, moveFunction);
+            return;
+        }
+        // Shared physical-pinned seat path: GP7, CHME3, and other powered stock.
+        // Tracks Builder stays on its original non-passenger path.
+        if (isBuilder() || !hasPoweredSeatPin()) {
+            super.positionRider(passenger, moveFunction);
+            return;
+        }
+        if (!this.hasPassenger(passenger)) {
+            return;
+        }
+
+        // GP7 pin capture uses the visible-body facing in
+        // setPoweredSeatPinFromRelativePoint(...). Use the same frame when
+        // resolving the stored longitudinal/lateral calibration into a rider
+        // world position; do not change body yaw, train motion or track path.
+        double yaw = Math.toRadians(getRenderTrainFacingYaw(1.0F));
+        double frontX = Math.sin(yaw);
+        double frontZ = -Math.cos(yaw);
+        double rightX = -frontZ;
+        double rightZ = frontX;
+        double seatLong = poweredSeatPinLong();
+        double seatSide = poweredSeatPinLateral();
+        moveFunction.accept(passenger,
+                getX() + frontX * seatLong + rightX * seatSide,
+                getY() + poweredSeatPinFootY() + passenger.getMyRidingOffset(),
+                getZ() + frontZ * seatLong + rightZ * seatSide);
     }
 
     private void refuelDiesel() {
@@ -3998,6 +4215,10 @@ if (!foundationProblem.isEmpty()) {
             net.minecraft.world.phys.Vec3 hitPos,
             net.minecraft.world.InteractionHand hand) {
 
+        if (isWoodenPassengerTram()) {
+            return tcBoardChosenWoodenSeat(player, hand, hitPos);
+        }
+
         if (hand == net.minecraft.world.InteractionHand.MAIN_HAND && player.isShiftKeyDown()) {
             net.minecraft.world.item.ItemStack held = player.getItemInHand(hand);
 
@@ -4459,7 +4680,9 @@ setPoweredSeatPinFromRelativePoint(hitPos.x, hitPos.y, hitPos.z, player, "CLICK"
 
     @Override
     protected boolean canAddPassenger(net.minecraft.world.entity.Entity passenger) {
-        return !isBuilder() && super.canAddPassenger(passenger);
+        if (isBuilder()) return false;
+        if (isWoodenPassengerTram()) return getPassengers().size() < 3;
+        return super.canAddPassenger(passenger);
     }
 
     @Override
@@ -4472,6 +4695,10 @@ setPoweredSeatPinFromRelativePoint(hitPos.x, hitPos.y, hitPos.z, player, "CLICK"
             return super.interact(
                     player,
                     hand);
+        }
+
+        if (isWoodenPassengerTram()) {
+            return tcBoardChosenWoodenSeat(player, hand, null);
         }
 
         if (!isBuilder()) {

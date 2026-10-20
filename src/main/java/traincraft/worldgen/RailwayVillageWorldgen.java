@@ -17,6 +17,7 @@ import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.tags.StructureTags;
+import net.minecraft.tags.BiomeTags;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
@@ -159,6 +160,22 @@ public final class RailwayVillageWorldgen {
     // DEV50c6: ephemeral, manual-only micro-departures. ZERO persistence,
     // automatic schedules, extra train entities or chunk tickets.
     private static final Map<Long, ManualDeparture> MANUAL_DEPARTURES = new HashMap<>();
+    // DEV51B R27: no schedule, no locomotive controller and no persistence.
+    // R27 observes the already accepted 0.75-block manual GP7/Blue Coach shunt.
+    private static R27Observation r27Observation=null;
+    private static String r27LastReport="NOT_RUN";
+    // DEV51B R28: observation ONLY, never schedules or drives a locomotive.
+    private static R28Cycle r28Cycle=null;
+    private static String r28LastReport="NOT_RUN";
+    private record R28Cycle(BlockPos station,UUID locomotive,UUID coach,UUID operator,
+                            double startX,double startZ,long tick) {}
+
+    private record R27Observation(BlockPos station,UUID locomotive,UUID operator,
+                                 double x,double z,long tick) {}
+    private static final String R27_COPY_FOLDER="DEV51B R27 Movement Copy";
+    private static final String R27_COPY_MARKER="R27-THIS-IS-A-DISPOSABLE-COPY.txt";
+    private static final String R27_COPY_MARKER_VALUE="R27 DISPOSABLE COPY CONFIRMED";
+
     private static final double TEST_SHUNT_BPT = 0.030D; // 2.16 km/h
     private static final double TEST_SHUNT_MAX_BLOCKS = 0.75D;
     // DEV50c7: server-tick END observes position AFTER rail motion. Stop with
@@ -181,12 +198,23 @@ public final class RailwayVillageWorldgen {
     private record SiteSearch(Optional<Site> site, Map<String,Integer> rejections) {}
     private record Dev50e3Choice(Site site, boolean west) {}
 
+private enum VillageStyle { PLAINS, DESERT, SAVANNA, TAIGA, SNOWY }
+private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, BlockState post,
+                              BlockState officeBase, BlockState officeRoof, BlockState officeWall,
+                              BlockState door) {}
+
     private static final ForgeConfigSpec SPEC;
     private static final ForgeConfigSpec.BooleanValue AUTOMATIC;
     private static final ForgeConfigSpec.BooleanValue F1C_AUTO_STRAIGHT;
     // DEV50f1f: explicit opt-in after the OOME / falling-through-map report.
     // Default OFF protects the first recovery launch in the disposable world.
     private static final ForgeConfigSpec.BooleanValue F1F_SAFE_AUTOMATIC;
+    // R37: new station variants for player-operated railway worldgen; new stations only.
+    private static final ForgeConfigSpec.BooleanValue R37_SURFACE_VARIETY;
+    // R38: new-station-only underground station, no auto rail routes or AI.
+    private static final ForgeConfigSpec.BooleanValue R38_SUBWAY;
+    // R39: true circular underground station, no generated routes or AI.
+    private static final ForgeConfigSpec.BooleanValue R39_CIRCULAR_HUB;
     private static final ForgeConfigSpec.IntValue F1D_STATION_CHANCE;
     private static final ForgeConfigSpec.IntValue F1D_ABANDONED_CHANCE;
     private static final ForgeConfigSpec.IntValue ONE_PER_RADIUS;
@@ -205,6 +233,12 @@ public final class RailwayVillageWorldgen {
     static {
         ForgeConfigSpec.Builder cfg = new ForgeConfigSpec.Builder();
         cfg.push("smallVillageStations");
+        R37_SURFACE_VARIETY = cfg.comment("R37: choose a seed-stable regular/abandoned/overgrown/construction surface station for NEW village placements. No retrofits, AI, route construction or terrain cuts. Disable for classic regular-only stations.")
+                .define("enablePlayerOperatedSurfaceVariety", true);
+        R38_SUBWAY = cfg.comment("R38: attempt safe bounded underground subway stations at 10 percent of eligible NEW station sites; blocked underground sites fall back to surface stations. No retrofits, automatic routes, trains or chunk tickets.")
+                .define("enablePlayerOperatedSubwayStations", true);
+        R39_CIRCULAR_HUB = cfg.comment("R39: attempt a circular underground hub with two branching rooms at 5 percent of eligible NEW sites. Player operated, safe excavation only; blocked sites fall back to existing R38/subway or R37/surface choice.")
+                .define("enablePlayerOperatedCircularUndergroundHub", true);
         AUTOMATIC = cfg.comment("Place a small station only when newly generated chunks load. Existing chunks are not modified automatically.")
                 .define("enabled", true);
         ONE_PER_RADIUS = cfg.comment("Minimum spacing between generated stations in the same dimension (blocks).")
@@ -240,6 +274,10 @@ public final class RailwayVillageWorldgen {
         cfg.pop();
         SPEC = cfg.build();
     }
+
+    // R36 RELEASE SCOPE: villagers and station platforms only; players drive trains.
+    // Keep legacy experimental code for rollback, but deny its entry paths.
+    private static final boolean PLAYER_OPERATED_STATIONS_ONLY = true;
 
     private RailwayVillageWorldgen() {}
 
@@ -280,12 +318,25 @@ public final class RailwayVillageWorldgen {
             for (ManualDeparture session:new ArrayList<>(MANUAL_DEPARTURES.values()))
                 haltManualDeparture(level,session,"server stopping");
         }
+        // R30n: if the user exits during a manual trial, freeze ONLY the isolated test GP7.
+        if(level!=null){
+            if(r30nLive!=null)dev51bR30nFreeze(level,r30nLive.engine());
+            if(r30nLock!=null)dev51bR30nFreeze(level,r30nLock);
+        }
+        r30nLive=null;r30nLock=null;r30nLast="FAILED_SESSION_CLOSED_DO_NOT_ASSUME_STOP";
         MANUAL_DEPARTURES.clear();
+        r27Observation=null;
+        r28Cycle=null; // no restart, no persistent dispatch session
     }
 
     @SubscribeEvent
     public static void onServerStopped(ServerStoppedEvent event) {
         MANUAL_DEPARTURES.clear();
+        r27Observation=null;
+        r27LastReport="NOT_RUN";
+        r30nLive=null;r30nLock=null;r30nLast="HOLD_NOT_ARMED";
+        r28Cycle=null;
+        r28LastReport="NOT_RUN";
         RailwayTurnoutNativeRoutingProbe.clearAfterServerStop();
         RailwayTurnoutMovementTest.clearAfterServerStop();
         FRESH_REGIONS.clear();
@@ -328,6 +379,19 @@ public final class RailwayVillageWorldgen {
             if (activeLevel!=null) tickManualDepartures(activeLevel);
             else MANUAL_DEPARTURES.clear();
         }
+        // R27 observes results AFTER the frozen manual departure watchdog.
+        if(r27Observation!=null) {
+            ServerLevel r27Level=event.getServer().getLevel(Level.OVERWORLD);
+            if(r27Level!=null)dev51bR27ObserveTick(r27Level);
+            else {r27LastReport="FAILED: TEST_WORLD_UNLOADED";r27Observation=null;}
+        }
+        // R28 only observes the already supervised R27 lifecycle AFTER its stop.
+        if(r28Cycle!=null) {
+            ServerLevel cycleLevel=event.getServer().getLevel(Level.OVERWORLD);
+            if(cycleLevel!=null)dev51bR28ObserveTick(cycleLevel);
+            else {r28LastReport="FAILED: WORLD_UNLOADED";r28Cycle=null;}
+        }
+
         // DEV50d1: isolated-copy-only turnout probe. Existing DEV50c8
         // departure guard above remains completely independent and untouched.
         if (RailwayTurnoutMovementTest.isActive()) {
@@ -342,10 +406,22 @@ public final class RailwayVillageWorldgen {
             if (probeLevel!=null) RailwayTurnoutNativeRoutingProbe.tick(probeLevel);
             else RailwayTurnoutNativeRoutingProbe.clearAfterServerStop();
         }
+        // R30m: passive, 600-tick read-only native buffer recorder; never drives or brakes a train.
+        if(r30mLive!=null) {
+            ServerLevel west=event.getServer().getLevel(Level.OVERWORLD);
+            if(west!=null)dev51bR30mRecordTick(west);
+            else {r30mResult="FAILED_WORLD_UNLOADED_NO_ROUTE_AUTHORITY";r30mLive=null;}
+        }
+        // R30n: isolated manual movement watchdog; emergency clamp, NEVER automatically drives.
+        if(r30nLive!=null||r30nLock!=null) {
+            ServerLevel trialLevel=event.getServer().getLevel(Level.OVERWORLD);
+            if(trialLevel!=null)dev51bR30nTick(trialLevel);
+            else {r30nLast="FAILED_WORLD_UNLOADED";r30nLive=null;r30nLock=null;}
+        }
         // DEV50d3: headless dedicated-server automated test is inactive unless
         // the root save folder and isolated-copy marker both match exactly.
         // It never runs in integrated/client worlds or the recovery save.
-        RailwayHeadlessTurnoutTest.tick(event.getServer());
+        if (!PLAYER_OPERATED_STATIONS_ONLY) RailwayHeadlessTurnoutTest.tick(event.getServer());
         if (ticks % 40 != 0) return;
         ServerLevel level = event.getServer().getLevel(Level.OVERWORLD);
         if (level == null || level.players().isEmpty()) return;
@@ -358,7 +434,8 @@ public final class RailwayVillageWorldgen {
             checkRecordedStaffRespawns(level);
         // Test-world-only deferred network placements. Runs on the server tick
         // after all chunk generation has finished; never loads missing chunks.
-        if (!DEV50E2_PENDING.isEmpty()) tickDev50e2Networks(level);
+        if (PLAYER_OPERATED_STATIONS_ONLY && !DEV50E2_PENDING.isEmpty()) DEV50E2_PENDING.clear();
+        else if (!DEV50E2_PENDING.isEmpty()) tickDev50e2Networks(level);
         if (!AUTOMATIC.get()) return;
         // DEV50f1f: never inspect village POIs or station sites in the
         // disposable world until the operator EXPLICITLY opts in. Do not
@@ -399,7 +476,7 @@ public final class RailwayVillageWorldgen {
                 continue;
             }
             BlockPos village = probe.center().get();
-            if (SEEDED_VARIETY_FRESH.get() && !(dev50e2WorldAllowed(level) && F1C_AUTO_STRAIGHT.get())) {
+            if (!PLAYER_OPERATED_STATIONS_ONLY && SEEDED_VARIETY_FRESH.get() && !(dev50e2WorldAllowed(level) && F1C_AUTO_STRAIGHT.get())) {
                 Optional<BlockPos> naturalAnchor=dev50e6bVillageStartAnchor(level,village,128);
                 if(naturalAnchor.isEmpty()) {
                     if(logging()) LOG.info("[TC-DEV50E6B] FRESH_POLICY village={} result=NO_VERIFIED_LOADED_STRUCTURE skip=true noForceLoad=true",village);
@@ -436,7 +513,7 @@ public final class RailwayVillageWorldgen {
                 FRESH_REGIONS.remove(entry.getKey(), region);
                 continue;
             }
-            boolean networkPilot = dev50e2WorldAllowed(level);
+            boolean networkPilot = !PLAYER_OPERATED_STATIONS_ONLY && dev50e2WorldAllowed(level);
             Site site;
             boolean routeWest = false;
             if (networkPilot) {
@@ -461,9 +538,76 @@ public final class RailwayVillageWorldgen {
                 site = sites.site().get();
             }
             if (!safeFootprint(level, site.center())) { decision("site_changed=" + site.center()); continue; }
-            placeStation(level, site);
-            data.add(site.center(), true);
-            data.setService(site.center(),chooseService(level,site.center(),0));
+            // R38: the underground rail center, not the street entrance, must be saved.
+            BlockPos placedCenter=site.center();
+            boolean r38Built=false;
+            boolean r39HubBuilt=false;
+            // R39: try a bounded circular hub BEFORE R38's existing subway choice.
+            // Read-only refusal -> normal R38/R37 fallback. Never fall back after a
+            // construction exception because rollback may require operator inspection.
+            if (R39_CIRCULAR_HUB.get() && RailwayStationCircularHub.selected(level.getSeed(),site.center())) {
+                String hubHold=RailwayStationCircularHub.problem(level,site.center());
+                if(hubHold==null) {
+                    try {
+                        placedCenter=RailwayStationCircularHub.build(level,site.center());
+                        r39HubBuilt=true;
+                    } catch(RuntimeException hubError) {
+                        LOG.error("[TC-DEV51B-R39] CIRCULAR_HUB_BUILD_HOLD surface={} noFallbackAfterWrite=true",site.center(),hubError);
+                        FRESH_REGIONS.remove(entry.getKey(),region);
+                        continue;
+                    }
+                } else {
+                    LOG.info("[TC-DEV51B-R39] CIRCULAR_HUB_SITE_HOLD surface={} reason={} fallback=R38_OR_R37",site.center(),hubHold);
+                }
+            }
+            if (!r39HubBuilt && R38_SUBWAY.get() && RailwayStationSubway.selected(level.getSeed(), site.center())) {
+                String r38Hold=RailwayStationSubway.problem(level, site.center());
+                if (r38Hold==null) {
+                    try {
+                        placedCenter=RailwayStationSubway.build(level, site.center());
+                        r38Built=true;
+                    } catch (RuntimeException r38Error) {
+                        // Do not place an alternative after an exceptional write/rollback.
+                        LOG.error("[TC-DEV51B-R38] SUBWAY_BUILD_HOLD station={} noFallbackAfterWrite=true",site.center(),r38Error);
+                        FRESH_REGIONS.remove(entry.getKey(), region);
+                        continue;
+                    }
+                } else {
+                    // Read-only refusal; ordinary accepted R37 surface station follows.
+                    LOG.info("[TC-DEV51B-R38] SUBWAY_SITE_HOLD center={} reason={} fallback=R37_SURFACE",site.center(),r38Hold);
+                }
+            }
+            if (r39HubBuilt) {
+                if (WORKERS.get()) {
+                    makeWorker(level,placedCenter.offset(-2,0,6),"station_chief",placedCenter);
+                    makeWorker(level,placedCenter.offset(2,0,6),"train_conductor",placedCenter);
+                    makeWorker(level,placedCenter.offset(0,0,6),"railway_engineer",placedCenter);
+                }
+                LOG.info("[TC-DEV51B-R39] NEW_CIRCULAR_HUB surface={} railCenter={} rails=17 branchRooms=2 stairs=11 playerOperated=true noAutoDispatch=true noNetworkGeneration=true",
+                    site.center(),placedCenter);
+            } else if (r38Built) {
+                if (WORKERS.get()) {
+                    makeWorker(level,placedCenter.offset(-2,0,5),"station_chief",placedCenter);
+                    makeWorker(level,placedCenter.offset(2,0,5),"train_conductor",placedCenter);
+                    makeWorker(level,placedCenter.offset(0,0,5),"railway_engineer",placedCenter);
+                }
+                LOG.info("[TC-DEV51B-R38] NEW_SUBWAY surface={} railCenter={} rails=17 stairs=9 playerOperated=true noAutoDispatch=true noNetworkGeneration=true",
+                        site.center(),placedCenter);
+            } else {
+                RailwayStationSurfaceVariants.Kind r37Kind = R37_SURFACE_VARIETY.get()
+                        ? RailwayStationSurfaceVariants.choose(level.getSeed(), site.center())
+                        : RailwayStationSurfaceVariants.Kind.REGULAR;
+                VillageStyle r40kStyle = chooseVillageStyle(level, site.center());
+                placeStation(level, site, RailwayStationSurfaceVariants.hasStaff(r37Kind), r40kStyle);
+                RailwayStationSurfaceVariants.decorate(level, site.center(), r37Kind);
+                // R40L: new surface structures only. No retrofit, no underground changes.
+                RailwayStationVillageArchitecture.decorate(level, site.center(), r40kStyle.name(), r37Kind.name());
+                if (r40j4TestWorld(level)) r40j4AddSupports(level,site.center());
+                LOG.info("[TC-DEV51B-R40L] NEW_STATION kind={} style={} at={} playerOperated=true rails=17 noAutoDispatch=true noNetworkGeneration=true",
+                        r37Kind, r40kStyle, site.center());
+            }
+            data.add(placedCenter, true);
+            // R36: do not create an unused automated passenger-service roster for NEW stations.
             BUILT_AUTOMATIC.incrementAndGet();
             decision("AUTO_SUCCESS station=" + site.center() + " village=" + village);
             LOG.info(LOG_PREFIX + "AUTOMATIC station={} village={} dimension={}",
@@ -480,6 +624,7 @@ public final class RailwayVillageWorldgen {
     // run/saves parent, exact in-game display name, integrated Overworld and
     // explicitly exclude Recovery. Do not inspect/open other saves.
     private static boolean dev50e2WorldAllowed(ServerLevel level) {
+        if (PLAYER_OPERATED_STATIONS_ONLY) return false; // R36 disable disposable automatic network/straight worldgen
         if (!level.dimension().equals(Level.OVERWORLD)
                 || level.getServer().isDedicatedServer()) return false;
         try {
@@ -5004,7 +5149,147 @@ public final class RailwayVillageWorldgen {
     }
     private static final int[][] OFFSETS = {{36,0},{-36,0},{0,36},{0,-36},{48,0},{-48,0},{0,48},{0,-48},
                 {40,40},{-40,40},{40,-40},{-40,-40},{56,0},{-56,0},{0,56},{0,-56}};
+    // DEV51B R40J4: terrain-adaptive station foundations only in the exact
+    // disposable R40 world. Never retrofits chunks, loads them, or controls trains.
+    private static boolean r40j4TestWorld(ServerLevel level) {
+        if (level == null || level.getServer() == null
+                || level.getServer().isDedicatedServer()
+                || !level.dimension().equals(Level.OVERWORLD)) return false;
+        try {
+            java.nio.file.Path save = level.getServer().getWorldPath(
+                    net.minecraft.world.level.storage.LevelResource.ROOT)
+                    .toAbsolutePath().normalize();
+            java.nio.file.Path allowed = java.nio.file.Paths.get(
+                    "D:/TafariCraft - Reborn Development/Traincraft", "run", "saves",
+                    "DEV51B R40 Station Acceptance").toAbsolutePath().normalize();
+            return save.equals(allowed)
+                    && "DEV51B R40 Station Acceptance".equals(
+                    level.getServer().getWorldData().getLevelName());
+        } catch (RuntimeException badPath) { return false; }
+    }
+    private static final int[][] R40J4_EXTRA_OFFSETS = {
+        {64,0},{-64,0},{0,64},{0,-64},
+        {72,24},{-72,24},{72,-24},{-72,-24},
+        {24,72},{-24,72},{24,-72},{-24,-72},
+        {80,0},{-80,0},{0,80},{0,-80},
+        {64,64},{-64,64},{64,-64},{-64,-64},
+        {96,0},{-96,0},{0,96},{0,-96}
+    };
+    private static boolean r40j4NaturalFooting(BlockState state) {
+        return state.is(Blocks.GRASS_BLOCK) || state.is(Blocks.DIRT)
+                || state.is(Blocks.COARSE_DIRT) || state.is(Blocks.PODZOL)
+                || state.is(Blocks.ROOTED_DIRT) || state.is(Blocks.MYCELIUM)
+                || state.is(Blocks.SAND) || state.is(Blocks.RED_SAND)
+                || state.is(Blocks.SANDSTONE) || state.is(Blocks.RED_SANDSTONE)
+                || state.is(Blocks.STONE) || state.is(Blocks.GRAVEL)
+                || state.is(Blocks.SNOW_BLOCK);
+    }
+    private static int r40j4HighestLoadedY(ServerLevel level, int x, int z) {
+        int top = Integer.MIN_VALUE;
+        for (int dx=-10; dx<=10; dx++) for (int dz=-4; dz<=13; dz++) {
+            int xx=x+dx,zz=z+dz;
+            if (!level.hasChunk(xx>>4,zz>>4)) return Integer.MIN_VALUE;
+            int h=level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,xx,zz);
+            if (h < level.getMinBuildHeight()+5 || h >= level.getMaxBuildHeight()-8)
+                return Integer.MIN_VALUE;
+            top=Math.max(top,h);
+        }
+        return top;
+    }
+    private static String r40j4FootprintProblem(ServerLevel level, BlockPos c) {
+        final int y=c.getY();
+        if (y < level.getMinBuildHeight()+5 || y >= level.getMaxBuildHeight()-8)
+            return "height";
+        for (int dx=-10; dx<=10; dx++) for (int dz=-4; dz<=13; dz++) {
+            int x=c.getX()+dx,z=c.getZ()+dz;
+            if (!level.hasChunk(x>>4,z>>4)) return "unloaded";
+            int h=level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,x,z);
+            if (h > y || h < y-4) return "slope_over_4";
+            BlockPos footing=new BlockPos(x,h-1,z);
+            BlockState top=level.getBlockState(footing);
+            if (!r40j4NaturalFooting(top) || !top.getFluidState().isEmpty())
+                return "unsafe_footing";
+            // A pillar may not conceal a cave or be based on water/lava.
+            for (int n=1; n<=3; n++) {
+                BlockPos p=footing.below(n);
+                if (p.getY()<level.getMinBuildHeight()) return "unsupported_cave";
+                BlockState beneath=level.getBlockState(p);
+                if (beneath.isAir() || !beneath.getFluidState().isEmpty()
+                        || !beneath.isSolidRender(level,p)) return "unsupported_cave";
+            }
+            // Reject anything in the entire construction clearance volume,
+            // including snow layers, foliage, builds, rails and village houses.
+            for (int yy=h; yy<=y+6; yy++) {
+                if (!level.getBlockState(new BlockPos(x,yy,z)).isAir())
+                    return "obstructed";
+            }
+        }
+        if (!level.getEntitiesOfClass(net.minecraft.world.entity.LivingEntity.class,
+                new net.minecraft.world.phys.AABB(c.offset(-10,0,-4),c.offset(11,7,14))).isEmpty())
+            return "occupied_by_entity";
+        return null;
+    }
+    private static SiteSearch r40j4InspectSites(ServerLevel level, BlockPos village) {
+        Map<String,Integer> rejects=new HashMap<>();
+        int checked=0;
+        for (int pass=0;pass<2;pass++) {
+            int[][] offsets=pass==0 ? OFFSETS : R40J4_EXTRA_OFFSETS;
+            for (int[] offset: offsets) {
+                int x=village.getX()+offset[0],z=village.getZ()+offset[1];
+                int y=r40j4HighestLoadedY(level,x,z);
+                if (y==Integer.MIN_VALUE) {
+                    rejects.merge("missing_chunk_or_height",1,Integer::sum);
+                    continue;
+                }
+                checked++;
+                BlockPos candidate=new BlockPos(x,y,z);
+                String hold=r40j4FootprintProblem(level,candidate);
+                if (hold==null) {
+                    LOG.info("[TC-DEV51B-R40J4] FOUNDATION_SITE village={} center={} checked={} maxRise=4 disposableOnly=true",village,candidate,checked);
+                    return new SiteSearch(Optional.of(new Site(candidate,village)),rejects);
+                }
+                rejects.merge(hold,1,Integer::sum);
+            }
+        }
+        LOG.info("[TC-DEV51B-R40J4] NO_SAFE_FOUNDATION village={} checked={} reasons={} writes=0",village,checked,rejects);
+        return new SiteSearch(Optional.empty(),rejects);
+    }
+    private static boolean r40j4FloorCell(int dx,int dz) {
+        return dz==0 && dx>=-8 && dx<=8
+                || dz>=2 && dz<=4 && dx>=-8 && dx<=8
+                || dz>=5 && dz<=11 && dx>=-6 && dx<=6;
+    }
+    // Only fills AIR underneath floors just built by the accepted surface builder.
+    // Underground variants deliberately never enter this method.
+    private static void r40j4AddSupports(ServerLevel level, BlockPos c) {
+        if (!r40j4TestWorld(level) || !level.getBlockState(c).is(TCBlocks.TRACK_STATION.get()))
+            return;
+        int columns=0, blocks=0, held=0;
+        for (int dx=-8;dx<=8;dx++) for (int dz=0;dz<=11;dz++) {
+            if (!r40j4FloorCell(dx,dz)) continue;
+            BlockPos floor=c.offset(dx,-1,dz);
+            if (!level.hasChunkAt(floor)) { held++;continue; }
+            BlockState floorState=level.getBlockState(floor);
+            if (!floorState.is(Blocks.GRAVEL) && !floorState.is(Blocks.STONE_BRICKS)
+                    && !floorState.is(Blocks.MOSS_BLOCK)) continue;
+            int built=0;
+            for (int depth=1;depth<=4;depth++) {
+                BlockPos under=floor.below(depth);
+                if (!level.hasChunkAt(under)) { held++;break; }
+                BlockState existing=level.getBlockState(under);
+                if (!existing.isAir()) break;
+                if (!level.setBlock(under,Blocks.STONE_BRICKS.defaultBlockState(),3)) {
+                    held++;break;
+                }
+                built++;blocks++;
+            }
+            if (built>0) columns++;
+        }
+        LOG.info("[TC-DEV51B-R40J4] FOUNDATION_BUILT center={} columns={} blocks={} writeHolds={} onlySurface=true",c,columns,blocks,held);
+    }
+
     private static SiteSearch inspectSites(ServerLevel level, BlockPos village) {
+        if (r40j4TestWorld(level)) return r40j4InspectSites(level,village);
         Map<String,Integer> rejections = new HashMap<>();
         for (int[] off : OFFSETS) {
             int x = village.getX() + off[0], z = village.getZ() + off[1];
@@ -5040,89 +5325,165 @@ public final class RailwayVillageWorldgen {
         return null;
     }
     private static boolean safeFootprint(ServerLevel level, BlockPos c) {
+        if (r40j4TestWorld(level)) return r40j4FootprintProblem(level,c)==null;
         return footprintProblem(level,c) == null;
     }
 
-    private static void placeStation(ServerLevel level, Site site) {
-        BlockPos c = site.center();
-        BlockState rail = TCBlocks.TRACK_NORMAL.get().defaultBlockState().setValue(RailBlock.SHAPE, RailShape.EAST_WEST);
-        BlockState stationRail = TCBlocks.TRACK_STATION.get().defaultBlockState().setValue(RailBlock.SHAPE, RailShape.EAST_WEST);
-        for (int dx=-8; dx<=8; dx++) {
-            level.setBlock(c.offset(dx,-1,0), Blocks.GRAVEL.defaultBlockState(), 3);
-            level.setBlock(c.offset(dx,0,0), dx==0 ? stationRail : rail, 3);
-        }
-        buildEnclosedOffice(level,c,false);
-        if (dev50e2WorldAllowed(level)) {
-            // DEV50e3 pilot-only: two platform-front posts at z=2 entered
-            // the conservative 1.85-block body envelope beside the original
-            // station track. The existing rear posts (z=4) still support the
-            // platform appearance. Never alter an accepted DEV50e1 station.
-            for (int x:new int[]{-7,7}) for(int y=0;y<5;y++) {
-                BlockPos post=c.offset(x,y,2);
-                if (level.getBlockState(post).is(Blocks.OAK_FENCE))
-                    level.setBlock(post,Blocks.AIR.defaultBlockState(),3);
-            }
-        }
-        if (WORKERS.get()) {
-            makeWorker(level, c.offset(-2,0,8), "station_chief", c);
-            makeWorker(level, c.offset(2,0,8), "train_conductor", c);
-            makeWorker(level, c.offset(0,0,8), "railway_engineer", c);
-        }
-    }
 
-    /** Ticket room with walls, windows, two workstations, a real door and lanterns. */
-    private static void buildEnclosedOffice(ServerLevel level, BlockPos c, boolean upgrade) {
-        if (upgrade) {
-            // Remove ONLY original station blocks at known, exact locations.
-            for (int x=-7;x<=7;x++) for(int z=3;z<=6;z++) {
-                BlockPos roof = c.offset(x,5,z);
-                if (level.getBlockState(roof).is(Blocks.SPRUCE_SLAB)) level.setBlock(roof,Blocks.AIR.defaultBlockState(),3);
-            }
-            for (int x : new int[]{-7,7}) for (int z : new int[]{3,6})
-                for(int y=0;y<5;y++) {
-                    BlockPos post=c.offset(x,y,z);
-                    if (level.getBlockState(post).is(Blocks.OAK_FENCE)) level.setBlock(post,Blocks.AIR.defaultBlockState(),3);
-                }
-            for (int x : new int[]{-4,4}) {
-                BlockPos bench=c.offset(x,0,4);
-                if (level.getBlockState(bench).is(TCBlocks.STATION_OFFICE_DESK.get()) ||
-                        level.getBlockState(bench).is(TCBlocks.TICKET_BOOTH.get()))
-                    level.setBlock(bench,Blocks.AIR.defaultBlockState(),3);
-            }
-        }
-        // Covered platform between station room and railway.
-        for(int x=-8;x<=8;x++) for(int z=2;z<=4;z++)
-            level.setBlock(c.offset(x,-1,z),Blocks.STONE_BRICKS.defaultBlockState(),3);
-        for(int x=-7;x<=7;x++) for(int z=2;z<=4;z++)
-            level.setBlock(c.offset(x,5,z),Blocks.SPRUCE_SLAB.defaultBlockState(),3);
-        for(int x : new int[]{-7,7}) for(int z : new int[]{2,4})
-            for(int y=0;y<5;y++) level.setBlock(c.offset(x,y,z),Blocks.OAK_FENCE.defaultBlockState(),3);
-        // Fully enclosed 13 x 7 wooden ticket office behind the platform.
-        for (int x=-6;x<=6;x++) for(int z=5;z<=11;z++) {
-            level.setBlock(c.offset(x,-1,z),Blocks.STONE_BRICKS.defaultBlockState(),3);
-            level.setBlock(c.offset(x,5,z),Blocks.SPRUCE_PLANKS.defaultBlockState(),3);
-            boolean wall = x==-6 || x==6 || z==5 || z==11;
-            if (wall) for(int y=0;y<5;y++) {
-                boolean window = y==2 && ((z==5 && (x==-3||x==-2||x==2||x==3))
-                        || (z==11 && (x==-3||x==-2||x==2||x==3))
-                        || ((x==-6||x==6) && (z==7||z==8||z==9)));
-                level.setBlock(c.offset(x,y,z),window ? Blocks.GLASS.defaultBlockState() : Blocks.SPRUCE_PLANKS.defaultBlockState(),3);
-            }
-        }
-        BlockState door = Blocks.SPRUCE_DOOR.defaultBlockState().setValue(DoorBlock.FACING, Direction.NORTH);
-        level.setBlock(c.offset(0,0,5),door.setValue(DoorBlock.HALF,DoubleBlockHalf.LOWER),3);
-        level.setBlock(c.offset(0,1,5),door.setValue(DoorBlock.HALF,DoubleBlockHalf.UPPER),3);
-        for(int x : new int[]{-4,4}) for(int z : new int[]{7,9}) {
-            BlockPos lamp = c.offset(x,4,z);
-            level.setBlock(lamp,Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true),3);
-        }
-        for(int x : new int[]{-5,5})
-            level.setBlock(c.offset(x,4,3),Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true),3);
-        level.setBlock(c.offset(-4,0,9),TCBlocks.STATION_OFFICE_DESK.get().defaultBlockState(),3);
-        level.setBlock(c.offset(4,0,9),TCBlocks.TICKET_BOOTH.get().defaultBlockState(),3);
-        // DEV50c1: one native job site for station engineer; leave all rails untouched.
-        level.setBlock(c.offset(0,0,9),TCBlocks.RAILWAY_TOOLBENCH.get().defaultBlockState(),3);
+private static VillageStyle chooseVillageStyle(ServerLevel level, BlockPos c) {
+    var biome = level.getBiome(c);
+    if (biome.is(BiomeTags.HAS_VILLAGE_DESERT)) return VillageStyle.DESERT;
+    if (biome.is(BiomeTags.IS_SAVANNA)) return VillageStyle.SAVANNA;
+    if (biome.is(BiomeTags.IS_TAIGA)) return VillageStyle.TAIGA;
+    if (biome.is(BiomeTags.HAS_VILLAGE_SNOWY)) return VillageStyle.SNOWY;
+    return VillageStyle.PLAINS;
+}
+private static SurfacePalette chooseSurfacePalette(VillageStyle style) {
+    return switch (style) {
+        case DESERT -> new SurfacePalette(
+                Blocks.SMOOTH_SANDSTONE.defaultBlockState(),
+                Blocks.CUT_SANDSTONE_SLAB.defaultBlockState(),
+                Blocks.SANDSTONE_WALL.defaultBlockState(),
+                Blocks.SMOOTH_SANDSTONE.defaultBlockState(),
+                Blocks.SMOOTH_SANDSTONE.defaultBlockState(),
+                Blocks.SANDSTONE.defaultBlockState(),
+                Blocks.ACACIA_DOOR.defaultBlockState().setValue(DoorBlock.FACING, Direction.NORTH)
+        );
+        case SAVANNA -> new SurfacePalette(
+                Blocks.COBBLESTONE.defaultBlockState(),
+                Blocks.ACACIA_SLAB.defaultBlockState(),
+                Blocks.ACACIA_FENCE.defaultBlockState(),
+                Blocks.COBBLESTONE.defaultBlockState(),
+                Blocks.ACACIA_PLANKS.defaultBlockState(),
+                Blocks.ACACIA_PLANKS.defaultBlockState(),
+                Blocks.ACACIA_DOOR.defaultBlockState().setValue(DoorBlock.FACING, Direction.NORTH)
+        );
+        case TAIGA -> new SurfacePalette(
+                Blocks.COBBLESTONE.defaultBlockState(),
+                Blocks.SPRUCE_SLAB.defaultBlockState(),
+                Blocks.SPRUCE_FENCE.defaultBlockState(),
+                Blocks.COBBLESTONE.defaultBlockState(),
+                Blocks.SPRUCE_PLANKS.defaultBlockState(),
+                Blocks.SPRUCE_PLANKS.defaultBlockState(),
+                Blocks.SPRUCE_DOOR.defaultBlockState().setValue(DoorBlock.FACING, Direction.NORTH)
+        );
+        case SNOWY -> new SurfacePalette(
+                Blocks.STONE_BRICKS.defaultBlockState(),
+                Blocks.SPRUCE_SLAB.defaultBlockState(),
+                Blocks.SPRUCE_FENCE.defaultBlockState(),
+                Blocks.STONE_BRICKS.defaultBlockState(),
+                Blocks.SPRUCE_PLANKS.defaultBlockState(),
+                Blocks.SPRUCE_PLANKS.defaultBlockState(),
+                Blocks.SPRUCE_DOOR.defaultBlockState().setValue(DoorBlock.FACING, Direction.NORTH)
+        );
+        case PLAINS -> new SurfacePalette(
+                Blocks.COBBLESTONE.defaultBlockState(),
+                Blocks.OAK_SLAB.defaultBlockState(),
+                Blocks.OAK_FENCE.defaultBlockState(),
+                Blocks.COBBLESTONE.defaultBlockState(),
+                Blocks.OAK_PLANKS.defaultBlockState(),
+                Blocks.OAK_PLANKS.defaultBlockState(),
+                Blocks.OAK_DOOR.defaultBlockState().setValue(DoorBlock.FACING, Direction.NORTH)
+        );
+    };
+}
+
+private static void placeStation(ServerLevel level, Site site) {
+    // Keep the exact existing manual build; only the disposable R40 world gets
+    // the R40L visual layer for manual previews/placement. GameTests unchanged.
+    VillageStyle style = chooseVillageStyle(level, site.center());
+    placeStation(level, site, true, style);
+    if (r40j4TestWorld(level)) {
+        RailwayStationVillageArchitecture.decorate(level, site.center(), style.name(), "REGULAR");
     }
+}
+private static void placeStation(ServerLevel level, Site site, boolean spawnWorkers) {
+    placeStation(level, site, spawnWorkers, chooseVillageStyle(level, site.center()));
+}
+private static void placeStation(ServerLevel level, Site site, boolean spawnWorkers, VillageStyle style) {
+    BlockPos c = site.center();
+    SurfacePalette palette = chooseSurfacePalette(style);
+    BlockState rail = TCBlocks.TRACK_NORMAL.get().defaultBlockState().setValue(RailBlock.SHAPE, RailShape.EAST_WEST);
+    BlockState stationRail = TCBlocks.TRACK_STATION.get().defaultBlockState().setValue(RailBlock.SHAPE, RailShape.EAST_WEST);
+    for (int dx=-8; dx<=8; dx++) {
+        level.setBlock(c.offset(dx,-1,0), Blocks.GRAVEL.defaultBlockState(), 3);
+        level.setBlock(c.offset(dx,0,0), dx==0 ? stationRail : rail, 3);
+    }
+    buildEnclosedOffice(level,c,false,palette);
+    if (dev50e2WorldAllowed(level)) {
+        // DEV50e3 pilot-only: front posts can clip the historical test lead.
+        for (int x:new int[]{-7,7}) for(int y=0;y<5;y++) {
+            BlockPos post=c.offset(x,y,2);
+            if (level.getBlockState(post).is(Blocks.OAK_FENCE)
+                    || level.getBlockState(post).is(Blocks.SPRUCE_FENCE)
+                    || level.getBlockState(post).is(Blocks.ACACIA_FENCE)
+                    || level.getBlockState(post).is(Blocks.SANDSTONE_WALL))
+                level.setBlock(post,Blocks.AIR.defaultBlockState(),3);
+        }
+    }
+    if (WORKERS.get() && spawnWorkers) {
+        makeWorker(level, c.offset(-2,0,8), "station_chief", c);
+        makeWorker(level, c.offset(2,0,8), "train_conductor", c);
+        makeWorker(level, c.offset(0,0,8), "railway_engineer", c);
+    }
+}
+
+/** Ticket room with walls, windows, two workstations, a real door and lanterns. */
+private static void buildEnclosedOffice(ServerLevel level, BlockPos c, boolean upgrade) {
+    buildEnclosedOffice(level,c,upgrade,chooseSurfacePalette(chooseVillageStyle(level,c)));
+}
+private static void buildEnclosedOffice(ServerLevel level, BlockPos c, boolean upgrade, SurfacePalette palette) {
+    if (upgrade) {
+        // Remove ONLY original station blocks at known, exact locations.
+        for (int x=-7;x<=7;x++) for(int z=3;z<=6;z++) {
+            BlockPos roof = c.offset(x,5,z);
+            if (level.getBlockState(roof).is(Blocks.SPRUCE_SLAB)) level.setBlock(roof,Blocks.AIR.defaultBlockState(),3);
+        }
+        for (int x : new int[]{-7,7}) for (int z : new int[]{3,6})
+            for(int y=0;y<5;y++) {
+                BlockPos post=c.offset(x,y,z);
+                if (level.getBlockState(post).is(Blocks.OAK_FENCE)) level.setBlock(post,Blocks.AIR.defaultBlockState(),3);
+            }
+        for (int x : new int[]{-4,4}) {
+            BlockPos bench=c.offset(x,0,4);
+            if (level.getBlockState(bench).is(TCBlocks.STATION_OFFICE_DESK.get()) ||
+                    level.getBlockState(bench).is(TCBlocks.TICKET_BOOTH.get()))
+                level.setBlock(bench,Blocks.AIR.defaultBlockState(),3);
+        }
+    }
+    // Covered platform between station room and railway.
+    for(int x=-8;x<=8;x++) for(int z=2;z<=4;z++)
+        level.setBlock(c.offset(x,-1,z),palette.platformBase(),3);
+    for(int x=-7;x<=7;x++) for(int z=2;z<=4;z++)
+        level.setBlock(c.offset(x,5,z),palette.canopyRoof(),3);
+    for(int x : new int[]{-7,7}) for(int z : new int[]{2,4})
+        for(int y=0;y<5;y++) level.setBlock(c.offset(x,y,z),palette.post(),3);
+    // Fully enclosed 13 x 7 village-matched ticket office behind the platform.
+    for (int x=-6;x<=6;x++) for(int z=5;z<=11;z++) {
+        level.setBlock(c.offset(x,-1,z),palette.officeBase(),3);
+        level.setBlock(c.offset(x,5,z),palette.officeRoof(),3);
+        boolean wall = x==-6 || x==6 || z==5 || z==11;
+        if (wall) for(int y=0;y<5;y++) {
+            boolean window = y==2 && ((z==5 && (x==-3||x==-2||x==2||x==3))
+                    || (z==11 && (x==-3||x==-2||x==2||x==3))
+                    || ((x==-6||x==6) && (z==7||z==8||z==9)));
+            level.setBlock(c.offset(x,y,z),window ? Blocks.GLASS.defaultBlockState() : palette.officeWall(),3);
+        }
+    }
+    BlockState door = palette.door();
+    level.setBlock(c.offset(0,0,5),door.setValue(DoorBlock.HALF,DoubleBlockHalf.LOWER),3);
+    level.setBlock(c.offset(0,1,5),door.setValue(DoorBlock.HALF,DoubleBlockHalf.UPPER),3);
+    for(int x : new int[]{-4,4}) for(int z : new int[]{7,9}) {
+        BlockPos lamp = c.offset(x,4,z);
+        level.setBlock(lamp,Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true),3);
+    }
+    for(int x : new int[]{-5,5})
+        level.setBlock(c.offset(x,4,3),Blocks.LANTERN.defaultBlockState().setValue(LanternBlock.HANGING,true),3);
+    level.setBlock(c.offset(-4,0,9),TCBlocks.STATION_OFFICE_DESK.get().defaultBlockState(),3);
+    level.setBlock(c.offset(4,0,9),TCBlocks.TICKET_BOOTH.get().defaultBlockState(),3);
+    // DEV50c1: one native job site for station engineer; leave all rails untouched.
+    level.setBlock(c.offset(0,0,9),TCBlocks.RAILWAY_TOOLBENCH.get().defaultBlockState(),3);
+}
 
     private static boolean mayUpgrade(ServerLevel level, BlockPos c) {
         if (!level.getBlockState(c).is(TCBlocks.TRACK_STATION.get())) return false;
@@ -5265,6 +5626,8 @@ public final class RailwayVillageWorldgen {
 
     private static final class StationData extends SavedData {
         private final List<BlockPos> placed = new ArrayList<>();
+        // R30 provenance for a SINGLE-Rail disposable test stop, never an operational station.
+        private final List<BlockPos> r30TestStops = new ArrayList<>();
         private final List<BlockPos> enclosed = new ArrayList<>();
         private final List<BlockPos> networks = new ArrayList<>();
         // DEV50b2e: a second set, not a rewrite of legacy network records.
@@ -5292,6 +5655,10 @@ public final class RailwayVillageWorldgen {
         static StationData load(CompoundTag tag) {
             StationData data = new StationData();
             for (long encoded : tag.getLongArray("Stations")) data.placed.add(BlockPos.of(encoded));
+            for (long encoded : tag.getLongArray("R30TestStops")) {
+                BlockPos p=BlockPos.of(encoded);
+                if (data.placed.contains(p) && !data.r30TestStops.contains(p)) data.r30TestStops.add(p);
+            }
             for (long encoded : tag.getLongArray("Enclosed")) data.enclosed.add(BlockPos.of(encoded));
             for (long encoded : tag.getLongArray("Networks")) data.networks.add(BlockPos.of(encoded));
             for (long encoded : tag.getLongArray("WideNetworks")) data.wideNetworks.add(BlockPos.of(encoded));
@@ -5332,6 +5699,7 @@ public final class RailwayVillageWorldgen {
         }
         @Override public CompoundTag save(CompoundTag tag) {
             tag.putLongArray("Stations", placed.stream().mapToLong(BlockPos::asLong).toArray());
+            tag.putLongArray("R30TestStops", r30TestStops.stream().mapToLong(BlockPos::asLong).toArray());
             tag.putLongArray("Enclosed", enclosed.stream().mapToLong(BlockPos::asLong).toArray());
             tag.putLongArray("Networks", networks.stream().mapToLong(BlockPos::asLong).toArray());
             tag.putLongArray("WideNetworks", wideNetworks.stream().mapToLong(BlockPos::asLong).toArray());
@@ -5376,6 +5744,20 @@ public final class RailwayVillageWorldgen {
         }
         boolean near(BlockPos pos, int radius) {
             return placed.stream().anyMatch(p -> p.distSqr(pos) < (double) radius * radius);
+        }
+        boolean isR30TestStop(BlockPos p) {return r30TestStops.contains(p);}
+        void recordR30TestStop(BlockPos p) {
+            if(placed.contains(p) || !r30TestStops.isEmpty())
+                throw new IllegalStateException("R30 stop record already present");
+            placed.add(p);r30TestStops.add(p);setDirty();
+        }
+        void removeR30TestStop(BlockPos p) {
+            if(!r30TestStops.contains(p) || !placed.contains(p) || services.containsKey(p.asLong())
+                    || staged.containsKey(p.asLong()) || enclosed.contains(p) || networks.contains(p)
+                    || wideNetworks.contains(p))throw new IllegalStateException("R30 stop provenance changed");
+            for(StaffSlot s:staff.values()) if(s.station.equals(p))
+                throw new IllegalStateException("R30 test stop contains staff");
+            placed.remove(p);r30TestStops.remove(p);setDirty();
         }
         void add(BlockPos pos, boolean isEnclosed) {
             placed.add(pos);
@@ -5439,6 +5821,9 @@ public final class RailwayVillageWorldgen {
                 +" [ROSTER PLAN; use /tcrailway service status to inspect staged vehicles; no AI driving]";
     }
     private static int serviceCommand(CommandSourceStack src,String action) {
+        if (PLAYER_OPERATED_STATIONS_ONLY && !"preview".equals(action) && !"status".equals(action)) {
+            src.sendFailure(Component.literal("Player-operated stations only: automatic service activation/reroll retired."));return 0;
+        }
         ServerLevel level=src.getLevel();
         if (!level.dimension().equals(Level.OVERWORLD)) { src.sendFailure(Component.literal("Railway services are Overworld-only"));return 0; }
         StationData data=stations(level);
@@ -5549,6 +5934,20 @@ public final class RailwayVillageWorldgen {
                 || !"locomotive".equals(first.getPersistentData().getString("TC_RAILWAY_SERVICE_ROLE"))
                 || !"coach_1".equals(second.getPersistentData().getString("TC_RAILWAY_SERVICE_ROLE")))
             return "Saved vehicle ownership mismatch";
+        // DEV51B R27b: shared fail-closed facing check protects BOTH
+        // supervised R27 entry and legacy manual departure command. Previous
+        // R27 staged pairs were yaw +90 / visually reversed; never release
+        // their handbrake even if the earlier R27 precheck had passed.
+        String facingReject=Dev51BStagingFacingR27b.blocker(
+                first.getX(),second.getX(),loco.getYRot(),loco.getTrainFacingYaw());
+        if (facingReject!=null) return facingReject;
+        // R27c: The accepted coupler keeps entity centers ~3.015 blocks apart,
+        // but baked GP7/Blue Coach geometry may visually overlap. Fail closed
+        // BEFORE handbrake release. No coupling distance/renderer/physics edits.
+        String visualReject=Dev51BVisualClearanceR27c.blocker(
+                first.getX(),first.getZ(),second.getX(),second.getZ(),
+                loco.getYRot(),loco.getTrainFacingYaw(),second.getYRot());
+        if (visualReject!=null) return visualReject;
         if (!CouplingManager.areMutuallyLinked(first,loco,second,coach)
                 || first.distanceToSqr(second)>16.0D
                 || first.distanceToSqr(second)<4.0D) return "Coupling broken or outside safe 2-to-4 block test envelope";
@@ -5711,6 +6110,7 @@ public final class RailwayVillageWorldgen {
     }
 
     private static int manualDepartureCommand(CommandSourceStack src,String action) {
+        if (PLAYER_OPERATED_STATIONS_ONLY && "start".equals(action)) {src.sendFailure(Component.literal("Service-controlled departure retired: players drive trains."));return 0;}
         ServerLevel level=src.getLevel();
         if (!level.dimension().equals(Level.OVERWORLD) || !(src.getEntity() instanceof ServerPlayer player)) {
             src.sendFailure(Component.literal("Passenger departure test requires an Overworld player. NO CHANGES"));return 0;
@@ -5802,6 +6202,7 @@ public final class RailwayVillageWorldgen {
     /** DEV50d1: separate disposable-world ONLY manual probe. The frozen
      * DEV50c8 station shunt command and limits are not modified or reused. */
     private static int dev50d1TurnoutTest(CommandSourceStack src,String action) {
+        if (PLAYER_OPERATED_STATIONS_ONLY && "start".equals(action)) {src.sendFailure(Component.literal("Automated turnout movement probes retired. Drive trains manually."));return 0;}
         ServerLevel level=src.getLevel();
         if (!level.dimension().equals(Level.OVERWORLD)) {
             src.sendFailure(Component.literal("DEV50d1 test requires Overworld. NO CHANGES")); return 0;
@@ -5820,6 +6221,7 @@ public final class RailwayVillageWorldgen {
     }
 
     private static int dev50d2TurnoutBranch(CommandSourceStack src,String action) {
+        if (PLAYER_OPERATED_STATIONS_ONLY && "start".equals(action)) {src.sendFailure(Component.literal("Automated turnout movement probes retired. Drive trains manually."));return 0;}
         ServerLevel level=src.getLevel();
         if (!level.dimension().equals(Level.OVERWORLD)) {
             src.sendFailure(Component.literal("DEV50d2 requires Overworld. NO CHANGES"));return 0;
@@ -6291,6 +6693,7 @@ public final class RailwayVillageWorldgen {
      * from the recovered station's persisted service plan.
      */
     private static int stagePassengerConsist(CommandSourceStack src) {
+        if (PLAYER_OPERATED_STATIONS_ONLY) {src.sendFailure(Component.literal("Station auto-staging retired: place and drive your own train."));return 0;}
         ServerLevel level=src.getLevel();
         if (!level.dimension().equals(Level.OVERWORLD)) {
             src.sendFailure(Component.literal("Station staging is Overworld-only. NO CHANGES"));return 0;
@@ -6356,11 +6759,16 @@ public final class RailwayVillageWorldgen {
                 || !CouplingManager.isSupportedPair(locomotive,coach)) {
             src.sendFailure(Component.literal("Entity class/coupler contract mismatch. NO CHANGES"));return 0;
         }
-        // Center positions stay well inside the original 17-cell station rail.
-        // Normal passenger-coach coupler alignment may trim the initial 5-block
-        // gap to its verified model-aware target.
-        lead.moveTo(c.getX()+4.5,c.getY()+0.0625,c.getZ()+0.5,90.0F,0.0F);
-        trailing.moveTo(c.getX()-0.5,c.getY()+0.0625,c.getZ()+0.5,90.0F,0.0F);
+        // DEV51B R27d: GP7 EASTBOUND, one Blue Coach WEST. The first
+        // 5.0-block pre-link separation is deliberate: the coach's *scoped*
+        // StageSpacingR27d coupler hook settles it to approximately 3.795.
+        // Put the lead at +5 (not +4.5) so the settled coach remains on the
+        // NORMAL rail at +1 (not on the station-stop rail at x=center).
+        // Lead +5 also leaves 1.2 blocks inside the existing +6.2 short-shunt
+        // envelope, enough for a 0.75-block supervised move. All 17 track
+        // cells remain exactly the same; no global coupler/physics edits.
+        lead.moveTo(c.getX()+5.0D,c.getY()+0.0625D,c.getZ()+0.5D,-90.0F,0.0F);
+        trailing.moveTo(c.getX(),c.getY()+0.0625D,c.getZ()+0.5D,-90.0F,0.0F);
         // Check model-aware footprints instead of every person standing along
         // the entire station platform. The extra X length covers legacy train
         // bodies (which extend beyond their narrow vanilla entity hitboxes);
@@ -6385,6 +6793,11 @@ public final class RailwayVillageWorldgen {
         }
         lead.getPersistentData().putString("TC_RAILWAY_SERVICE_ROLE","locomotive");
         trailing.getPersistentData().putString("TC_RAILWAY_SERVICE_ROLE","coach_1");
+        // Only THIS newly staged disposable-copy pair may use R27d's
+        // 0.78-block coach-only coupler reach. The passenger subclass requires
+        // BOTH matching tags + roles + same saved station + actual GP7 leader.
+        lead.getPersistentData().putString("TC_DEV51B_R27D_SPACING",Dev51BStageSpacingR27d.SCOPE);
+        trailing.getPersistentData().putString("TC_DEV51B_R27D_SPACING",Dev51BStageSpacingR27d.SCOPE);
         boolean addedLead=false,addedCoach=false,linked=false;
         try {
             addedLead=level.addFreshEntity(lead);
@@ -6402,7 +6815,21 @@ public final class RailwayVillageWorldgen {
             // Re-check the FINAL positions after alignment, before persisting a
             // consist, so a nearby pedestrian cannot be overlapped by a move.
             Optional<LivingEntity> postCoupleOccupant=stagingLivingObstruction(level,lead,trailing);
-            if (!inside || postCoupleOccupant.isPresent()) {
+            // R27d: require the final COUPLED position to meet R27c's
+            // conservative visible-body clearance, not just the 8-block link
+            // limit. Otherwise rollback both new entities before saving UUIDs.
+            Dev51BVisualClearanceR27c.Observation stagedGap=Dev51BVisualClearanceR27c.observe(
+                    lead.getX(),lead.getZ(),trailing.getX(),trailing.getZ(),
+                    lead.getYRot(),lead.getTrainFacingYaw(),trailing.getYRot());
+            boolean physicalGap=Dev51BStageSpacingR27d.acceptFinalPosition(
+                    lead.getX(),trailing.getX(),lead.getYRot(),trailing.getYRot());
+            if (!stagedGap.clear() || !physicalGap) {
+                LOG.warn("[TC-DEV51B-R27D] STAGE_GAP_REJECT station={} centerGap={} estimatedSeam={} "
+                        +"gapReason={} safeRange={} noServiceSave=true",
+                        c,stagedGap.centerGap(),stagedGap.estimatedSeam(),
+                        stagedGap.reason(),physicalGap);
+            }
+            if (!inside || postCoupleOccupant.isPresent() || !stagedGap.clear() || !physicalGap) {
                 if (postCoupleOccupant.isPresent()) {
                     LivingEntity blocker=postCoupleOccupant.get();
                     LOG.warn("[TC-DEV50C4A] POST_LINK_LIVING_COLLISION station={} type={} at={}",
@@ -6421,6 +6848,11 @@ public final class RailwayVillageWorldgen {
             LOG.info("[TC-DEV50C4] STAGED_SUCCESS station={} locomotive={} coach={} linked={} parkedBrake={} "
                     +"locoPos={} coachPos={}",c,lead.getUUID(),trailing.getUUID(),linked,
                     lead.isHandBrakeApplied(),lead.position(),trailing.position());
+            LOG.info("[TC-DEV51B-R27D] MODEL_GAP_STAGED station={} scope={} gp7X={} coachX={} gap={} "
+                    +"estimatedSeam={} expectedTarget={} headlessOnly=false autoDispatch=false",
+                    c,Dev51BStageSpacingR27d.SCOPE,lead.getX(),trailing.getX(),
+                    stagedGap.centerGap(),stagedGap.estimatedSeam(),
+                    Dev51BStageSpacingR27d.TARGET_CENTER_GAP);
             src.sendSuccess(()->Component.literal("Staged GP7 + Blue Coach, coupled and parked at "+c.toShortString()
                     +". No autopilot or departure is enabled."),true);
             return 1;
@@ -6441,7 +6873,7 @@ public final class RailwayVillageWorldgen {
                 .requires(src -> src.hasPermission(2))
                 .then(Commands.literal("status").executes(ctx -> {
                     var src = ctx.getSource();
-                    src.sendSuccess(() -> Component.literal("DEV50b1a automatic=" + AUTOMATIC.get()
+                    src.sendSuccess(() -> Component.literal("R36 playerOperatedOnly=" + PLAYER_OPERATED_STATIONS_ONLY + " stationGeneration=" + AUTOMATIC.get()
                             + " freshRegions=" + FRESH_REGIONS.size() + " stations=" + stations(src.getLevel()).count()), false);
                     return 1;
                 }))
@@ -6458,6 +6890,7 @@ public final class RailwayVillageWorldgen {
                         return debugState(ctx.getSource());
                     })))
                 .then(Commands.literal("diagnose").executes(ctx -> diagnose(ctx.getSource())))
+                .then(Commands.literal("autoscan").executes(ctx -> r40mAutoScan(ctx.getSource())))
                 .then(Commands.literal("preview").executes(ctx -> commandSite(ctx.getSource(), false)))
                 .then(Commands.literal("place").executes(ctx -> commandSite(ctx.getSource(), true)))
                 .then(Commands.literal("upgrade").executes(ctx -> upgrade(ctx.getSource())))
@@ -6550,6 +6983,88 @@ public final class RailwayVillageWorldgen {
                     .then(Commands.literal("catalog").executes(ctx -> dev50e6Catalog(ctx.getSource())))
                     .then(Commands.literal("legacyplan").executes(ctx -> dev50e5Plan(ctx.getSource()))))
                 .then(Commands.literal("network")
+                    .then(Commands.literal("asbuiltrecovery")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR30fRecoveryPreview(ctx.getSource()))))
+                    .then(Commands.literal("asbuiltstorage")
+                        .then(Commands.literal("preflight").executes(ctx -> dev51bR30gStoragePreflight(ctx.getSource()))))
+                    .then(Commands.literal("asbuiltsaveddata")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR30hSavedDataPreview(ctx.getSource()))))
+                    .then(Commands.literal("asbuiltregister")
+                        .then(Commands.literal("inspect").executes(ctx -> dev51bR30fRecoveryPreview(ctx.getSource(),3)))
+                        .then(Commands.literal("commit")
+                            .then(Commands.literal("e6a172d6337927d7ee6f28a8789eed05f18fefe6f0492f3a842d661751b9666d")
+                                .executes(ctx -> dev51bR30fRecoveryPreview(ctx.getSource(),4)))))
+                .then(Commands.literal("westconstruction")
+                        .then(Commands.literal("preflight")
+                            .executes(ctx -> dev51bR30jWestPreflight(ctx.getSource()))))
+                .then(Commands.literal("westconstruct")
+                        .then(Commands.literal("inspect")
+                            .executes(ctx -> dev51bR30lWestConstruct(ctx.getSource(),false)))
+                        .then(Commands.literal("commit")
+                            .then(Commands.literal("5594db3ecfc31d207e14233de238561c14451fc0185da43b32c2db4c6ce5520d")
+                                .executes(ctx -> dev51bR30lWestConstruct(ctx.getSource(),true)))))
+                // R30o: non-mutating diagnosis of station rail at x=41. No lock release or bypass.
+                // R30p: read-only station ACTIVE and native handler condition / session-lock audit.
+                .then(Commands.literal("weststationaudit")
+                    .then(Commands.literal("inspect").executes(ctx->dev51bR30pStationAudit(ctx.getSource()))))
+                .then(Commands.literal("weststationdiag")
+                    .then(Commands.literal("inspect").executes(ctx->dev51bR30oStationDiag(ctx.getSource()))))
+                .then(Commands.literal("weststoptest")
+                    .then(Commands.literal("inspect").executes(ctx->dev51bR30nCommand(ctx.getSource(),"inspect")))
+                    .then(Commands.literal("arm").executes(ctx->dev51bR30nCommand(ctx.getSource(),"arm")))
+                    .then(Commands.literal("report").executes(ctx->dev51bR30nCommand(ctx.getSource(),"report")))
+                    .then(Commands.literal("cancel").executes(ctx->dev51bR30nCommand(ctx.getSource(),"cancel")))
+                    .then(Commands.literal("release").executes(ctx->dev51bR30nCommand(ctx.getSource(),"release"))))
+                .then(Commands.literal("weststop")
+                        .then(Commands.literal("inspect").executes(ctx -> dev51bR30mBufferProbe(ctx.getSource(),"inspect")))
+                        .then(Commands.literal("arm").executes(ctx -> dev51bR30mBufferProbe(ctx.getSource(),"arm")))
+                        .then(Commands.literal("report").executes(ctx -> dev51bR30mBufferProbe(ctx.getSource(),"report")))
+                        .then(Commands.literal("cancel").executes(ctx -> dev51bR30mBufferProbe(ctx.getSource(),"cancel"))))
+                .then(Commands.literal("westterminal")
+                        .then(Commands.literal("preview")
+                            .executes(ctx -> dev51bR30kWestTerminalPreview(ctx.getSource()))))
+                .then(Commands.literal("westbuildpreview")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR30eWestConstructionPreview(ctx.getSource()))))
+                    .then(Commands.literal("westdebug")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR30dWestDebug(ctx.getSource()))))
+                    .then(Commands.literal("alternatives")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR30cAlternatives(ctx.getSource()))))
+                    .then(Commands.literal("eastcorridor")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR30bCorridor(ctx.getSource()))))
+                    .then(Commands.literal("railsurvey")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR30aSurvey(ctx.getSource()))))
+                    .then(Commands.literal("secondstation")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR30SecondStop(ctx.getSource(),"preview")))
+                        .then(Commands.literal("place")
+                            .then(Commands.literal("confirm").executes(ctx -> dev51bR30SecondStop(ctx.getSource(),"place"))))
+                        .then(Commands.literal("status").executes(ctx -> dev51bR30SecondStop(ctx.getSource(),"status")))
+                        .then(Commands.literal("undo")
+                            .then(Commands.literal("confirm").executes(ctx -> dev51bR30SecondStop(ctx.getSource(),"undo")))))
+                    .then(Commands.literal("destinationaudit")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR29DestinationPreview(ctx.getSource()))))
+                    .then(Commands.literal("scan").executes(ctx -> dev51bR18ReadOnlyNetworkScan(ctx.getSource())))
+                    .then(Commands.literal("routeplan").executes(ctx -> dev51bR19ReadOnlyRoutePlan(ctx.getSource())))
+                    .then(Commands.literal("nativeaudit").executes(ctx -> dev51bR20NativeAudit(ctx.getSource())))
+                    .then(Commands.literal("routevalidate").executes(ctx -> dev51bR21ValidateRoute(ctx.getSource())))
+                    .then(Commands.literal("dispatchsimulate").executes(ctx -> dev51bR22SimulateDispatch(ctx.getSource())))
+                    .then(Commands.literal("interlocksimulate").executes(ctx -> dev51bR23R24InterlockSimulate(ctx.getSource())))
+                    .then(Commands.literal("movementdryrun").executes(ctx -> dev51bR25R26DryRun(ctx.getSource(),false)))
+                    .then(Commands.literal("villagerpilotstatus").executes(ctx -> dev51bR25R26DryRun(ctx.getSource(),true)))
+                    .then(Commands.literal("stationcycle")
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR28Command(ctx.getSource(),"preview")))
+                        .then(Commands.literal("start")
+                            .then(Commands.literal("confirm").executes(ctx -> dev51bR28Command(ctx.getSource(),"start"))))
+                        .then(Commands.literal("status").executes(ctx -> dev51bR28Command(ctx.getSource(),"status")))
+                        .then(Commands.literal("abort").executes(ctx -> dev51bR28Command(ctx.getSource(),"abort"))))
+                    .then(Commands.literal("supervisedtest")
+                        .then(Commands.literal("status").executes(ctx -> dev51bR27Command(ctx.getSource(),"status")))
+                        .then(Commands.literal("preview").executes(ctx -> dev51bR27Command(ctx.getSource(),"preview")))
+                        .then(Commands.literal("start")
+                            .then(Commands.literal("confirm").executes(ctx -> dev51bR27Command(ctx.getSource(),"start"))))
+                        .then(Commands.literal("abort").executes(ctx -> dev51bR27Command(ctx.getSource(),"abort")))
+                        .then(Commands.literal("clearance").executes(ctx -> dev51bR27cClearance(ctx.getSource())))
+                        .then(Commands.literal("unstage")
+                            .then(Commands.literal("confirm").executes(ctx -> dev51bR27Command(ctx.getSource(),"unstage")))))
                     .then(Commands.literal("preview").executes(ctx -> networkCommand(ctx.getSource(), false)))
                     .then(Commands.literal("place").executes(ctx -> networkCommand(ctx.getSource(), true)))
                     .then(Commands.literal("audit").executes(ctx -> auditNetwork(ctx.getSource())))
@@ -6560,6 +7075,2760 @@ public final class RailwayVillageWorldgen {
                         .then(Commands.literal("apply").executes(ctx -> widenNetwork(ctx.getSource(), true))))));
     }
 
+
+
+// DEV51B R30f: immutable AS-BUILT source network RECORD PROPOSAL, READ ONLY.
+// Legacy StationData.Networks/WideNetworks mean old template construction;
+// NEVER set those flags to claim the 9 observed rails are a built legacy network.
+// No setDirty, save, setBlock, chunk ticket, dispatch, or train movement here.
+// R30g delegates to the EXACT SAME read-only R30f survey; the storage
+// preflight may inspect an in-memory candidate but NEVER writes SavedData.
+private static int dev51bR30gStoragePreflight(CommandSourceStack src) {
+    return dev51bR30fRecoveryPreview(src,true);
+}
+// R30h performs the identical live rail witness survey and additionally
+// reads an isolated Minecraft SavedData key. No storage mutators or setDirty.
+private static int dev51bR30hSavedDataPreview(CommandSourceStack src) {
+    return dev51bR30fRecoveryPreview(src,2);
+}
+private static int dev51bR30fRecoveryPreview(CommandSourceStack src) {
+    return dev51bR30fRecoveryPreview(src,false);
+}
+private static int dev51bR30fRecoveryPreview(CommandSourceStack src, boolean storagePreflight) {
+    return dev51bR30fRecoveryPreview(src,storagePreflight?1:0);
+}
+private static int dev51bR30fRecoveryPreview(CommandSourceStack src, int readonlyMode) {
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)
+            || !(src.getEntity() instanceof ServerPlayer)
+            || !dev51bR27Disposable(level)) {
+        src.sendFailure(Component.literal("[R30f] HOLD DISPOSABLE_WORLD_ONLY. Read-only; no changes."));
+        return 0;
+    }
+    final BlockPos source=new BlockPos(61,-60,-3);
+    final BlockPos second=new BlockPos(41,-60,-3);
+    final BlockPos player=BlockPos.containing(src.getPosition());
+    if(source.distSqr(player)>48L*48L) {
+        src.sendFailure(Component.literal("[R30f] HOLD NEAR_ORIGINAL_STATION_REQUIRED. Read-only."));
+        return 0;
+    }
+    StationData data=stations(level); // Read existing saved record; NEVER setDirty.
+    boolean stationRecorded=data.placed.contains(source);
+    boolean sourceIsTestStop=data.isR30TestStop(source);
+    boolean legacyNetwork=data.hasNetwork(source);
+    boolean legacyWide=data.hasWideNetwork(source);
+    boolean legacyOutbound=data.outboundWest(source)!=null;
+    boolean destinationSaved=data.placed.contains(second);
+    java.util.List<Dev51BAsBuiltRecoveryR30f.Cell> witnesses=new java.util.ArrayList<>();
+    for(int off=0;off<=Dev51BAsBuiltRecoveryR30f.NEW_LAST;off++) {
+        BlockPos at=source.west(off);
+        Dev51BAsBuiltRecoveryR30f.Kind result;
+        String observed="UNLOADED",support="UNLOADED";
+        boolean loaded=at.getY()-1>=level.getMinBuildHeight()
+                &&at.getY()+4<level.getMaxBuildHeight();
+        for(int dz=-1;dz<=1&&loaded;dz++) {
+            BlockPos flank=at.offset(0,0,dz);
+            if(!level.hasChunkAt(flank)||!level.hasChunkAt(flank.below())
+                    ||!level.hasChunkAt(flank.above(4)))loaded=false;
+        }
+        if(!loaded) result=Dev51BAsBuiltRecoveryR30f.Kind.UNLOADED;
+        else {
+            BlockState state=level.getBlockState(at);
+            BlockState below=level.getBlockState(at.below());
+            observed=BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+            support=BuiltInRegistries.BLOCK.getKey(below.getBlock()).toString();
+            boolean sturdy=below.isFaceSturdy(level,at.below(),Direction.UP);
+            boolean wet=!level.getFluidState(at.below()).isEmpty();
+            boolean headroom=true,flanks=true;
+            for(int h=0;h<=4;h++) {
+                BlockPos above=at.above(h);
+                if(!level.getFluidState(above).isEmpty())wet=true;
+                if(h>0&&!level.getBlockState(above).isAir())headroom=false;
+                if(off>Dev51BAsBuiltRecoveryR30f.SOURCE_LAST)
+                    for(int dz=-1;dz<=1;dz+=2) {
+                        BlockPos side=at.offset(0,h,dz);
+                        if(!level.getBlockState(side).isAir()||!level.getFluidState(side).isEmpty())
+                            flanks=false;
+                    }
+            }
+            if(off<=Dev51BAsBuiltRecoveryR30f.SOURCE_LAST) {
+                Dev51BRailSurveyR30a.Kind rail=dev51bR30aObserveRail(level,at).kind();
+                boolean shape=state.hasProperty(RailBlock.SHAPE)
+                        &&state.getValue(RailBlock.SHAPE)==RailShape.EAST_WEST;
+                if(!shape || !headroom || wet || !sturdy)
+                    result=Dev51BAsBuiltRecoveryR30f.Kind.WRONG_RAIL;
+                else if(rail==Dev51BRailSurveyR30a.Kind.STATION_EW)
+                    result=Dev51BAsBuiltRecoveryR30f.Kind.STATION_EW;
+                else if(rail==Dev51BRailSurveyR30a.Kind.NORMAL_EW)
+                    result=Dev51BAsBuiltRecoveryR30f.Kind.NORMAL_EW;
+                else result=Dev51BAsBuiltRecoveryR30f.Kind.WRONG_RAIL;
+            } else {
+                boolean entity=!level.getEntitiesOfClass(Entity.class,
+                    new AABB(at.getX()-1.5,at.getY()-1,at.getZ()-1.5,
+                             at.getX()+2.5,at.getY()+5,at.getZ()+2.5),
+                    e->!e.isRemoved()&&!(e instanceof ServerPlayer)).isEmpty();
+                if(entity)result=Dev51BAsBuiltRecoveryR30f.Kind.ENTITY;
+                else if(level.getBlockEntity(at)!=null)result=Dev51BAsBuiltRecoveryR30f.Kind.BLOCK_ENTITY;
+                else if(wet)result=Dev51BAsBuiltRecoveryR30f.Kind.FLUID;
+                else if(!state.isAir())result=Dev51BAsBuiltRecoveryR30f.Kind.BLOCKED;
+                else if(!headroom)result=Dev51BAsBuiltRecoveryR30f.Kind.HEADROOM;
+                else if(!flanks)result=Dev51BAsBuiltRecoveryR30f.Kind.SIDE_CLEARANCE;
+                else if(!sturdy)result=Dev51BAsBuiltRecoveryR30f.Kind.MISSING_SUPPORT;
+                else result=off==Dev51BAsBuiltRecoveryR30f.STATION_OFFSET
+                        ?Dev51BAsBuiltRecoveryR30f.Kind.PROPOSED_STATION_AIR
+                        :Dev51BAsBuiltRecoveryR30f.Kind.PROPOSED_NORMAL_AIR;
+            }
+        }
+        witnesses.add(new Dev51BAsBuiltRecoveryR30f.Cell(off,result,observed,support));
+        LOG.info("[TC-DEV51B-R30F] AS_BUILT_CELL offset={} pos={} kind={} block={} support={} existing={} proposedOnly={} noWrites=true",
+                off,at,result,observed,support,off<=8,off>=9);
+    }
+    // No R30f SavedData schema exists yet: report an immutable proposal only.
+    var report=Dev51BAsBuiltRecoveryR30f.inspect(witnesses,stationRecorded,
+            sourceIsTestStop,legacyNetwork,legacyWide,legacyOutbound,destinationSaved,false);
+    // R30i is the ONLY intentionally writable as-built SOURCE-ONLY record path.
+    // Strict disposable-copy and near-source checks occurred above, before survey.
+    // The 25-cell live witness MUST still match the frozen R30h acceptance hash.
+    // No legacy network station flags, tracks, train controllers or dispatchers are touched.
+    if(readonlyMode==3 || readonlyMode==4) {
+        final Dev51BAsBuiltPersistenceR30g.Draft draft;
+        try {
+            draft=Dev51BAsBuiltPersistenceR30g.draftFor(report);
+        }catch(RuntimeException rejected) {
+            LOG.warn("[TC-DEV51B-R30I] REGISTRATION_HOLD witnessRejected={} noWrites=true",rejected.toString());
+            src.sendFailure(Component.literal("[R30i] HOLD_LIVE_WITNESS_REJECTED. No record write."));
+            return 0;
+        }
+        final boolean commit=readonlyMode==4;
+        final Dev51BAsBuiltRegisteredDataR30i.Result result =
+            Dev51BAsBuiltRegisteredDataR30i.execute(level,draft,commit);
+        LOG.info("[TC-DEV51B-R30I] AS_BUILT_REGISTRATION command={} status={} sourceSha256={} " +
+                "backupValid={} recordPresent={} diskLoaded={} dirty={} " +
+                "recordWriteStaged={} blocksChanged=0 entitiesMoved=0 legacyMarkersTouched=false " +
+                "railEdits=0 trainDrive=false automaticDispatch=false routeCertified=false",
+                commit?"COMMIT":"INSPECT",result.status(),report.sourceFingerprint(),
+                result.backupValid(),result.recordPresent(),result.diskLoaded(),
+                result.dirty(),result.writeStaged());
+        if(result.writeStaged())
+            src.sendSuccess(()->Component.literal("[R30i] SOURCE-ONLY RECORD STAGED. Save and exit, reopen disposable copy, then /tcrailway network asbuiltregister inspect. NO RAILS/DRIVE/DISPATCH."),false);
+        else if(result.diskLoaded()&&result.status().equals("SOURCE_RECORD_RELOADED_VALID_NO_ROUTE_AUTHORITY"))
+            src.sendSuccess(()->Component.literal("[R30i] SOURCE-ONLY RECORD RELOADED AND VALID. Construction and driving still HOLD."),false);
+        else if(result.status().equals("READY_SOURCE_ONLY_CONFIRM_REQUIRED"))
+            src.sendSuccess(()->Component.literal("[R30i] Backup and witness valid. COMMIT requires explicit full SHA256 confirmation. NO WORLD CHANGES YET."),false);
+        else src.sendFailure(Component.literal("[R30i] "+result.status()+". No new record written."));
+        return result.writeStaged()||result.diskLoaded()||result.status().equals("READY_SOURCE_ONLY_CONFIRM_REQUIRED")?1:0;
+    }
+    // R30j prerequisite: an exact R30i SOURCE record loaded from disk and
+    // matching the same read-only 25-cell live witness. Not legacy flags.
+    if(readonlyMode==5) {
+        final Dev51BAsBuiltPersistenceR30g.Draft draft;
+        try { draft=Dev51BAsBuiltPersistenceR30g.draftFor(report); }
+        catch(RuntimeException invalid) {
+            LOG.warn("[TC-DEV51B-R30J] SOURCE_HOLD badLiveWitness={} worldEdits=0",invalid.toString());
+            src.sendFailure(Component.literal("[R30j] HOLD_LIVE_SOURCE_WITNESS. NO BUILDS/DRIVE."));
+            return 0;
+        }
+        final Dev51BAsBuiltRegisteredDataR30i.Result record=Dev51BAsBuiltRegisteredDataR30i.execute(level,draft,false);
+        final boolean persisted=record.recordPresent()&&record.diskLoaded()&&!record.dirty()
+                &&"SOURCE_RECORD_RELOADED_VALID_NO_ROUTE_AUTHORITY".equals(record.status());
+        LOG.info("[TC-DEV51B-R30J] PERSISTED_SOURCE_GATE status={} persisted={} diskLoaded={} dirty={} sourceSha256={} legacyNetwork={} noWrites=true",
+                record.status(),persisted,record.diskLoaded(),record.dirty(),report.sourceFingerprint(),legacyNetwork);
+        if(!persisted) {
+            src.sendFailure(Component.literal("[R30j] HOLD_PERSISTED_SOURCE_"+record.status()+". NO BUILDS/DRIVE."));
+            return 0;
+        }
+        return 1;
+    }
+    LOG.info("[TC-DEV51B-R30F] AS_BUILT_RECORD_PREVIEW schema={} source={} existing={} proposedUnbuilt={} firstHold={} originalStationRail={} extraStationRails={} stationRecorded={} sourceTestStop={} legacyNetworks={} legacyWideNetworks={} legacyOutbound={} secondStationRecorded={} proposedSchemaStorageImplemented=false proposalPersisted=false legacyTemplateRebuilt=false reviewStatus={} sourceSha256={} fullSha256={} worldEdits=0 savedDataWrites=0 chunksForced=0 entitiesMoved=0 trainDrive=false automaticDispatch=false networkRegistered=false connectedRouteCertified=false",
+            Dev51BAsBuiltRecoveryR30f.SCHEMA,source,report.existingRail(),
+            report.proposedAir(),report.firstHold(),report.sourceStationRails(),
+            report.additionalStationRails(),report.sourceStationRecorded(),report.isR30TestStop(),
+            report.legacyNetworkRecorded(),report.legacyWideRecorded(),report.hasLegacyOutbound(),
+            report.secondStationRecorded(),report.verdict(),report.sourceFingerprint(),report.fullFingerprint());
+    src.sendSuccess(()->Component.literal("[R30f] 9 existing as-built rails x=53..61; 16 west rails x=37..52 remain UNBUILT."),false);
+    src.sendSuccess(()->Component.literal("[R30f] legacyNetworks="+report.legacyNetworkRecorded()+
+            " legacyWide="+report.legacyWideRecorded()+" secondStationRecorded="+report.secondStationRecorded()+
+            " HOLD="+report.verdict()),false);
+    src.sendSuccess(()->Component.literal("[R30f] As-built source witness="+report.sourceFingerprint().substring(0,16)+
+            "; review only. No network record written, no rails placed or train movement."),false);
+    if(readonlyMode==1) {
+        Dev51BAsBuiltPersistenceR30g.Result preflight;
+        try {
+            preflight=Dev51BAsBuiltPersistenceR30g.preflight(report);
+        }catch(IllegalArgumentException rejected) {
+            LOG.warn("[TC-DEV51B-R30G] STORAGE_PREFLIGHT_REJECTED reason={} noWrites=true",rejected.getMessage());
+            src.sendFailure(Component.literal("[R30g] HOLD STORAGE_PREFLIGHT_REJECTED. No record written."));
+            return 0;
+        }
+        LOG.info("[TC-DEV51B-R30G] AS_BUILT_STORAGE_PREFLIGHT format={} version={} sourceSha256={} encodedBytes={} wireSha256={} roundTrip={} sourceMatch={} rollbackUnchanged={} storageImplemented=false savedDataWrites=0 legacyNetworkMarkersTouched=false blocksChanged=0 entitiesMoved=0 trainDrive=false automaticDispatch=false mayPersist=false mayBuild=false mayDrive=false mayDispatch=false status={}",
+                Dev51BAsBuiltPersistenceR30g.SCHEMA,Dev51BAsBuiltPersistenceR30g.VERSION,
+                report.sourceFingerprint(),preflight.encodedBytes(),preflight.formatSha256(),
+                preflight.formatRoundTrip(),preflight.sourceWitnessMatches(),
+                preflight.rollbackUnchanged(),preflight.verdict());
+        src.sendSuccess(()->Component.literal("[R30g] In-memory format roundtrip="+preflight.formatRoundTrip()+
+                " witnessMatch="+preflight.sourceWitnessMatches()+" rollback="+preflight.rollbackUnchanged()),false);
+        src.sendSuccess(()->Component.literal("[R30g] "+preflight.verdict()+
+                "; NO SavedData writes / network registration / rail placement / train driving."),false);
+    }
+    if(readonlyMode==2) {
+        // Obtain draft ONLY from the newly re-read, complete 25-cell R30f witness.
+        // Probe an isolated SavedData name; absence is a HOLD, never auto-create a
+        // valid network. computeIfAbsent may cache a CLEAN empty object in RAM,
+        // but never dirties or saves it. No legacy records are mutated.
+        final Dev51BAsBuiltPersistenceR30g.Draft draft;
+        try {
+            draft=Dev51BAsBuiltPersistenceR30g.draftFor(report);
+        } catch(IllegalArgumentException badWitness) {
+            LOG.warn("[TC-DEV51B-R30H] SAVEDDATA_WITNESS_REJECTED reason={} noWrites=true",badWitness.getMessage());
+            src.sendFailure(Component.literal("[R30h] HOLD_SOURCE_WITNESS_REJECTED. No SavedData write."));
+            return 0;
+        }
+        final Dev51BAsBuiltSavedDataR30h.Survey storage;
+        try {
+            storage=Dev51BAsBuiltSavedDataR30h.inspect(level,draft);
+        } catch(RuntimeException failure) {
+            LOG.error("[TC-DEV51B-R30H] SAVEDDATA_READER_FAILED noWrites=true",failure);
+            src.sendFailure(Component.literal("[R30h] HOLD_SAVEDDATA_READER_FAILED. No record written."));
+            return 0;
+        }
+        LOG.info("[TC-DEV51B-R30H] SAVEDDATA_READONLY_PREVIEW format={} key={} sourceSha256={} nbtRoundTrip={} liveSourceMatch={} recordPresent={} recordValid={} storeDirty={} diskWrites=0 blocksChanged=0 entitiesMoved=0 legacyMarkersTouched=false trainDrive=false automaticDispatch=false mayRegister=false mayBuild=false mayDrive=false mayDispatch=false status={}",
+                Dev51BAsBuiltPersistenceR30g.SCHEMA,Dev51BAsBuiltSavedDataR30h.KEY,
+                report.sourceFingerprint(),storage.nbtRoundTrip(),storage.liveSourceMatches(),
+                storage.recordPresent(),storage.recordValid(),storage.storageDirty(),storage.verdict());
+        src.sendSuccess(()->Component.literal("[R30h] Native NBT roundtrip="+storage.nbtRoundTrip()+
+                " sourceMatch="+storage.liveSourceMatches()+" recordPresent="+storage.recordPresent()),false);
+        src.sendSuccess(()->Component.literal("[R30h] "+storage.verdict()+
+                "; NO save / network registration / rail placement / train driving."),false);
+    }
+    return 1;
+}
+
+// R30j: a disk-reloaded R30i record is REQUIRED before the western survey.
+// Both called audits are observation-only; permission to build remains false.
+private static int dev51bR30jWestPreflight(CommandSourceStack src) {
+    int verified=dev51bR30fRecoveryPreview(src,5);
+    if(verified!=1)return 0;
+    return dev51bR30eWestConstructionPreview(src,true);
+}
+
+private static int dev51bR30kWestTerminalPreview(CommandSourceStack src) {
+    int verified=dev51bR30fRecoveryPreview(src,5);
+    if(verified!=1)return 0;
+    return dev51bR30eWestConstructionPreview(src,true,true);
+}
+
+
+
+// DEV51B R30m: passive observation of a separate test loco, no movement authorization.
+private record R30mLive(java.util.UUID engine,long startTick,Dev51BWestStopSafetyR30m.Track track){}
+private static R30mLive r30mLive;
+private static String r30mResult="HOLD_NOT_ARMED";
+private static String r30mLastUuid="none";
+private static boolean dev51bR30mBuilt(ServerLevel level) {
+    // Preexisting sources plus newly built 16 rails all must retain exact EW alignment.
+    for(int x=37;x<=61;x++){
+        BlockPos p=new BlockPos(x,-60,-3);
+        if(!level.hasChunkAt(p))return false;
+        BlockState s=level.getBlockState(p);
+        if(!s.is(x==41||x==61?TCBlocks.TRACK_STATION.get():TCBlocks.TRACK_NORMAL.get())
+                ||!s.hasProperty(RailBlock.SHAPE)||s.getValue(RailBlock.SHAPE)!=RailShape.EAST_WEST)return false;
+    }
+    return true;
+}
+private static boolean dev51bR30mSourceDisk(ServerLevel level){
+    try {
+        var draft=new Dev51BAsBuiltPersistenceR30g.Draft(
+            Dev51BAsBuiltPersistenceR30g.SCHEMA,1,"minecraft:overworld",61,-60,-3,53,61,9,
+            "EAST_WEST",Dev51BAsBuiltPersistenceR30g.STATUS,
+            Dev51BWestConstructR30l.SOURCE,false,false,false,false);
+        var verified=Dev51BAsBuiltRegisteredDataR30i.execute(level,draft,false);
+        return "SOURCE_RECORD_RELOADED_VALID_NO_ROUTE_AUTHORITY".equals(verified.status())
+                &&verified.diskLoaded()&&!verified.dirty();
+    }catch(Exception bad){LOG.warn("[TC-DEV51B-R30M] DISK_SOURCE_HOLD {}",bad.toString());return false;}
+}
+private static boolean dev51bR30mStopper(ServerLevel level){
+    BlockState s=level.getBlockState(new BlockPos(36,-60,-3));
+    return s.is(TCBlocks.STOPPER.get())&&s.hasProperty(HorizontalDirectionalBlock.FACING)
+            &&s.getValue(HorizontalDirectionalBlock.FACING)==Direction.EAST
+            &&s.hasProperty(TrainBufferBlock.ENERGY)&&!s.getValue(TrainBufferBlock.ENERGY);
+}
+private static int dev51bR30mBufferProbe(CommandSourceStack src,String op) {
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)||!(src.getEntity() instanceof ServerPlayer)
+       ||!dev51bR27Disposable(level)){
+        src.sendFailure(Component.literal("[R30m] HOLD_DISPOSABLE_COPY_ONLY"));return 0;
+    }
+    if("report".equals(op)) {
+        String status=r30mLive==null?r30mResult:"OBSERVATION_ACTIVE ticks="+(level.getGameTime()-r30mLive.startTick());
+        LOG.info("[TC-DEV51B-R30M] REPORT status={} testLoco={} noDrive=true noDispatch=true",status,r30mLastUuid);
+        src.sendSuccess(()->Component.literal("[R30m] "+status+"; no route/collision certification."),false);return 1;
+    }
+    if("cancel".equals(op)) {
+        r30mLive=null;r30mResult="CANCELLED_NO_ROUTE_AUTHORITY";
+        src.sendSuccess(()->Component.literal("[R30m] Observation cancelled. No train/blocks changed."),false);return 1;
+    }
+    if(new BlockPos(61,-60,-3).distSqr(BlockPos.containing(src.getPosition()))>64L*64L){
+        src.sendFailure(Component.literal("[R30m] HOLD_NEAR_ORIGINAL_STATION_REQUIRED"));return 0;
+    }
+    boolean built=dev51bR30mBuilt(level);
+    boolean sourceValid=dev51bR30mSourceDisk(level)
+       &&stations(level).placed.contains(new BlockPos(61,-60,-3));
+    boolean stopper=dev51bR30mStopper(level);
+    BlockPos bufferPos=new BlockPos(36,-60,-3);
+    boolean collision=stopper&&!level.getBlockState(bufferPos).getCollisionShape(level,bufferPos).isEmpty();
+    // Excludes the accepted GP7/Blue Coach parked east at X66.690/62.894.
+    var nearby=level.getEntitiesOfClass(net.minecraft.world.entity.vehicle.AbstractMinecart.class,
+          new AABB(34,-62,-5.5,60,-54,-0.5),e->!e.isRemoved());
+    var test=level.getEntitiesOfClass(LegacyPoweredLocomotive.class,
+          new AABB(43,-62,-5.5,53,-54,-0.5),e->!e.isRemoved());
+    var loco=test.size()==1?test.get(0):null;
+    int others=(int)nearby.stream().filter(e->loco==null||!e.getUUID().equals(loco.getUUID())).count();
+    var gate=new Dev51BWestStopSafetyR30m.Gate(built,sourceValid,built,stopper,collision,
+          test.size(),others,loco!=null&&loco.getDeltaMovement().horizontalDistance()<0.005,
+          loco!=null&&loco.isHandBrakeApplied(),loco==null?0:loco.getX(),loco==null?0:loco.getZ());
+    var result=Dev51BWestStopSafetyR30m.evaluate(gate);
+    LOG.info("[TC-DEV51B-R30M] BUFFER_PROBE mode={} status={} sourceDisk={} built={} stopperEast={} collisionShape={} testLocos={} otherVehicles={} testX={} testZ={} parked={} handbrake={} noBlockEdits=true noMoves=true automaticDispatch=false stopCertified=false",
+        op,result.status(),sourceValid,built,stopper,collision,test.size(),others,
+        loco==null?"none":loco.getX(),loco==null?"none":loco.getZ(),gate.testParked(),gate.testBraked());
+    if("inspect".equals(op)) {
+        src.sendSuccess(()->Component.literal("[R30m] "+result.status()+"; collisionShape="+collision
+            +" testLocos="+test.size()+" otherVehicles="+others+". NO DRIVE/DISPATCH."),false);
+        return 1;
+    }
+    if(!"arm".equals(op)||!result.armAllowed()||loco==null||r30mLive!=null){
+        src.sendFailure(Component.literal("[R30m] ARM REFUSED: "+(r30mLive!=null?"ALREADY_ACTIVE":result.status())
+          +". No movement commanded."));return 0;
+    }
+    // Arm only in RAM. User, not mod, would control the isolated test loco in future trial.
+    r30mLastUuid=loco.getUUID().toString();
+    r30mResult="OBSERVATION_ACTIVE_NOT_COLLISION_CERTIFIED";
+    r30mLive=new R30mLive(loco.getUUID(),level.getGameTime(),
+       new Dev51BWestStopSafetyR30m.Track(false,false,false,false,loco.getX(),0,0));
+    src.sendSuccess(()->Component.literal("[R30m] Passive 600-tick telemetry armed for "+r30mLastUuid
+        +". It does NOT drive/stop train or authorize collision test. Inspect logs first."),false);
+    LOG.info("[TC-DEV51B-R30M] ARMED loco={} duration=600 noDriver=true noBrakeOverride=true collisionCertified=false",r30mLastUuid);
+    return 1;
+}
+private static void dev51bR30mRecordTick(ServerLevel level) {
+    R30mLive live=r30mLive;if(live==null)return;
+    Entity e=level.getEntity(live.engine());
+    boolean present=e instanceof LegacyPoweredLocomotive &&!e.isRemoved();
+    boolean source=dev51bR27Disposable(level)&&dev51bR30mSourceDisk(level);
+    boolean blocks=dev51bR30mBuilt(level)&&dev51bR30mStopper(level);
+    var other=level.getEntitiesOfClass(net.minecraft.world.entity.vehicle.AbstractMinecart.class,
+       new AABB(34,-62,-5.5,60,-54,-0.5),v->!v.isRemoved()&&!v.getUUID().equals(live.engine()));
+    var sample=new Dev51BWestStopSafetyR30m.Sample(level.getGameTime()-live.startTick(),
+        e==null?0:e.getX(),e==null?0:e.getZ(),e==null?0:e.getDeltaMovement().horizontalDistance(),
+        present,!other.isEmpty(),source,blocks);
+    var next=Dev51BWestStopSafetyR30m.step(live.track(),sample);
+    if(next.breached()||next.speedExceeded()||sample.ticks()>=Dev51BWestStopSafetyR30m.MAX_TICKS){
+        r30mResult=Dev51BWestStopSafetyR30m.report(next);
+        LOG.info("[TC-DEV51B-R30M] TELEMETRY_RESULT {} loco={} ticks={} samples={} minX={} maxSpeedBpt={} approach={} moved={} BREACH={} stopCertified=false noMovementAuthority=true",
+           r30mResult,live.engine(),sample.ticks(),next.samples(),next.minX(),next.maxSpeed(),
+           next.approachObserved(),next.motionObserved(),next.breached());
+        r30mLive=null;return;
+    }
+    r30mLive=new R30mLive(live.engine(),live.startTick(),next);
+}
+
+// R30p read-only station evidence. The local ClassicSpecialTrackBlock.java handler is
+// separately verified by the R30p installer. This method does not call that handler.
+private static int dev51bR30pStationAudit(CommandSourceStack src){
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)
+        ||!(src.getEntity() instanceof ServerPlayer)||!dev51bR27Disposable(level)){
+        src.sendFailure(Component.literal("[R30p] HOLD_DISPOSABLE_COPY_ONLY"));return 0;
+    }
+    BlockPos west=new BlockPos(41,-60,-3),old=new BlockPos(61,-60,-3);
+    if(!level.hasChunkAt(west)||!level.hasChunkAt(old)){
+        src.sendFailure(Component.literal("[R30p] HOLD_STATION_CHUNKS_NOT_LOADED"));return 0;
+    }
+    BlockState ws=level.getBlockState(west),os=level.getBlockState(old);
+    String wid=BuiltInRegistries.BLOCK.getKey(ws.getBlock()).toString();
+    String oid=BuiltInRegistries.BLOCK.getKey(os.getBlock()).toString();
+    boolean wc=ws.getBlock() instanceof traincraft.block.track.ClassicSpecialTrackBlock;
+    Boolean wa=ws.getOptionalValue(traincraft.block.track.ClassicSpecialTrackBlock.ACTIVE).orElse(null);
+    Boolean oa=os.getOptionalValue(traincraft.block.track.ClassicSpecialTrackBlock.ACTIVE).orElse(null);
+    boolean ew=ws.hasProperty(RailBlock.SHAPE)&&ws.getValue(RailBlock.SHAPE)==RailShape.EAST_WEST;
+    boolean signal=level.hasNeighborSignal(west);
+    int power=level.getBestNeighborSignal(west);
+    int sourcePower=level.getBestNeighborSignal(old);
+    var locos=level.getEntitiesOfClass(LegacyPoweredLocomotive.class,
+        new AABB(37,-62,-5.5,53,-54,-.5),e->!e.isRemoved());
+    LegacyPoweredLocomotive loco=locos.size()==1?locos.get(0):null;
+    double x=loco==null?Double.NaN:loco.getX(),z=loco==null?Double.NaN:loco.getZ();
+    double min=loco==null?Double.NaN:loco.getBoundingBox().minX;
+    double max=loco==null?Double.NaN:loco.getBoundingBox().maxX;
+    boolean stopped=loco!=null&&loco.getDeltaMovement().horizontalDistance()<.003;
+    boolean handbrake=loco!=null&&loco.isHandBrakeApplied();
+    boolean lock=loco!=null&&loco.getUUID().equals(r30nLock);
+    var evidence=new Dev51BWestStationAuditR30p.Evidence(
+       dev51bR27Disposable(level),dev51bR30mSourceDisk(level),dev51bR30mBuilt(level),
+       dev51bR30mStopper(level),wid.equals("traincraft:track_station"),wc,ew,wa,
+       signal,power,oid.equals("traincraft:track_station"),oa,sourcePower,
+       locos.size(),handbrake,stopped,x,z,min,max,lock,r30nLive!=null,r30nLast);
+    var verdict=Dev51BWestStationAuditR30p.inspect(evidence);
+    LOG.info("[TC-DEV51B-R30P] STATION_AUDIT status={} x41id={} x41class={} x41state={} active={} neighborSignal={} bestSignal={} x61id={} x61state={} x61active={} x61bestSignal={} locoCount={} uuid={} x={} z={} bboxMinX={} bboxMaxX={} intersectsX41={} parked={} handbrake={} r30nSessionLock={} r30nTrialActive={} lastR30n={} lockPersistence=SESSION_ONLY_BY_R30N_SOURCE noPersistedLockProof=true sourceHandlerCondition=STATION_AND_NOT_HAS_NEIGHBOR_SIGNAL_HANDLER_SOURCE_CHECKED_BY_INSTALLER handlerApplicable={} originalSourceDisk={} railsBuilt={} bufferEast={} noBlockChanges=true noRedstoneChanges=true noTrainMove=true noRelease=true nativeStopCertified=false dispatch=false",
+       verdict.status(),wid,ws.getBlock().getClass().getName(),ws,wa,signal,power,
+       oid,os,oa,sourcePower,locos.size(),loco==null?"none":loco.getUUID(),x,z,min,max,
+       verdict.stationOverlap(),stopped,handbrake,lock,r30nLive!=null,r30nLast,
+       verdict.sourceHandlerApplicable(),evidence.sourceDisk(),evidence.built(),evidence.stopper());
+    src.sendSuccess(()->Component.literal("[R30p] "+verdict.status()+"; active="+wa+
+       "; signal="+power+"; overlapsRail="+verdict.stationOverlap()),false);
+    src.sendSuccess(()->Component.literal("[R30p] R30n lock is SESSION-ONLY; currentLock="+lock+
+       "; no driving, redstone, track edits, lock release or native buffer certification."),false);
+    return 1;
+}
+
+// R30o: one-command read-only survey. Deliberately no command to release R30n lock,
+// energize/bypass station rail, set locomotive velocity, or certify buffer collision.
+private static int dev51bR30oStationDiag(CommandSourceStack src){
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)
+        ||!(src.getEntity() instanceof ServerPlayer)
+        ||!dev51bR27Disposable(level)){
+        src.sendFailure(Component.literal("[R30o] HOLD_DISPOSABLE_COPY_ONLY"));return 0;
+    }
+    BlockPos west=new BlockPos(41,-60,-3), old=new BlockPos(61,-60,-3);
+    if(!level.hasChunkAt(west)||!level.hasChunkAt(old)){
+        src.sendFailure(Component.literal("[R30o] HOLD_SOURCE_CHUNKS_NOT_LOADED"));return 0;
+    }
+    BlockState ws=level.getBlockState(west), os=level.getBlockState(old);
+    String westId=BuiltInRegistries.BLOCK.getKey(ws.getBlock()).toString();
+    String sourceId=BuiltInRegistries.BLOCK.getKey(os.getBlock()).toString();
+    Boolean westPowered=ws.getOptionalValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.POWERED).orElse(null);
+    Boolean sourcePowered=os.getOptionalValue(net.minecraft.world.level.block.state.properties.BlockStateProperties.POWERED).orElse(null);
+    boolean isStation=westId.equals("traincraft:track_station");
+    boolean eastWest=ws.hasProperty(RailBlock.SHAPE) && ws.getValue(RailBlock.SHAPE)==RailShape.EAST_WEST;
+    int westSignal=level.getBestNeighborSignal(west);
+    int oldSignal=level.getBestNeighborSignal(old);
+    boolean westNeighbor=level.hasNeighborSignal(west),oldNeighbor=level.hasNeighborSignal(old);
+    // Search includes the POST-trial x=42.43 position, excluded by the old pretrial x>=43 gate.
+    var locos=level.getEntitiesOfClass(LegacyPoweredLocomotive.class,
+        new AABB(37,-62,-5.5,53,-54,-.5),e->!e.isRemoved());
+    LegacyPoweredLocomotive loco=locos.size()==1?locos.get(0):null;
+    double x=loco==null?Double.NaN:loco.getX(),z=loco==null?Double.NaN:loco.getZ();
+    double min=loco==null?Double.NaN:loco.getBoundingBox().minX;
+    double max=loco==null?Double.NaN:loco.getBoundingBox().maxX;
+    boolean stationary=loco!=null&&loco.getDeltaMovement().horizontalDistance()<.003;
+    boolean handbrake=loco!=null&&loco.isHandBrakeApplied();
+    boolean guardLock=loco!=null&&loco.getUUID().equals(r30nLock);
+    var evidence=new Dev51BWestStationDiagnosisR30o.Evidence(
+        dev51bR27Disposable(level),dev51bR30mSourceDisk(level),dev51bR30mBuilt(level),
+        dev51bR30mStopper(level),isStation,eastWest,westPowered,westNeighbor,westSignal,
+        locos.size(),handbrake,stationary,x,z,min,max,guardLock,r30nLast);
+    var verdict=Dev51BWestStationDiagnosisR30o.inspect(evidence);
+    LOG.info("[TC-DEV51B-R30O] STATION_DIAG status={} x41id={} x41class={} x41state={} x41powered={} x41directSignal={} x41bestNeighborSignal={} x41ew={} x61id={} x61class={} x61state={} x61powered={} x61directSignal={} x61bestSignal={} locoCount={} locoUuid={} locoX={} locoZ={} bboxMinX={} bboxMaxX={} bboxOverlapsStation={} parked={} handbrake={} r30nLock={} lastR30n={} previousTrialMinX=42.42952825689375 sourceDisk={} railsBuilt={} bufferEast={} blocksWritten=0 redstoneChanged=false trainMoved=false stopCertified=false routeAuthority=false dispatch=false",
+        verdict.status(),westId,ws.getBlock().getClass().getName(),ws,westPowered,westNeighbor,westSignal,eastWest,
+        sourceId,os.getBlock().getClass().getName(),os,sourcePowered,oldNeighbor,oldSignal,
+        locos.size(),loco==null?"none":loco.getUUID(),x,z,min,max,verdict.overlap(),stationary,handbrake,
+        guardLock,r30nLast,evidence.sourceDisk(),evidence.built(),evidence.bufferEast());
+    src.sendSuccess(()->Component.literal("[R30o] "+verdict.status()+"; westStationPowered="+westPowered+
+       "; signal="+westSignal+"; bboxOverlap="+verdict.overlap()+"; R30nLock="+guardLock),false);
+    src.sendSuccess(()->Component.literal("[R30o] READ ONLY: no track change, lock release, train movement, native stop certification or dispatch. SEND LOG."),false);
+    return 1;
+}
+
+// DEV51B R30n: guarded human-controlled, low-speed approach observer. NO automatic drive or dispatch.
+private record R30nLive(java.util.UUID engine,java.util.UUID pilot,long start,
+                        Dev51BWestLowSpeedR30n.Track track){}
+private static R30nLive r30nLive;
+private static java.util.UUID r30nLock;
+private static String r30nLast="HOLD_NOT_ARMED";
+private static double r30nLastMinX=48.5;
+private static double r30nLastMaxSpeed=0;
+private static boolean dev51bR30nBackup(ServerLevel level){
+    try{
+        java.nio.file.Path w=level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toRealPath();
+        return Dev51BWestTrialBackupR30n.verify(w.getParent().getParent().getParent(),w);
+    }catch(Exception bad){LOG.warn("[TC-DEV51B-R30N] BACKUP_GATE_HOLD {}",bad.toString());return false;}
+}
+private static int dev51bR30nCommand(CommandSourceStack src,String mode){
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)||!(src.getEntity() instanceof ServerPlayer player)
+            ||!dev51bR27Disposable(level)){
+        src.sendFailure(Component.literal("[R30n] HOLD_DISPOSABLE_COPY_ONLY"));return 0;
+    }
+    if("report".equals(mode)){
+        String result=r30nLive==null?r30nLast:
+            "OBSERVATION_ACTIVE ticks="+(level.getGameTime()-r30nLive.start())
+            +" minX="+r30nLive.track().minX()+" maxSpeedBpt="+r30nLive.track().maxSpeed();
+        LOG.info("[TC-DEV51B-R30N] REPORT status={} guardLock={} minX={} maxSpeed={} nativeStopCertified=false",result,r30nLock!=null,r30nLastMinX,r30nLastMaxSpeed);
+        src.sendSuccess(()->Component.literal("[R30n] "+result+"; emergencyLock="+(r30nLock!=null)+"; NO BUFFER CERTIFICATION."),false);
+        return 1;
+    }
+    if("cancel".equals(mode)){
+        if(r30nLive==null){src.sendFailure(Component.literal("[R30n] HOLD_NOT_ACTIVE"));return 0;}
+        r30nLock=r30nLive.engine();r30nLive=null;r30nLast="CANCELLED_EMERGENCY_HOLD";
+        src.sendSuccess(()->Component.literal("[R30n] Test cancelled; safety lock engaged. Apply handbrake, then release."),false);return 1;
+    }
+    if("release".equals(mode)){
+        Entity locked=r30nLock==null?null:level.getEntity(r30nLock);
+        if(r30nLive!=null||!(locked instanceof LegacyPoweredLocomotive loco)||!loco.isHandBrakeApplied()
+             ||loco.getDeltaMovement().horizontalDistance()>.003||loco.getX()<38.05){
+            src.sendFailure(Component.literal("[R30n] HOLD_RELEASE_REQUIRE_HAND_BRAKED_STATIONARY_SAFE_POSITION"));return 0;
+        }
+        r30nLock=null;
+        src.sendSuccess(()->Component.literal("[R30n] Emergency lock released; train remains handbraked. DO NOT RETRY without review."),false);return 1;
+    }
+    if(new BlockPos(61,-60,-3).distSqr(BlockPos.containing(src.getPosition()))>64L*64L){
+        src.sendFailure(Component.literal("[R30n] HOLD_NEAR_STATION_REQUIRED"));return 0;
+    }
+    var locos=level.getEntitiesOfClass(LegacyPoweredLocomotive.class,
+        new AABB(43,-62,-5.5,53,-54,-0.5),e->!e.isRemoved());
+    LegacyPoweredLocomotive test=locos.size()==1?locos.get(0):null;
+    var others=level.getEntitiesOfClass(net.minecraft.world.entity.vehicle.AbstractMinecart.class,
+        new AABB(34,-62,-5.5,60,-54,-0.5),e->!e.isRemoved()&&(test==null||!e.getUUID().equals(test.getUUID())));
+    boolean shape=dev51bR30mStopper(level)
+       &&!level.getBlockState(new BlockPos(36,-60,-3)).getCollisionShape(level,new BlockPos(36,-60,-3)).isEmpty();
+    boolean backup=dev51bR30nBackup(level);
+    var gate=new Dev51BWestLowSpeedR30n.Gate(dev51bR27Disposable(level),dev51bR30mSourceDisk(level),
+       dev51bR30mBuilt(level),dev51bR30mStopper(level),shape,backup,locos.size(),others.size(),
+       test!=null&&test.getDeltaMovement().horizontalDistance()<.003,
+       test!=null&&test.isHandBrakeApplied(),test==null?0:test.getX(),test==null?0:test.getZ());
+    var result=Dev51BWestLowSpeedR30n.gate(gate);
+    LOG.info("[TC-DEV51B-R30N] INSPECT mode={} status={} sourceDisk={} built={} stopperEast={} collision={} freshBackup={} testLocos={} otherVehicles={} parked={} handbrake={} x={} z={} watchX=38.0 maxSpeedBpt=0.075 originalConsistUnaffected=true noDispatch=true",
+      mode,result.status(),gate.sourceDisk(),gate.built(),gate.stopper(),gate.collision(),gate.backup(),gate.testLocos(),gate.otherVehicles(),gate.parked(),gate.handbrake(),gate.x(),gate.z());
+    if("inspect".equals(mode)){
+        src.sendSuccess(()->Component.literal("[R30n] "+result.status()+"; backup="+backup+"; watchX=38.0; MAX 0.075 b/t. No movement authorized by inspect."),false);return 1;
+    }
+    if(!"arm".equals(mode)||r30nLive!=null||r30nLock!=null||r30mLive!=null||!result.armAllowed()||test==null){
+        src.sendFailure(Component.literal("[R30n] ARM REFUSED: "+(r30nLock!=null?"EMERGENCY_LOCK_ACTIVE":result.status())));return 0;
+    }
+    r30nLive=new R30nLive(test.getUUID(),player.getUUID(),level.getGameTime(),Dev51BWestLowSpeedR30n.start(test.getX()));
+    r30nLast="OBSERVATION_ACTIVE";
+    LOG.info("[TC-DEV51B-R30N] ARMED loco={} pilot={} startX={} watchdogX=38.0 overspeedBpt=0.075 duration=800 autoDrive=false autoDispatch=false stopCertified=false",test.getUUID(),player.getUUID(),test.getX());
+    src.sendSuccess(()->Component.literal("[R30n] GUARD ARMED for isolated test loco. Manual slow approach only; watchdog freezes at X=38.0 or overspeed. DO NOT treat stop as native buffer proof."),false);return 1;
+}
+private static void dev51bR30nFreeze(ServerLevel level,java.util.UUID uuid){
+    Entity entity=level.getEntity(uuid);
+    if(entity instanceof LegacyPoweredLocomotive loco &&!entity.isRemoved()){
+        // Emergency containment applies ONLY to the UUID of the separate test loco.
+        if(loco.getX()<=38.0)loco.setPos(38.25,loco.getY(),-2.5);
+        loco.setDeltaMovement(Vec3.ZERO);
+    }
+}
+private static void dev51bR30nTick(ServerLevel level){
+    if(r30nLock!=null)dev51bR30nFreeze(level,r30nLock);
+    R30nLive active=r30nLive;if(active==null)return;
+    Entity entity=level.getEntity(active.engine());
+    boolean present=entity instanceof LegacyPoweredLocomotive && !entity.isRemoved();
+    boolean valid=dev51bR27Disposable(level)&&dev51bR30mSourceDisk(level);
+    boolean track=dev51bR30mBuilt(level);
+    boolean buffer=dev51bR30mStopper(level);
+    var others=level.getEntitiesOfClass(net.minecraft.world.entity.vehicle.AbstractMinecart.class,
+       new AABB(34,-62,-5.5,60,-54,-0.5),e->!e.isRemoved()&&!e.getUUID().equals(active.engine()));
+    var sample=new Dev51BWestLowSpeedR30n.Sample(level.getGameTime()-active.start(),
+      present?entity.getX():active.track().minX(),present?entity.getZ():-2.5,
+      present?entity.getDeltaMovement().horizontalDistance():0,
+      present,others.isEmpty(),valid,track,buffer);
+    var updated=Dev51BWestLowSpeedR30n.step(active.track(),sample);
+    String decision=Dev51BWestLowSpeedR30n.report(updated,sample.ticks());
+    if(Dev51BWestLowSpeedR30n.emergency(updated)){
+        r30nLock=active.engine();dev51bR30nFreeze(level,r30nLock);
+    }
+    if(Dev51BWestLowSpeedR30n.emergency(updated)||updated.settled()||sample.ticks()>=Dev51BWestLowSpeedR30n.MAX_TICKS){
+        // After ANY observed movement, keep the isolated locomotive frozen until the
+        // operator reapplies its own handbrake and explicitly releases the lock.
+        if(updated.moved()&&r30nLock==null){r30nLock=active.engine();dev51bR30nFreeze(level,r30nLock);}
+        r30nLast=decision;r30nLastMinX=updated.minX();r30nLastMaxSpeed=updated.maxSpeed();
+        LOG.info("[TC-DEV51B-R30N] RESULT status={} loco={} ticks={} samples={} startX={} minX={} maxSpeedBpt={} approached={} moved={} watchdog={} overspeed={} isolationBreach={} emergencyLock={} stopCertified=false noRouteAuthority=true",
+          decision,active.engine(),sample.ticks(),updated.samples(),updated.startX(),updated.minX(),updated.maxSpeed(),updated.approached(),updated.moved(),updated.watchdog(),updated.overspeed(),updated.isolationBreach(),r30nLock!=null);
+        r30nLive=null;return;
+    }
+    r30nLive=new R30nLive(active.engine(),active.pilot(),active.start(),updated);
+}
+
+// DEV51B R30l: only explicit guarded west-construction write path.
+// The source record remains a 9-rail provenance record and is never mutated.
+// R30j/R30k preflight methods remain frozen, and driving/dispatch NEVER enabled.
+private static int dev51bR30lWestConstruct(CommandSourceStack src,boolean commit) {
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)
+            || !(src.getEntity() instanceof ServerPlayer)
+            || !dev51bR27Disposable(level)) {
+        src.sendFailure(Component.literal("[R30l] HOLD_DISPOSABLE_COPY_ONLY"));return 0;
+    }
+    final BlockPos source=new BlockPos(61,-60,-3);
+    if(source.distSqr(BlockPos.containing(src.getPosition()))>48L*48L) {
+        src.sendFailure(Component.literal("[R30l] HOLD_NEAR_SOURCE_REQUIRED"));return 0;
+    }
+    StationData saved=stations(level);
+    boolean sourceRecorded=saved.placed.contains(source) && !saved.isR30TestStop(source);
+    boolean legacy=saved.hasNetwork(source)||saved.hasWideNetwork(source)||saved.outboundWest(source)!=null
+            || saved.placed.contains(new BlockPos(41,-60,-3));
+    // Construct same immutable schema as previously accepted R30i, BUT compare
+    // only the nine original physical rails. The old R30f 16-AIR witness is
+    // intentionally NOT invoked after the extension is placed.
+    boolean nine=sourceRecorded;
+    for(int x=53;x<=61;x++){
+        BlockPos p=new BlockPos(x,-60,-3);
+        if(!level.hasChunkAt(p)||!level.hasChunkAt(p.below())||!level.hasChunkAt(p.above(4))){nine=false;break;}
+        BlockState s=level.getBlockState(p);
+        if(!s.is(x==61?TCBlocks.TRACK_STATION.get():TCBlocks.TRACK_NORMAL.get())
+                ||!s.hasProperty(RailBlock.SHAPE)
+                ||s.getValue(RailBlock.SHAPE)!=RailShape.EAST_WEST
+                ||!level.getBlockState(p.below()).isFaceSturdy(level,p.below(),Direction.UP))nine=false;
+    }
+    boolean persisted=false;
+    try {
+        var draft=new Dev51BAsBuiltPersistenceR30g.Draft(
+                Dev51BAsBuiltPersistenceR30g.SCHEMA,1,"minecraft:overworld",61,-60,-3,53,61,9,
+                "EAST_WEST",Dev51BAsBuiltPersistenceR30g.STATUS,
+                Dev51BWestConstructR30l.SOURCE,false,false,false,false);
+        var persistedRecord=Dev51BAsBuiltRegisteredDataR30i.execute(level,draft,false);
+        persisted="SOURCE_RECORD_RELOADED_VALID_NO_ROUTE_AUTHORITY".equals(persistedRecord.status())
+                &&persistedRecord.diskLoaded()&&!persistedRecord.dirty();
+    }catch(RuntimeException e){LOG.warn("[TC-DEV51B-R30L] SOURCE_GATE_HOLD {}",e.toString());}
+    boolean backup=false;
+    try {
+        var w=level.getServer().getWorldPath(net.minecraft.world.level.storage.LevelResource.ROOT).toRealPath();
+        backup=Dev51BWestBuildBackupR30l.verify(w.getParent().getParent().getParent(),w);
+    }catch(Exception e){LOG.warn("[TC-DEV51B-R30L] BACKUP_GATE_HOLD {}",e.toString());}
+    BlockState normalState=TCBlocks.TRACK_NORMAL.get().defaultBlockState();
+    BlockState stationState=TCBlocks.TRACK_STATION.get().defaultBlockState();
+    BlockState bufferState=TCBlocks.STOPPER.get().defaultBlockState();
+    boolean registries=normalState.hasProperty(RailBlock.SHAPE)
+            && stationState.hasProperty(RailBlock.SHAPE)
+            && bufferState.getBlock() instanceof TrainBufferBlock
+            && bufferState.hasProperty(HorizontalDirectionalBlock.FACING)
+            && bufferState.hasProperty(TrainBufferBlock.ENERGY);
+    if(registries){
+        normalState=normalState.setValue(RailBlock.SHAPE,RailShape.EAST_WEST);
+        stationState=stationState.setValue(RailBlock.SHAPE,RailShape.EAST_WEST);
+        bufferState=bufferState.setValue(HorizontalDirectionalBlock.FACING,Direction.EAST)
+                .setValue(TrainBufferBlock.ENERGY,false);
+    }
+    final BlockState[] planned=new BlockState[17];
+    planned[0]=bufferState;
+    Dev51BWestConstructR30l.Cell[] west=new Dev51BWestConstructR30l.Cell[16];
+    java.util.List<BlockPos> edits=new java.util.ArrayList<>();
+    edits.add(new BlockPos(36,-60,-3));
+    Dev51BWestConstructR30l.Cell atBuffer=dev51bR30lCell(level,edits.get(0),bufferState,true);
+    for(int i=0;i<16;i++) {
+        int x=52-i; BlockPos p=new BlockPos(x,-60,-3); edits.add(p);
+        planned[i+1]=x==41?stationState:normalState;
+        west[i]=dev51bR30lCell(level,p,planned[i+1],false);
+    }
+    var future1=dev51bR30lCell(level,new BlockPos(35,-60,-3),null,false);
+    var future2=dev51bR30lCell(level,new BlockPos(34,-60,-3),null,false);
+    int clearSides=0;
+    for(int dx=-4;dx<=4;dx++)for(int dz=-3;dz<=3;dz++){
+        if(dz==0)continue;
+        BlockPos side=new BlockPos(41+dx,-60,-3+dz);
+        if(dev51bR30lCell(level,side,null,false)==Dev51BWestConstructR30l.Cell.CLEAR)clearSides++;
+    }
+    // Full 13x15 area must be loaded; never force new chunks.
+    boolean loaded=true;
+    for(int x=35;x<=47;x++)for(int z=-10;z<=4;z++)
+        if(!level.hasChunkAt(new BlockPos(x,-60,z)))loaded=false;
+    int villagers=loaded?level.getEntitiesOfClass(Villager.class,
+            new AABB(35,-62,-10,48,-54,5),v->!v.isRemoved()).size():-1;
+    int otherStations=0;
+    for(BlockPos p:saved.placed)if(!p.equals(source)&&Math.abs(p.getX()-41)<=12
+            &&Math.abs(p.getZ()+3)<=9&&Math.abs(p.getY()+60)<=6)otherStations++;
+    var result=Dev51BWestConstructR30l.inspect(persisted,backup,registries,nine,west,
+            atBuffer,future1,future2,clearSides,villagers,otherStations,legacy);
+    LOG.info("[TC-DEV51B-R30L] WEST_CONSTRUCTION mode={} result={} backup={} sourceDisk={} nine={} clearSides={} villagers={} otherStations={} buffer={} west={} future1={} future2={} planSha256={} mayDrive=false dispatch=false",
+            commit?"COMMIT":"INSPECT",result.status(),backup,persisted,nine,clearSides,
+            villagers,otherStations,atBuffer,java.util.Arrays.toString(west),future1,future2,Dev51BWestConstructR30l.PLAN);
+    if(!commit) {
+        if(result.status().startsWith("READY_")||result.built())
+            src.sendSuccess(()->Component.literal("[R30l] "+result.status()+". Rail/station/buffer status inspected; drive/dispatch HOLD."),false);
+        else src.sendFailure(Component.literal("[R30l] "+result.status()+"; no changes."));
+        return result.status().startsWith("READY_")||result.built()?1:0;
+    }
+    if(!result.safeToCommit()) {
+        src.sendFailure(Component.literal("[R30l] COMMIT REFUSED: "+result.status()+". No edits."));return 0;
+    }
+    // Snapshot 17 exact preimages, then verify again immediately before setting.
+    java.util.LinkedHashMap<BlockPos,BlockState> pre=new java.util.LinkedHashMap<>();
+    for(BlockPos p:edits){
+        if(!level.hasChunkAt(p)||!level.getBlockState(p).isAir()||level.getBlockEntity(p)!=null){
+            src.sendFailure(Component.literal("[R30l] HOLD_LAST_MOMENT_OBSTRUCTION"));return 0;
+        }
+        pre.put(p,level.getBlockState(p));
+    }
+    int changed=0;
+    try {
+        // Rails laid from old network outward; buffer placed LAST.
+        for(int i=1;i<17;i++){
+            if(!level.setBlock(edits.get(i),planned[i],3))
+                throw new IllegalStateException("RAIL_SET_BLOCK_FAILED_"+i);
+            changed++;
+        }
+        if(!level.setBlock(edits.get(0),planned[0],3))
+            throw new IllegalStateException("STOPPER_SET_BLOCK_FAILED");
+        changed++;
+        for(int i=0;i<17;i++){
+            BlockState actual=level.getBlockState(edits.get(i));
+            if(!actual.equals(planned[i]))throw new IllegalStateException("POST_AUDIT_FAILED_"+i);
+        }
+        // Detect any neighbor-update regression to the accepted nine source rails.
+        for(int x=53;x<=61;x++){
+            BlockPos oldRail=new BlockPos(x,-60,-3);
+            BlockState observed=level.getBlockState(oldRail);
+            if(!observed.is(x==61?TCBlocks.TRACK_STATION.get():TCBlocks.TRACK_NORMAL.get())
+                    ||!observed.hasProperty(RailBlock.SHAPE)
+                    ||observed.getValue(RailBlock.SHAPE)!=RailShape.EAST_WEST)
+                throw new IllegalStateException("SOURCE_RAIL_CHANGED_"+x);
+        }
+        // Never touch old nine rails, existing StationData or source record.
+        LOG.info("[TC-DEV51B-R30L] CONSTRUCTION_STAGED placed=17 normal=15 stationRails=1 buffer=1 bufferPos=36,-60,-3 stationPos=41,-60,-3 sourceRailsUnchanged=true legacyNetworkUntouched=true trainDrive=false dispatch=false stopCollisionCertified=false saveReloadPending=true");
+        src.sendSuccess(()->Component.literal("[R30l] 17 BLOCKS STAGED: 15 normal rails, 1 station rail at 41,-60,-3 and 1 east-facing buffer at 36,-60,-3. SAVE/EXIT/REOPEN. NO DRIVE/DISPATCH."),false);
+        return 1;
+    }catch(Exception failure) {
+        int restored=0;
+        for(var entry:pre.entrySet()){
+            try {if(level.setBlock(entry.getKey(),entry.getValue(),3))restored++;}
+            catch(Exception ignored){LOG.error("[TC-DEV51B-R30L] RESTORE_CELL_FAILED {}",entry.getKey(),ignored);}
+        }
+        LOG.error("[TC-DEV51B-R30L] CONSTRUCTION_ROLLBACK attempted={} restored={} originalChanges={} noAutoRetry=true",pre.size(),restored,changed,failure);
+        src.sendFailure(Component.literal("[R30l] COMMIT FAILED; restored "+restored+"/17 preimage blocks. STOP/NO DRIVE. Offline backup retained."));
+        return 0;
+    }
+}
+private static Dev51BWestConstructR30l.Cell dev51bR30lCell(ServerLevel level,BlockPos p,
+        BlockState expected,boolean buffer) {
+    if(p.getY()-1<level.getMinBuildHeight()||p.getY()+4>=level.getMaxBuildHeight())
+        return Dev51BWestConstructR30l.Cell.UNLOADED;
+    for(int dz=-1;dz<=1;dz++)if(!level.hasChunkAt(p.offset(0,0,dz))
+            ||!level.hasChunkAt(p.offset(0,-1,dz))
+            ||!level.hasChunkAt(p.offset(0,4,dz)))return Dev51BWestConstructR30l.Cell.UNLOADED;
+    BlockState found=level.getBlockState(p);
+    if(expected!=null&&found.equals(expected))return buffer
+            ?Dev51BWestConstructR30l.Cell.BUFFER_EAST
+            :found.is(TCBlocks.TRACK_STATION.get())?Dev51BWestConstructR30l.Cell.STATION_EW
+                :Dev51BWestConstructR30l.Cell.NORMAL_EW;
+    if(!level.getFluidState(p).isEmpty()||!level.getFluidState(p.below()).isEmpty())
+        return Dev51BWestConstructR30l.Cell.FLUID;
+    if(!found.isAir())return Dev51BWestConstructR30l.Cell.OBSTRUCTED;
+    if(level.getBlockEntity(p)!=null)return Dev51BWestConstructR30l.Cell.BLOCK_ENTITY;
+    if(!level.getBlockState(p.below()).isFaceSturdy(level,p.below(),Direction.UP))
+        return Dev51BWestConstructR30l.Cell.BAD_SUPPORT;
+    for(int h=1;h<=4;h++){
+        BlockPos above=p.above(h);
+        if(!level.getFluidState(above).isEmpty())return Dev51BWestConstructR30l.Cell.FLUID;
+        if(!level.getBlockState(above).isAir())return Dev51BWestConstructR30l.Cell.BAD_HEADROOM;
+    }
+    for(int h=0;h<=4;h++)for(int dz=-1;dz<=1;dz+=2){
+        BlockPos flank=p.offset(0,h,dz);
+        if(!level.getFluidState(flank).isEmpty())return Dev51BWestConstructR30l.Cell.FLUID;
+        if(!level.getBlockState(flank).isAir())return Dev51BWestConstructR30l.Cell.BAD_FLANK;
+    }
+    if(!level.getEntitiesOfClass(Entity.class,
+        new AABB(p.getX()-0.5,p.getY()-1,p.getZ()-1.5,p.getX()+1.5,p.getY()+5,p.getZ()+2.5),
+        e->!e.isRemoved()&&!(e instanceof ServerPlayer)).isEmpty())
+        return Dev51BWestConstructR30l.Cell.ENTITY;
+    return Dev51BWestConstructR30l.Cell.CLEAR;
+}
+
+// DEV51B R30k: read-only physical STOPPER site engineering.
+// All 25 rails and the 54 station reserve cells were just observed by the R30j path.
+// NO STOPPER/rail placement, SavedData changes, movement, or dispatch.
+private static Dev51BWestTerminalR30k.Site dev51bR30kObserveTerminalCell(ServerLevel level,BlockPos p) {
+    for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++)
+        if(!level.hasChunkAt(p.offset(dx,0,dz)))
+            return Dev51BWestTerminalR30k.Site.UNLOADED;
+    for(int h=0;h<=4;h++) {
+        BlockPos upper=p.above(h);
+        if(!level.hasChunkAt(upper))return Dev51BWestTerminalR30k.Site.UNLOADED;
+    }
+    if(!level.getFluidState(p).isEmpty()||!level.getFluidState(p.below()).isEmpty())
+        return Dev51BWestTerminalR30k.Site.FLUID;
+    if(!level.getBlockState(p).isAir())return Dev51BWestTerminalR30k.Site.BLOCKED;
+    if(!level.getBlockState(p.below()).isFaceSturdy(level,p.below(),Direction.UP))
+        return Dev51BWestTerminalR30k.Site.SUPPORT_MISSING;
+    for(int h=1;h<=4;h++) {
+        BlockPos above=p.above(h);
+        if(!level.getFluidState(above).isEmpty())return Dev51BWestTerminalR30k.Site.FLUID;
+        if(!level.getBlockState(above).isAir())return Dev51BWestTerminalR30k.Site.HEADROOM_BLOCKED;
+    }
+    for(int dz=-1;dz<=1;dz+=2)for(int h=0;h<=4;h++) {
+        BlockPos flank=p.offset(0,h,dz);
+        if(!level.getFluidState(flank).isEmpty())return Dev51BWestTerminalR30k.Site.FLUID;
+        if(!level.getBlockState(flank).isAir())return Dev51BWestTerminalR30k.Site.FLANK_BLOCKED;
+    }
+    if(level.getBlockEntity(p)!=null)return Dev51BWestTerminalR30k.Site.BLOCK_ENTITY;
+    if(!level.getEntitiesOfClass(Entity.class,
+            new AABB(p.getX()-0.5,p.getY()-1,p.getZ()-1.5,
+                     p.getX()+1.5,p.getY()+5,p.getZ()+2.5),
+            e->!e.isRemoved()&&!(e instanceof ServerPlayer)).isEmpty())
+        return Dev51BWestTerminalR30k.Site.ENTITY;
+    return Dev51BWestTerminalR30k.Site.AIR_SUPPORTED_CLEAR;
+}
+private static void dev51bR30kTerminalSurvey(CommandSourceStack src,BlockPos source,
+        Dev51BWestPreflightR30j.Result west, String witness) {
+    ServerLevel level=src.getLevel();
+    // X36 = immediately west of the proposed last west rail X37.
+    // X35/X34 reserved ONLY for possible future mainline continuation.
+    BlockPos buffer=source.west(25);
+    BlockPos continuation1=source.west(26);
+    BlockPos continuation2=source.west(27);
+    var atBuffer=dev51bR30kObserveTerminalCell(level,buffer);
+    var atNext=dev51bR30kObserveTerminalCell(level,continuation1);
+    var atFar=dev51bR30kObserveTerminalCell(level,continuation2);
+    BlockState block=TCBlocks.STOPPER.get().defaultBlockState();
+    boolean registryValid=block.getBlock() instanceof TrainBufferBlock
+            &&block.hasProperty(HorizontalDirectionalBlock.FACING)
+            &&block.hasProperty(TrainBufferBlock.ENERGY);
+    boolean facingEast=registryValid
+            &&block.setValue(HorizontalDirectionalBlock.FACING,Direction.EAST)
+                    .getValue(HorizontalDirectionalBlock.FACING)==Direction.EAST;
+    var safety=Dev51BWestTerminalR30k.inspect(west.persistedSource(),witness,
+            west.planSha256(),west.verdict(),registryValid,facingEast,atBuffer,atNext,atFar);
+    LOG.info("[TC-DEV51B-R30K] BUFFER_CELL pos={} state={} proposedBlock=traincraft:stopper facing=EAST energy=false noPlacement=true",buffer,atBuffer);
+    LOG.info("[TC-DEV51B-R30K] CONTINUATION_CELL pos={} state={} futureRailOnly=true noPlacement=true",continuation1,atNext);
+    LOG.info("[TC-DEV51B-R30K] CONTINUATION_CELL pos={} state={} futureRailOnly=true noPlacement=true",continuation2,atFar);
+    LOG.info("[TC-DEV51B-R30K] WEST_TERMINAL_ENGINEERING sourcePersisted={} sourceSha256={} planSha256={} proposedBuffer={} registryValid={} facesEast={} bufferSite={} continuation1={} continuation2={} candidateClear={} futureExtensionClear={} westStopInstalled=false collisionCertified=false brakingTested=false status={} blocksChanged=0 savedDataWrites=0 entitiesMoved=0 trainDrive=false automaticDispatch=false mayPlace=false mayDrive=false mayDispatch=false",
+            safety.persistedSource(),witness,west.planSha256(),buffer,safety.bufferBlockRegistryValid(),
+            safety.eastFacing(),safety.buffer(),safety.continuation1(),safety.continuation2(),
+            safety.candidateClear(),safety.westwardExtensionReserved(),safety.status());
+    src.sendSuccess(()->Component.literal("[R30k] Proposed buffer="+buffer.toShortString()
+            +" faces EAST. Site="+safety.buffer()+" future west="+safety.westwardExtensionReserved()),false);
+    src.sendSuccess(()->Component.literal("[R30k] "+safety.status()+"; PREVIEW ONLY. No buffer/rail/drive/dispatch."),false);
+}
+
+// DEV51B R30e: exact WEST railway rail-placement PLAN, READ ONLY.
+// Never places rails or stations, calls setDirty, saves route data, or moves trains.
+// IMPORTANT: no command in this section authorizes world edits or dispatch.
+private static int dev51bR30eWestConstructionPreview(CommandSourceStack src) {
+    return dev51bR30eWestConstructionPreview(src,false);
+}
+
+private static int dev51bR30eWestConstructionPreview(CommandSourceStack src,boolean r30j) {
+    return dev51bR30eWestConstructionPreview(src,r30j,false);
+}
+private static int dev51bR30eWestConstructionPreview(CommandSourceStack src,boolean r30j,boolean r30k) {
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)
+            || !(src.getEntity() instanceof ServerPlayer)
+            || !dev51bR27Disposable(level)) {
+        src.sendFailure(Component.literal("[R30e] HOLD DISPOSABLE_WORLD_ONLY. No changes."));return 0;
+    }
+    StationData saved=stations(level);
+    BlockPos player=BlockPos.containing(src.getPosition());
+    BlockPos source=saved.closest(player,48).orElse(null);
+    if(source!=null && saved.isR30TestStop(source))source=null;
+    if(source==null)for(BlockPos test:saved.placed)
+        if(!saved.isR30TestStop(test)&&test.distSqr(player)<=48L*48L) {
+            source=test;break;
+        }
+    // Do not transfer this fixed-coordinate, axis-specific plan to another station.
+    if(source==null||source.getX()!=61||source.getY()!=-60||source.getZ()!=-3
+            ||!saved.placed.contains(source)) {
+        src.sendFailure(Component.literal("[R30e] HOLD EXPECTED_ORIGINAL_STATION_61_-60_-3_WITHIN_48. No changes."));return 0;
+    }
+    boolean railRegistryReady=TCBlocks.TRACK_NORMAL.get().defaultBlockState().hasProperty(RailBlock.SHAPE)
+            &&TCBlocks.TRACK_STATION.get().defaultBlockState().hasProperty(RailBlock.SHAPE);
+    String normalId=BuiltInRegistries.BLOCK.getKey(TCBlocks.TRACK_NORMAL.get()).toString();
+    String stationId=BuiltInRegistries.BLOCK.getKey(TCBlocks.TRACK_STATION.get()).toString();
+    java.util.List<Dev51BWestConstructionPlanR30e.Rail> route=new java.util.ArrayList<>();
+    java.util.List<Dev51BWestConstructionPlanR30e.Site> sites=new java.util.ArrayList<>();
+    for(int off=0;off<=Dev51BWestConstructionPlanR30e.LAST_NEW;off++) {
+        BlockPos at=source.west(off);
+        Dev51BWestConstructionPlanR30e.RailStatus status;
+        String observed="UNLOADED",foundation="UNLOADED",entityTypeIds="[]";
+        boolean loaded=at.getY()-1>=level.getMinBuildHeight()
+                &&at.getY()+4<level.getMaxBuildHeight();
+        for(int dz=-1;dz<=1&&loaded;dz++) {
+            BlockPos flank=at.offset(0,0,dz);
+            if(!level.hasChunkAt(flank)||!level.hasChunkAt(flank.below())
+                    ||!level.hasChunkAt(flank.above(4)))loaded=false;
+        }
+        if(!loaded)status=Dev51BWestConstructionPlanR30e.RailStatus.UNLOADED;
+        else {
+            BlockState state=level.getBlockState(at);
+            observed=BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+            BlockState below=level.getBlockState(at.below());
+            foundation=BuiltInRegistries.BLOCK.getKey(below.getBlock()).toString();
+            boolean supported=below.isFaceSturdy(level,at.below(),Direction.UP);
+            boolean fluids=!level.getFluidState(at.below()).isEmpty();
+            boolean headroom=true,flankClear=true;
+            for(int h=0;h<=4;h++) {
+                BlockPos above=at.above(h);
+                if(!level.getFluidState(above).isEmpty())fluids=true;
+                if(h>0&&!level.getBlockState(above).isAir())headroom=false;
+                if(off>Dev51BWestConstructionPlanR30e.ORIGINAL_END)
+                    for(int dz=-1;dz<=1;dz+=2) {
+                        BlockPos side=at.offset(0,h,dz);
+                        if(!level.getBlockState(side).isAir()||!level.getFluidState(side).isEmpty())
+                            flankClear=false;
+                    }
+            }
+            java.util.List<String> occupancy=off<=Dev51BWestConstructionPlanR30e.ORIGINAL_END
+                    ?java.util.List.of():level.getEntitiesOfClass(Entity.class,
+                        new AABB(at.getX()-1.5,at.getY()-1.0,at.getZ()-1.5,
+                                 at.getX()+2.5,at.getY()+5.0,at.getZ()+2.5),
+                        e->!e.isRemoved()&&!(e instanceof ServerPlayer)).stream()
+                        .map(e->BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString())
+                        .distinct().sorted().toList();
+            entityTypeIds=occupancy.toString();
+            if(off<=Dev51BWestConstructionPlanR30e.ORIGINAL_END) {
+                Dev51BRailSurveyR30a.Kind rail=dev51bR30aObserveRail(level,at).kind();
+                boolean correct=(rail==Dev51BRailSurveyR30a.Kind.NORMAL_EW
+                                ||rail==Dev51BRailSurveyR30a.Kind.STATION_EW)
+                        &&state.hasProperty(RailBlock.SHAPE)
+                        &&state.getValue(RailBlock.SHAPE)==RailShape.EAST_WEST;
+                status=correct&&headroom&&!fluids&&supported
+                        ?Dev51BWestConstructionPlanR30e.RailStatus.EXISTING_EW
+                        :Dev51BWestConstructionPlanR30e.RailStatus.ORIGINAL_RAIL_MISMATCH;
+            } else if(!occupancy.isEmpty())status=Dev51BWestConstructionPlanR30e.RailStatus.ENTITY;
+            else if(level.getBlockEntity(at)!=null)status=Dev51BWestConstructionPlanR30e.RailStatus.BLOCK_ENTITY;
+            else if(fluids)status=Dev51BWestConstructionPlanR30e.RailStatus.FLUID;
+            else if(!state.isAir())status=Dev51BWestConstructionPlanR30e.RailStatus.BLOCKED;
+            else if(!headroom)status=Dev51BWestConstructionPlanR30e.RailStatus.HEADROOM_BLOCKED;
+            else if(!flankClear)status=Dev51BWestConstructionPlanR30e.RailStatus.SIDE_BLOCKED;
+            else if(!supported)status=Dev51BWestConstructionPlanR30e.RailStatus.SUPPORT_MISSING;
+            else status=off==Dev51BWestConstructionPlanR30e.STATION_OFFSET
+                    ?Dev51BWestConstructionPlanR30e.RailStatus.AIR_STATION_EW
+                    :Dev51BWestConstructionPlanR30e.RailStatus.AIR_NORMAL_EW;
+        }
+        route.add(new Dev51BWestConstructionPlanR30e.Rail(off,status,observed,foundation,entityTypeIds));
+        if(off>=Dev51BWestConstructionPlanR30e.FIRST_NEW) {
+            String proposal=off==Dev51BWestConstructionPlanR30e.STATION_OFFSET?stationId:normalId;
+            LOG.info("[TC-DEV51B-R30E] RAIL_EDIT_CANDIDATE offset={} pos={} observed={} below={} proposed={} proposedRailShape=EAST_WEST result={} entities={} worldEdits=0",
+                    off,at,observed,foundation,proposal,status,entityTypeIds);
+        }else if(status!=Dev51BWestConstructionPlanR30e.RailStatus.EXISTING_EW)
+            LOG.info("[TC-DEV51B-R30E] SOURCE_RAIL_HOLD offset={} pos={} status={} center={} noWrites=true",
+                    off,at,status,observed);
+    }
+    int destX=source.getX()-Dev51BWestConstructionPlanR30e.STATION_OFFSET;
+    // Station SITE RESERVATION (not a built station blueprint): 9x7 around X=41.
+    // All 54 side cells observed. No terrain grading, platforms, roofs or entrances planned.
+    for(int along=-4;along<=4;along++)for(int lateral=-3;lateral<=3;lateral++) {
+        if(lateral==0)continue;
+        BlockPos at=new BlockPos(destX+along,source.getY(),source.getZ()+lateral);
+        Dev51BWestConstructionPlanR30e.SiteStatus status;
+        String observed="UNLOADED";
+        if(at.getY()-1<level.getMinBuildHeight()||at.getY()+4>=level.getMaxBuildHeight()
+                ||!level.hasChunkAt(at)||!level.hasChunkAt(at.below())||!level.hasChunkAt(at.above(4)))
+            status=Dev51BWestConstructionPlanR30e.SiteStatus.UNLOADED;
+        else {
+            BlockState state=level.getBlockState(at);
+            observed=BuiltInRegistries.BLOCK.getKey(state.getBlock()).toString();
+            boolean empty=true,dry=level.getFluidState(at.below()).isEmpty();
+            for(int h=0;h<=4;h++) {
+                if(!level.getBlockState(at.above(h)).isAir())empty=false;
+                if(!level.getFluidState(at.above(h)).isEmpty())dry=false;
+            }
+            boolean entityFree=level.getEntitiesOfClass(Entity.class,
+                new AABB(at.getX(),at.getY()-1,at.getZ(),at.getX()+1,at.getY()+5,at.getZ()+1),
+                e->!e.isRemoved()&&!(e instanceof ServerPlayer)).isEmpty();
+            if(!entityFree)status=Dev51BWestConstructionPlanR30e.SiteStatus.ENTITY;
+            else if(level.getBlockEntity(at)!=null)status=Dev51BWestConstructionPlanR30e.SiteStatus.BLOCK_ENTITY;
+            else if(!dry)status=Dev51BWestConstructionPlanR30e.SiteStatus.FLUID;
+            else if(!empty)status=Dev51BWestConstructionPlanR30e.SiteStatus.BLOCKED;
+            else if(!level.getBlockState(at.below()).isFaceSturdy(level,at.below(),Direction.UP))
+                status=Dev51BWestConstructionPlanR30e.SiteStatus.SUPPORT_MISSING;
+            else status=Dev51BWestConstructionPlanR30e.SiteStatus.CLEAR_SUPPORTED;
+        }
+        sites.add(new Dev51BWestConstructionPlanR30e.Site(along,lateral,status,observed));
+        if(status!=Dev51BWestConstructionPlanR30e.SiteStatus.CLEAR_SUPPORTED)
+            LOG.info("[TC-DEV51B-R30E] STATION_RESERVE_HOLD pos={} status={} block={} noWrites=true",at,status,observed);
+    }
+    // Complete 13x15 villager scan, guarded against unloaded chunks.
+    boolean villagerAreaLoaded=source.getY()-2>=level.getMinBuildHeight()
+            &&source.getY()+6<level.getMaxBuildHeight();
+    for(int xx=destX-6;xx<=destX+6&&villagerAreaLoaded;xx++)
+        for(int zz=source.getZ()-7;zz<=source.getZ()+7;zz++)
+            if(!level.hasChunkAt(new BlockPos(xx,source.getY(),zz))) {villagerAreaLoaded=false;break;}
+    int villagers=villagerAreaLoaded?level.getEntitiesOfClass(Villager.class,
+            new AABB(destX-6,source.getY()-2,source.getZ()-7,
+                     destX+7,source.getY()+6,source.getZ()+8),v->!v.isRemoved()).size():-1;
+    int otherStations=0;
+    for(BlockPos p:saved.placed)if(!p.equals(source)
+            &&Math.abs(p.getX()-destX)<=12&&Math.abs(p.getZ()-source.getZ())<=9
+            &&Math.abs(p.getY()-source.getY())<=6)otherStations++;
+    BlockPos end=source.west(25);
+    Dev51BWestConstructionPlanR30e.WestEnd endKind;
+    if(!level.hasChunkAt(end))endKind=Dev51BWestConstructionPlanR30e.WestEnd.UNLOADED;
+    else if(level.getBlockState(end).isAir())endKind=Dev51BWestConstructionPlanR30e.WestEnd.OPEN_AIR;
+    else if(dev51bR30aObserveRail(level,end).kind()==Dev51BRailSurveyR30a.Kind.NORMAL_EW)
+        endKind=Dev51BWestConstructionPlanR30e.WestEnd.EXISTING_EW_RAIL;
+    else endKind=Dev51BWestConstructionPlanR30e.WestEnd.BLOCKED;
+    var report=Dev51BWestConstructionPlanR30e.evaluate(route,sites,villagers,otherStations,
+            saved.hasNetwork(source),railRegistryReady,endKind);
+    LOG.info("[TC-DEV51B-R30E] WEST_CONSTRUCTION_PLAN source={} station={},-60,-3 requiredRailEdits={} normal={} stationRail={} sourceRails={} routeHolds={} reserveClear={} reserveHolds={} villagers={} otherStations={} sourceNetworkRecorded={} terminal={} siteIsArchitecturalBlueprint=false status={} fingerprint={} eastTownTreePreserved=true blocksChanged=0 entitiesMoved=0 trainDrive=false automaticDispatch=false buildApproved=false connectedRouteCertified=false",
+            source,destX,Dev51BWestConstructionPlanR30e.NEW_COUNT,report.normalRail(),
+            report.stationRail(),report.originalRail(),report.routeHolds(),report.clearSide(),
+            report.sideHolds(),villagers,otherStations,report.networkRecorded(),report.westEnd(),
+            report.verdict(),report.fingerprint());
+    if(r30j) {
+        // The persisted R30i source record passed just before this survey.
+        // R30e legacy hasNetwork() remains false and must NOT be toggled.
+        Dev51BWestPreflightR30j.Result safety=Dev51BWestPreflightR30j.inspect(
+                true,report.originalRail(),report.normalRail(),report.stationRail(),
+                report.routeHolds(),report.clearSide(),report.sideHolds(),villagers,
+                otherStations,report.westEnd().name(),report.fingerprint());
+        LOG.info("[TC-DEV51B-R30J] WEST_CONSTRUCTION_PREFLIGHT persistedR30i={} original={} normal={} stationRails={} proposed=16 station={} reserveClear={} reserveHolds={} villagers={} otherStations={} westEnd={} sourceLegacyNetwork={} planSha256={} status={} blocksChanged=0 savedDataWrites=0 entitiesMoved=0 trainDrive=false automaticDispatch=false buildAllowed=false routeCertified=false",
+                safety.persistedSource(),safety.existingRails(),safety.normalRails(),
+                safety.stationRails(),new BlockPos(destX,source.getY(),source.getZ()),
+                safety.clearSide(),safety.sideHolds(),villagers,otherStations,
+                safety.westEnd(),saved.hasNetwork(source),report.fingerprint(),safety.verdict());
+        if(r30k)dev51bR30kTerminalSurvey(src,source,safety,
+                Dev51BWestTerminalR30k.EXPECTED_SOURCE);
+        src.sendSuccess(()->Component.literal("[R30j] Persisted source verified; west x=37..52 normal="
+                +safety.normalRails()+" station="+safety.stationRails()+" @41,-60,-3."),false);
+        src.sendSuccess(()->Component.literal("[R30j] 9x7 station reservation only; west terminal="
+                +safety.westEnd()+". "+safety.verdict()),false);
+        src.sendSuccess(()->Component.literal("[R30j] PREVIEW ONLY. 0 rails built, no buffer/drive/dispatch. East tree untouched."),false);
+        return 1;
+    }
+    final String message="[R30e] WEST PLAN x=37..52: "+report.normalRail()+" normal + "
+            +report.stationRail()+" station rail @41,-60,-3; hold="+report.verdict();
+    src.sendSuccess(()->Component.literal(message),false);
+    src.sendSuccess(()->Component.literal("[R30e] Station site 9x7 reserved only (NOT architectural plan). West end="+report.westEnd()+"; plan SHA256="+report.fingerprint().substring(0,16)),false);
+    src.sendSuccess(()->Component.literal("[R30e] REVIEW ONLY / NO BLOCK EDITS / NO DRIVE / NO DISPATCH. Logs show 16 exact rail cells."),false);
+    return 1;
+}
+
+// DEV51B R30d: READ-ONLY exact WEST corridor engineering debug.
+// The 16 proposed rail cells and 54 lateral station cells are observations,
+// never a permit to build, change network records, dispatch, or move trains.
+private static int dev51bR30dWestDebug(CommandSourceStack src) {
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)
+            || !(src.getEntity() instanceof ServerPlayer)
+            || !dev51bR27Disposable(level)) {
+        src.sendFailure(Component.literal("[R30d] HOLD DISPOSABLE_WORLD_ONLY. NO CHANGES."));
+        return 0;
+    }
+    StationData saved=stations(level);
+    BlockPos player=BlockPos.containing(src.getPosition());
+    BlockPos source=saved.closest(player,48).orElse(null);
+    if(source!=null && saved.isR30TestStop(source)) source=null;
+    if(source==null)for(BlockPos candidate:saved.placed) {
+        if(!saved.isR30TestStop(candidate) && candidate.distSqr(player)<=48L*48L) {
+            source=candidate;break;
+        }
+    }
+    if(source==null) {
+        src.sendFailure(Component.literal("[R30d] HOLD NO_SOURCE_STATION_WITHIN_48. NO CHANGES."));
+        return 0;
+    }
+    // R30c established this as a strictly EAST/WEST horizontal trial rail.
+    // No diagonal, corner, slope, switch or legacy template is interpreted.
+    int candidateX=source.getX()-Dev51BWestSiteDebugR30d.STATION_OFFSET;
+    java.util.List<Dev51BWestSiteDebugR30d.RouteCell> railCells=new java.util.ArrayList<>();
+    java.util.List<Dev51BWestSiteDebugR30d.SideCell> sides=new java.util.ArrayList<>();
+    for(int off=0;off<=Dev51BWestSiteDebugR30d.WEST_END_OFFSET;off++) {
+        BlockPos at=source.west(off);
+        Dev51BWestSiteDebugR30d.RouteKind kind;
+        String observed="UNLOADED";
+        if(at.getY()-1<level.getMinBuildHeight()||at.getY()+4>=level.getMaxBuildHeight()
+                ||!level.hasChunkAt(at)||!level.hasChunkAt(at.above(4))
+                ||!level.hasChunkAt(at.below())
+                ||!level.hasChunkAt(at.north())||!level.hasChunkAt(at.south())) {
+            kind=Dev51BWestSiteDebugR30d.RouteKind.UNLOADED;
+        } else {
+            BlockState center=level.getBlockState(at);
+            observed=BuiltInRegistries.BLOCK.getKey(center.getBlock()).toString();
+            Dev51BRailSurveyR30a.Kind rail=dev51bR30aObserveRail(level,at).kind();
+            boolean support=level.getBlockState(at.below()).isFaceSturdy(level,at.below(),Direction.UP);
+            boolean dry=true;
+            boolean ceilingClear=true;
+            for(int height=-1;height<=4;height++) {
+                if(!level.getFluidState(at.above(height)).isEmpty())dry=false;
+                if(height>0 && !level.getBlockState(at.above(height)).isAir())ceilingClear=false;
+            }
+            boolean widthClear=true;
+            // A conservative 3-block lateral and 5-block high sweep, including
+            // flanking block columns. No bricks/vegetation are cleared.
+            if(off>Dev51BWestSiteDebugR30d.ORIGINAL_RAIL_END) {
+                for(int lat=-1;lat<=1;lat+=2)for(int height=0;height<=4;height++) {
+                    BlockPos flank=at.offset(0,height,lat);
+                    if(!level.getBlockState(flank).isAir()
+                            ||!level.getFluidState(flank).isEmpty())widthClear=false;
+                }
+            }
+            boolean entityClear=off<=Dev51BWestSiteDebugR30d.ORIGINAL_RAIL_END
+                    ||level.getEntitiesOfClass(Entity.class,
+                        new AABB(at.getX()-1.5,at.getY()-1.0,at.getZ()-1.5,
+                                 at.getX()+2.5,at.getY()+5.0,at.getZ()+2.5),
+                        e->!e.isRemoved()&&!(e instanceof ServerPlayer)).isEmpty();
+            if(off<=Dev51BWestSiteDebugR30d.ORIGINAL_RAIL_END) {
+                kind=(rail==Dev51BRailSurveyR30a.Kind.NORMAL_EW
+                            ||rail==Dev51BRailSurveyR30a.Kind.STATION_EW)
+                            &&dry&&ceilingClear
+                        ?Dev51BWestSiteDebugR30d.RouteKind.EXISTING_EW_RAIL
+                        :Dev51BWestSiteDebugR30d.RouteKind.BAD_ORIGINAL_RAIL;
+            } else if(!entityClear)kind=Dev51BWestSiteDebugR30d.RouteKind.ENTITY_IN_SWEEP;
+            else if(!dry)kind=Dev51BWestSiteDebugR30d.RouteKind.FLUID;
+            else if(rail!=Dev51BRailSurveyR30a.Kind.AIR)
+                kind=Dev51BWestSiteDebugR30d.RouteKind.BLOCKED_TRACK_CELL;
+            else if(!ceilingClear)kind=Dev51BWestSiteDebugR30d.RouteKind.HEADROOM_BLOCKED;
+            else if(!widthClear)kind=Dev51BWestSiteDebugR30d.RouteKind.SIDE_CLEARANCE_BLOCKED;
+            else if(!support)kind=Dev51BWestSiteDebugR30d.RouteKind.FOUNDATION_MISSING;
+            else kind=off==Dev51BWestSiteDebugR30d.STATION_OFFSET
+                ?Dev51BWestSiteDebugR30d.RouteKind.PLACE_STATION_EW_CANDIDATE
+                :Dev51BWestSiteDebugR30d.RouteKind.PLACE_NORMAL_EW_CANDIDATE;
+        }
+        railCells.add(new Dev51BWestSiteDebugR30d.RouteCell(off,kind,observed));
+        if(off>=Dev51BWestSiteDebugR30d.FIRST_NEW_RAIL) {
+            String below=level.hasChunkAt(at.below())
+                    ?BuiltInRegistries.BLOCK.getKey(level.getBlockState(at.below()).getBlock()).toString():"UNLOADED";
+            String aboveOne=level.hasChunkAt(at.above())
+                    ?BuiltInRegistries.BLOCK.getKey(level.getBlockState(at.above()).getBlock()).toString():"UNLOADED";
+            String aboveTwo=level.hasChunkAt(at.above(2))
+                    ?BuiltInRegistries.BLOCK.getKey(level.getBlockState(at.above(2)).getBlock()).toString():"UNLOADED";
+            java.util.List<String> entityTypes=level.hasChunkAt(at)
+                    ?level.getEntitiesOfClass(Entity.class,
+                        new AABB(at.getX()-1.5,at.getY()-1.0,at.getZ()-1.5,
+                                 at.getX()+2.5,at.getY()+5.0,at.getZ()+2.5),
+                        e->!e.isRemoved()&&!(e instanceof ServerPlayer)).stream()
+                        .map(e->BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString())
+                        .distinct().sorted().toList():java.util.List.of();
+            LOG.info("[TC-DEV51B-R30D] RAIL offset={} pos={} survey={} center={} below={} above1={} above2={} nearbyEntityTypes={} noWrites=true",
+                    off,at,kind,observed,below,aboveOne,aboveTwo,entityTypes);
+        } else if(kind!=Dev51BWestSiteDebugR30d.RouteKind.EXISTING_EW_RAIL) {
+            LOG.info("[TC-DEV51B-R30D] APPROACH_HOLD offset={} pos={} survey={} block={}",
+                    off,at,kind,observed);
+        }
+    }
+    boolean outside=source.getY()-1<level.getMinBuildHeight()
+            ||source.getY()+4>=level.getMaxBuildHeight();
+    for(int along=-4;along<=4;along++)for(int lateral=-3;lateral<=3;lateral++) {
+        if(lateral==0)continue;
+        BlockPos at=new BlockPos(candidateX+along,source.getY(),source.getZ()+lateral);
+        Dev51BWestSiteDebugR30d.SideKind kind;
+        String id="UNLOADED";
+        if(outside||!level.hasChunkAt(at)||!level.hasChunkAt(at.above(4))
+                ||!level.hasChunkAt(at.below())) {
+            kind=Dev51BWestSiteDebugR30d.SideKind.UNLOADED;
+        } else {
+            BlockState center=level.getBlockState(at);
+            id=BuiltInRegistries.BLOCK.getKey(center.getBlock()).toString();
+            boolean dry=true,empty=true;
+            for(int h=0;h<=4;h++) {
+                if(!level.getBlockState(at.above(h)).isAir())empty=false;
+                if(!level.getFluidState(at.above(h)).isEmpty())dry=false;
+            }
+            if(!level.getFluidState(at.below()).isEmpty())dry=false;
+            boolean entClear=level.getEntitiesOfClass(Entity.class,
+                new AABB(at.getX(),at.getY()-1.0,at.getZ(),
+                         at.getX()+1.0,at.getY()+5.0,at.getZ()+1.0),
+                e->!e.isRemoved()&&!(e instanceof ServerPlayer)).isEmpty();
+            if(!entClear)kind=Dev51BWestSiteDebugR30d.SideKind.ENTITY;
+            else if(!dry)kind=Dev51BWestSiteDebugR30d.SideKind.FLUID;
+            else if(level.getBlockEntity(at)!=null)kind=Dev51BWestSiteDebugR30d.SideKind.BLOCK_ENTITY;
+            else if(!empty)kind=Dev51BWestSiteDebugR30d.SideKind.BLOCKED;
+            else if(!level.getBlockState(at.below()).isFaceSturdy(level,at.below(),Direction.UP))
+                kind=Dev51BWestSiteDebugR30d.SideKind.SUPPORT_MISSING;
+            else kind=Dev51BWestSiteDebugR30d.SideKind.CLEAR_SUPPORTED;
+        }
+        sides.add(new Dev51BWestSiteDebugR30d.SideCell(along,lateral,kind,id));
+        if(kind!=Dev51BWestSiteDebugR30d.SideKind.CLEAR_SUPPORTED)
+            LOG.info("[TC-DEV51B-R30D] FOOTPRINT_HOLD pos={} reason={} observed={} noWrites=true",at,kind,id);
+    }
+    // Check the 13x15 villager envelope without loading any chunks.
+    int villagers=-1;
+    BlockPos min=new BlockPos(candidateX-6,source.getY()-2,source.getZ()-7);
+    BlockPos max=new BlockPos(candidateX+6,source.getY()+5,source.getZ()+7);
+    if(!outside && level.hasChunkAt(min)&&level.hasChunkAt(max)
+            &&level.hasChunkAt(new BlockPos(min.getX(),min.getY(),max.getZ()))
+            &&level.hasChunkAt(new BlockPos(max.getX(),min.getY(),min.getZ())))
+        villagers=level.getEntitiesOfClass(Villager.class,
+                new AABB(candidateX-6,source.getY()-2,source.getZ()-7,
+                         candidateX+7,source.getY()+6,source.getZ()+8),
+                v->!v.isRemoved()).size();
+    int nearbyStations=0;
+    for(BlockPos station:saved.placed)if(!station.equals(source)
+            &&Math.abs(station.getX()-candidateX)<=12
+            &&Math.abs(station.getZ()-source.getZ())<=9
+            &&Math.abs(station.getY()-source.getY())<=6)nearbyStations++;
+    var report=Dev51BWestSiteDebugR30d.evaluate(railCells,sides,
+            Math.max(0,villagers),nearbyStations);
+    String status=villagers<0?"HOLD_UNLOADED_VILLAGER_ENVELOPE":report.result();
+    LOG.info("[TC-DEV51B-R30D] TOWN_EAST_PRESERVED eastTreeLoggedByR30c=75,-60,-3 protectedDirection=EAST surveyDirection=WEST noWrites=true");
+    LOG.info("[TC-DEV51B-R30D] WEST_DEBUG source={} station={},{},{} railConstructionX={}..{} originalRail={} normalCandidates={} stationCandidates={} routeIssues={} sideClear={} sideIssues={} nearbyVillagers={} protectedStations={} villagerScanLoaded={} networkRecorded={} status={} blockEdits=0 entitiesMoved=0 chunksForced=0 writeApproved=false driveApproved=false connectedRouteCertified=false",
+            source,candidateX,source.getY(),source.getZ(),source.getX()-24,source.getX()-9,
+            report.originalRail(),report.plannedNormal(),report.plannedStation(),report.routeIssues(),
+            report.footprintClear(),report.footprintIssues(),villagers,nearbyStations,
+            villagers>=0,saved.hasNetwork(source),status);
+    final String summary="[R30d] WEST "+candidateX+","+source.getY()+","+source.getZ()
+            +" rails x="+(source.getX()-24)+".."+(source.getX()-9)
+            +" normal="+report.plannedNormal()+" station="+report.plannedStation();
+    final String hold="[R30d] "+status+" routeIssues="+report.routeIssues()
+            +" sideIssues="+report.footprintIssues()+" villagers="+villagers
+            +" protectedStations="+nearbyStations;
+    src.sendSuccess(()->Component.literal(summary),false);
+    src.sendSuccess(()->Component.literal(hold),false);
+    src.sendSuccess(()->Component.literal("[R30d] READ-ONLY: eastern town/tree protected. No construction/drive/dispatch; logs have every proposed cell."),false);
+    return 1;
+}
+
+// DEV51B R30c: a bounded READ-ONLY alternative-station comparison and
+// exact per-cell engineering diagnosis. Never constructs/clears world blocks,
+// never commands train movement, and never persists proposed sites.
+private static int dev51bR30cAlternatives(CommandSourceStack src) {
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)
+            || !(src.getEntity() instanceof ServerPlayer)
+            || !dev51bR27Disposable(level)) {
+        src.sendFailure(Component.literal("[R30c] HOLD: Requires marked disposable DEV51B R27 Movement Copy Overworld. NO CHANGES."));
+        return 0;
+    }
+    StationData saved=stations(level);
+    BlockPos player=BlockPos.containing(src.getPosition());
+    BlockPos source=saved.closest(player,48).orElse(null);
+    if(source!=null && saved.isR30TestStop(source))source=null;
+    if(source==null) {
+        for(BlockPos candidate:saved.placed) {
+            if(!saved.isR30TestStop(candidate) && candidate.distSqr(player)<=48L*48L) {
+                source=candidate;break;
+            }
+        }
+    }
+    if(source==null) {
+        src.sendFailure(Component.literal("[R30c] HOLD NO_RECORDED_SOURCE_WITHIN_48. NO CHANGES."));
+        return 0;
+    }
+    java.util.Map<Dev51BAlternativeSitesR30c.Direction,java.util.Map<Integer,Dev51BAlternativeSitesR30c.Site>> sites
+        =new java.util.EnumMap<>(Dev51BAlternativeSitesR30c.Direction.class);
+    java.util.List<Dev51BAlternativeSitesR30c.Cell> east=new java.util.ArrayList<>();
+    java.util.List<Dev51BAlternativeSitesR30c.Cell> west=new java.util.ArrayList<>();
+    int diagnosed=0;
+    for(Dev51BAlternativeSitesR30c.Direction side:Dev51BAlternativeSitesR30c.Direction.values()) {
+        java.util.List<Dev51BAlternativeSitesR30c.Cell> observed
+                =side==Dev51BAlternativeSitesR30c.Direction.EAST?east:west;
+        for(int offset=0;offset<=Dev51BAlternativeSitesR30c.LAST_OFFSET;offset++) {
+            BlockPos at=source.offset(side.sign*offset,0,0);
+            Dev51BRailSurveyR30a.Cell rail=dev51bR30aObserveRail(level,at);
+            if(rail.kind()==Dev51BRailSurveyR30a.Kind.UNLOADED) {
+                observed.add(new Dev51BAlternativeSitesR30c.Cell(Dev51BEastCorridorR30b.Finding.UNLOADED));
+                if(offset>=9)LOG.info("[TC-DEV51B-R30C] BLOCKER side={} offset={} pos={} reason=UNLOADED noForcedChunk=true",side,offset,at);
+                continue;
+            }
+            // Identical centerline tests to R30b. Parked R27d/R28 train
+            // entities are excluded from EXISTING approach cells only.
+            boolean dry=level.getFluidState(at).isEmpty()
+                    && level.getFluidState(at.above()).isEmpty()
+                    && level.getFluidState(at.above(2)).isEmpty()
+                    && level.getFluidState(at.below()).isEmpty();
+            boolean sturdy=level.getBlockState(at.below()).isFaceSturdy(level,at.below(),Direction.UP);
+            java.util.List<Entity> occupying=offset<=Dev51BAlternativeSitesR30c.EXISTING_LAST
+                    ?java.util.List.of()
+                    :level.getEntitiesOfClass(Entity.class,
+                        new AABB(at.getX()-0.35,at.getY()-1.0,at.getZ()-0.8,
+                                 at.getX()+1.35,at.getY()+3.0,at.getZ()+1.8),
+                        ent->!ent.isRemoved() && !(ent instanceof ServerPlayer));
+            var finding=Dev51BEastCorridorR30b.classify(new Dev51BEastCorridorR30b.Cell(
+                    rail.kind(),rail.clearTwoAbove(),sturdy,dry,occupying.isEmpty()));
+            observed.add(new Dev51BAlternativeSitesR30c.Cell(finding));
+            if(offset>=9 && finding!=Dev51BEastCorridorR30b.Finding.EMPTY_WITH_SUPPORT
+                    && finding!=Dev51BEastCorridorR30b.Finding.EXISTING_RAIL) {
+                String entityTypes=occupying.stream().limit(4)
+                    .map(e->BuiltInRegistries.ENTITY_TYPE.getKey(e.getType()).toString())
+                    .collect(java.util.stream.Collectors.joining(","));
+                LOG.info("[TC-DEV51B-R30C] BLOCKER side={} offset={} pos={} reason={} block={} below={} above={} above2={} entities={} totalEntities={} support={} dry={}  noWrites=true",
+                        side,offset,at,finding,
+                        BuiltInRegistries.BLOCK.getKey(level.getBlockState(at).getBlock()),
+                        BuiltInRegistries.BLOCK.getKey(level.getBlockState(at.below()).getBlock()),
+                        BuiltInRegistries.BLOCK.getKey(level.getBlockState(at.above()).getBlock()),
+                        BuiltInRegistries.BLOCK.getKey(level.getBlockState(at.above(2)).getBlock()),
+                        entityTypes,occupying.size(),sturdy,dry);
+                diagnosed++;
+            }
+        }
+        java.util.Map<Integer,Dev51BAlternativeSitesR30c.Site> byCenter=new java.util.LinkedHashMap<>();
+        for(int center:Dev51BAlternativeSitesR30c.CENTERS) {
+            int x=source.getX()+side.sign*center;
+            int sideOccupied=0;
+            boolean unloaded=false;
+            boolean outOfBounds=source.getY()-1<level.getMinBuildHeight()
+                    ||source.getY()+2>=level.getMaxBuildHeight();
+            // Site-only side clearance: 9 longitudinal x 7 lateral cells,
+            // the center rail lane is excluded. No chunk loads requested.
+            for(int along=-4;along<=4;along++) for(int lateral=-3;lateral<=3;lateral++) {
+                if(lateral==0)continue;
+                BlockPos test=new BlockPos(x+along,source.getY(),source.getZ()+lateral);
+                if(outOfBounds || !level.hasChunkAt(test) || !level.hasChunkAt(test.above(2))
+                        || !level.hasChunkAt(test.below())) {
+                    unloaded=true;continue;
+                }
+                if(!level.getBlockState(test).isAir() || !level.getBlockState(test.above()).isAir()
+                        || !level.getBlockState(test.above(2)).isAir()
+                        || !level.getFluidState(test).isEmpty())sideOccupied++;
+            }
+            int villagers=0;
+            // Entity search is allowed only when the WHOLE bounded area is
+            // already loaded; an unloaded area remains an explicit HOLD.
+            if(!unloaded && !outOfBounds) {
+                BlockPos min=new BlockPos(x-6,source.getY(),source.getZ()-7);
+                BlockPos max=new BlockPos(x+6,source.getY()+3,source.getZ()+7);
+                if(!level.hasChunkAt(min)||!level.hasChunkAt(max)
+                        || !level.hasChunkAt(new BlockPos(min.getX(),min.getY(),max.getZ()))
+                        || !level.hasChunkAt(new BlockPos(max.getX(),min.getY(),min.getZ()))) unloaded=true;
+                else villagers=level.getEntitiesOfClass(Villager.class,
+                    new AABB(x-6,source.getY()-2,source.getZ()-7,
+                             x+7,source.getY()+5,source.getZ()+8),
+                    v->!v.isRemoved()).size();
+            }
+            Dev51BAlternativeSitesR30c.SiteRisk risk=outOfBounds
+                    ?Dev51BAlternativeSitesR30c.SiteRisk.OUT_OF_BOUNDS
+                    :unloaded?Dev51BAlternativeSitesR30c.SiteRisk.UNLOADED
+                    :villagers>0?Dev51BAlternativeSitesR30c.SiteRisk.NEARBY_VILLAGERS
+                    :sideOccupied>0?Dev51BAlternativeSitesR30c.SiteRisk.SIDE_OCCUPIED
+                    :Dev51BAlternativeSitesR30c.SiteRisk.CLEAR_OBSERVED;
+            byCenter.put(center,new Dev51BAlternativeSitesR30c.Site(risk,villagers,sideOccupied));
+            LOG.info("[TC-DEV51B-R30C] SITE side={} pos={},{},{} centerOffset={} siteRisk={} nearbyVillagers={} occupiedSideCells={} sideCells=54 noWrites=true",
+                    side,x,source.getY(),source.getZ(),center,risk,villagers,sideOccupied);
+        }
+        sites.put(side,byCenter);
+    }
+    var report=Dev51BAlternativeSitesR30c.evaluate(east,west,sites);
+    LOG.info("[TC-DEV51B-R30C] ALTERNATIVE_SURVEY source={} world={} recordedNetwork={} observedEachDirection=45 blockersLogged={} candidates=6 autoDispatch=false blockEdits=0 entitiesMoved=0 chunksForced=0 writeApproved=false driveApproved=false connectedRouteCertified=false",
+            source,level.dimension().location(),saved.hasNetwork(source),diagnosed);
+    for(int i=0;i<report.ranked().size();i++) {
+        var candidate=report.ranked().get(i);
+        int cx=Dev51BAlternativeSitesR30c.worldX(source.getX(),candidate.direction(),candidate.centerOffset());
+        String first=candidate.firstIssueOffset()<0?"NONE":
+                    Dev51BAlternativeSitesR30c.worldX(source.getX(),candidate.direction(),candidate.firstIssueOffset())
+                        +","+source.getY()+","+source.getZ()+":"+candidate.firstIssue();
+        LOG.info("[TC-DEV51B-R30C] RANK rank={} side={} site={},{},{} status={} score={} existingRail={} supportedEmpty={} missingFoundation={} entities={} headroom={} occupied={} fluids={} unloaded={} firstIssue={} sideSiteRisk={} nearbyVillagers={} sideOccupied={} writesApproved=false",
+                i+1,candidate.direction(),cx,source.getY(),source.getZ(),candidate.reviewStatus(),
+                candidate.priorityScore(),candidate.existingRail(),candidate.emptySupported(),
+                candidate.missingSupport(),candidate.entities(),candidate.overhead(),
+                candidate.occupied(),candidate.fluids(),candidate.unloaded(),first,
+                candidate.site().risk(),candidate.site().nearbyVillagers(),candidate.site().sideOccupiedCells());
+        if(i<3) {
+            final String display="[R30c] #"+(i+1)+" "+candidate.direction()+" site="+cx+","+source.getY()+","+source.getZ()
+                    +" "+candidate.reviewStatus()+" score="+candidate.priorityScore()+" first="+first;
+            src.sendSuccess(()->Component.literal(display),false);
+        }
+    }
+    src.sendSuccess(()->Component.literal("[R30c] 6 candidates compared. Full obstruction and entity types in latest.log. ALL REVIEW ONLY."),false);
+    src.sendSuccess(()->Component.literal("[R30c] NO WORLD EDITS / NO TRAIN DRIVE / NO AUTO DISPATCH. No connected route certified."),false);
+    return 1;
+}
+
+// DEV51B R30b: read-only eastward corridor site feasibility. The measured
+// R30a line ends after offset +8; this checks +9..+36 for a future nine-rail
+// stopping area around +32. It NEVER constructs rails or authorizes driving.
+private static int dev51bR30bCorridor(CommandSourceStack src) {
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)
+            || !(src.getEntity() instanceof ServerPlayer)
+            || !dev51bR27Disposable(level)) {
+        src.sendFailure(Component.literal("[R30b] HOLD: Requires marked disposable DEV51B R27 Movement Copy Overworld. NO CHANGES."));
+        return 0;
+    }
+    StationData saved=stations(level);
+    BlockPos player=BlockPos.containing(src.getPosition());
+    BlockPos source=saved.closest(player,48).orElse(null);
+    if(source!=null && saved.isR30TestStop(source)) {
+        source=null;
+        for(BlockPos candidate:saved.placed) {
+            if(!saved.isR30TestStop(candidate) && candidate.distSqr(player)<=48L*48L) {
+                source=candidate;break;
+            }
+        }
+    }
+    if(source==null) {
+        src.sendFailure(Component.literal("[R30b] HOLD NO_RECORDED_SOURCE_WITHIN_48. NO CHANGES."));
+        return 0;
+    }
+    java.util.List<Dev51BEastCorridorR30b.Cell> cells=new java.util.ArrayList<>();
+    for(int offset=0;offset<=Dev51BEastCorridorR30b.LAST_OFFSET;offset++) {
+        BlockPos at=source.offset(offset,0,0);
+        Dev51BRailSurveyR30a.Cell asBuilt=dev51bR30aObserveRail(level,at);
+        if(asBuilt.kind()==Dev51BRailSurveyR30a.Kind.UNLOADED) {
+            cells.add(new Dev51BEastCorridorR30b.Cell(asBuilt.kind(),false,false,false,false));
+            continue;
+        }
+        // Read only already-loaded blocks. Do not ticket/unload any chunks.
+        boolean dry=level.getFluidState(at).isEmpty()
+                && level.getFluidState(at.above()).isEmpty()
+                && level.getFluidState(at.above(2)).isEmpty()
+                && level.getFluidState(at.below()).isEmpty();
+        boolean sturdy=level.getBlockState(at.below()).isFaceSturdy(level,at.below(),Direction.UP);
+        // Existing accepted staging can contain parked trains. R30b needs
+        // entity clearance only on a possible NEW segment, offsets 9..36.
+        boolean clearEntities=offset<Dev51BEastCorridorR30b.EXISTING_FIRST_EXTENSION
+                || level.getEntitiesOfClass(Entity.class,
+                    new AABB(at.getX()-0.35,at.getY()-1.0,at.getZ()-0.8,
+                             at.getX()+1.35,at.getY()+3.0,at.getZ()+1.8),
+                    ent->!ent.isRemoved() && !(ent instanceof ServerPlayer)).isEmpty();
+        cells.add(new Dev51BEastCorridorR30b.Cell(asBuilt.kind(),
+                asBuilt.clearTwoAbove(),sturdy,dry,clearEntities));
+    }
+    Dev51BEastCorridorR30b.Report report=Dev51BEastCorridorR30b.inspect(cells);
+    boolean recorded=saved.hasNetwork(source);
+    int xBegin=source.getX()+Dev51BEastCorridorR30b.EXISTING_FIRST_EXTENSION;
+    int xEnd=source.getX()+Dev51BEastCorridorR30b.LAST_OFFSET;
+    int xStop=source.getX()+Dev51BEastCorridorR30b.DESTINATION_OFFSET;
+    String issue=report.firstIssueOffset()<0?"NONE":
+            (source.getX()+report.firstIssueOffset()+","+source.getY()+","+source.getZ()+":"+report.firstIssue());
+    LOG.info("[TC-DEV51B-R30B] EAST_CORRIDOR_AUDIT source={} proposedStop={} corridorX={}..{} observed={} oldRails={} fillableAir={} blocked={} unloaded={} firstIssue={} reason={} networkRecorded={} geometryOnly={} autoDispatch=false blockEdits=0 entitiesMoved=0 chunksForced=0",
+            source,xStop,xBegin,xEnd,report.observed(),report.existingRailCount(),
+            report.buildableEmptyCount(),report.blockedCount(),report.unloadedCount(),
+            issue,report.reason(),recorded,report.corridorGeometryReady());
+    LOG.info("[TC-DEV51B-R30B] EAST_CORRIDOR_SPANS offsets={} writesApproved=false driveApproved=false destinationRouteCertified=false",
+            Dev51BEastCorridorR30b.compactRanges(report.ranges(),40));
+    final String line1="[R30b] EAST site="+xStop+","+source.getY()+","+source.getZ()+
+            " surveyX="+xBegin+".."+xEnd+" existingRail="+report.existingRailCount()+
+            " emptySupported="+report.buildableEmptyCount()+" blocked="+report.blockedCount()+
+            " unloaded="+report.unloadedCount();
+    final String line2="[R30b] "+(report.corridorGeometryReady()?"GEOMETRY_ONLY":"HOLD")+
+            " "+report.reason()+" firstIssue="+issue+". NO PLACEMENT.";
+    final String line3="[R30b] SavedNetwork="+recorded+
+            ". NO WORLD WRITES, NO TRAIN MOVEMENT, NO AUTOMATIC DISPATCH.";
+    src.sendSuccess(()->Component.literal(line1),false);
+    src.sendSuccess(()->Component.literal(line2),false);
+    src.sendSuccess(()->Component.literal(line3),false);
+    return 1;
+}
+
+// DEV51B R30a: READ-ONLY AS-BUILT survey of the two directions from the
+// source station rail. Never trusts the unrecorded LEGACY_V1 network template,
+// never force-loads chunks or creates persistent route/survey records.
+private static Dev51BRailSurveyR30a.Cell dev51bR30aObserveRail(ServerLevel level,BlockPos at) {
+    if(at.getY()-1 < level.getMinBuildHeight() || at.getY()+2 >= level.getMaxBuildHeight()
+            || !level.hasChunkAt(at) || !level.hasChunkAt(at.above(2))
+            || !level.hasChunkAt(at.below())) {
+        return new Dev51BRailSurveyR30a.Cell(Dev51BRailSurveyR30a.Kind.UNLOADED,false,false);
+    }
+    BlockState block=level.getBlockState(at);
+    boolean airClear=level.getBlockState(at.above()).isAir()
+            && level.getBlockState(at.above(2)).isAir();
+    boolean foundation=!level.getBlockState(at.below()).isAir();
+    Dev51BRailSurveyR30a.Kind kind;
+    if(block.getBlock() instanceof net.minecraft.world.level.block.BaseRailBlock
+            && block.hasProperty(RailBlock.SHAPE)) {
+        RailShape shape=block.getValue(RailBlock.SHAPE);
+        if(shape==RailShape.EAST_WEST) {
+            if(block.is(TCBlocks.TRACK_NORMAL.get())) kind=Dev51BRailSurveyR30a.Kind.NORMAL_EW;
+            else if(block.is(TCBlocks.TRACK_STATION.get())) kind=Dev51BRailSurveyR30a.Kind.STATION_EW;
+            else kind=Dev51BRailSurveyR30a.Kind.OTHER_EW_RAIL;
+        } else kind=Dev51BRailSurveyR30a.Kind.TURN_OR_SLOPE;
+    } else if(block.isAir()) {
+        BlockState above=level.getBlockState(at.above());
+        BlockState below=level.getBlockState(at.below());
+        if(above.getBlock() instanceof net.minecraft.world.level.block.BaseRailBlock
+                || below.getBlock() instanceof net.minecraft.world.level.block.BaseRailBlock)
+            kind=Dev51BRailSurveyR30a.Kind.OFF_LEVEL_RAIL;
+        else kind=Dev51BRailSurveyR30a.Kind.AIR;
+    } else {
+        ResourceLocation id=BuiltInRegistries.BLOCK.getKey(block.getBlock());
+        String name=id.getPath().toLowerCase(java.util.Locale.ROOT);
+        boolean complex=id.getNamespace().equals("traincraft")
+                && (name.contains("rail")||name.contains("track")
+                    ||name.contains("switch")||name.contains("turnout")||name.contains("curve"));
+        kind=complex?Dev51BRailSurveyR30a.Kind.NATIVE_OR_SPECIAL:
+                Dev51BRailSurveyR30a.Kind.BLOCKED;
+    }
+    return new Dev51BRailSurveyR30a.Cell(kind,airClear,foundation);
+}
+private static int dev51bR30aSurvey(CommandSourceStack src) {
+    ServerLevel level=src.getLevel();
+    if(!level.dimension().equals(Level.OVERWORLD)
+            || !(src.getEntity() instanceof ServerPlayer)
+            || !dev51bR27Disposable(level)) {
+        src.sendFailure(Component.literal("[R30a] HOLD: Requires marked disposable DEV51B R27 Movement Copy Overworld. NO CHANGES."));
+        return 0;
+    }
+    StationData saved=stations(level); // read-only station SavedData, NEVER setDirty
+    BlockPos player=BlockPos.containing(src.getPosition());
+    BlockPos source=saved.closest(player,48).orElse(null);
+    if(source!=null && saved.isR30TestStop(source)) {
+        source=null;
+        for(BlockPos candidate:saved.placed) {
+            if(!saved.isR30TestStop(candidate) && candidate.distSqr(player)<=48L*48L) {
+                source=candidate;break;
+            }
+        }
+    }
+    if(source==null) {
+        src.sendFailure(Component.literal("[R30a] HOLD NO_RECORDED_SOURCE_STATION_WITHIN_48. NO CHANGES."));
+        return 0;
+    }
+    final BlockPos from=source;
+    java.util.List<Dev51BRailSurveyR30a.Cell> east=new java.util.ArrayList<>();
+    java.util.List<Dev51BRailSurveyR30a.Cell> west=new java.util.ArrayList<>();
+    for(int step=0;step<=Dev51BRailSurveyR30a.RADIUS;step++) {
+        east.add(dev51bR30aObserveRail(level,from.offset(step,0,0)));
+        west.add(dev51bR30aObserveRail(level,from.offset(-step,0,0)));
+    }
+    Dev51BRailSurveyR30a.Summary e=Dev51BRailSurveyR30a.inspect("EAST",east);
+    Dev51BRailSurveyR30a.Summary w=Dev51BRailSurveyR30a.inspect("WEST",west);
+    boolean networkRecorded=saved.hasNetwork(from);
+    LOG.info("[TC-DEV51B-R30A] AS_BUILT_SURVEY source={} radius={} recordedNetwork={} stationRecords={} scanOnly=true worldEdits=0 trainMoved=false autoDispatch=false chunksForced=0",
+            from,Dev51BRailSurveyR30a.RADIUS,networkRecorded,saved.count());
+    for(Dev51BRailSurveyR30a.Summary s:java.util.List.of(e,w)) {
+        boolean toEast=s.side().equals("EAST");
+        int gapX=s.firstBarrierOffset()<0?Integer.MIN_VALUE:from.getX()+(toEast?1:-1)*s.firstBarrierOffset();
+        int candidateX=s.firstGeometryCandidate()<0?Integer.MIN_VALUE:
+                from.getX()+(toEast?1:-1)*s.firstGeometryCandidate();
+        String gap=s.firstBarrierOffset()<0?"NOT_OBSERVED":
+                (gapX+","+from.getY()+","+from.getZ()+":"+s.firstBarrier());
+        String geom=s.firstGeometryCandidate()<0?"NONE":
+                (candidateX+","+from.getY()+","+from.getZ()+":GEOMETRY_ONLY");
+        LOG.info("[TC-DEV51B-R30A] SIDE={} continuous={} firstBarrier={} candidate={} spans={} driveAuthorized=false writeAuthorized=false",
+                s.side(),s.continuousStraight(),gap,geom,
+                Dev51BRailSurveyR30a.compactSpans(s.spans(),25));
+        src.sendSuccess(()->Component.literal("[R30a] "+s.side()+" continuousStraight="+
+                s.continuousStraight()+" firstBarrier="+gap+" geometricStop="+geom),false);
+        if(s.firstGeometryCandidate()>=0) {
+            BlockPos site=from.offset((toEast?1:-1)*s.firstGeometryCandidate(),0,0);
+            // Read-only ENTITY/OTHER-STATION observation for the suggested geometry.
+            boolean occupied=!level.getEntitiesOfClass(Entity.class,
+                    new AABB(site.getX()-10,site.getY()-1,site.getZ()-3,
+                             site.getX()+11,site.getY()+4,site.getZ()+4),
+                    ent->!ent.isRemoved() && !(ent instanceof ServerPlayer)).isEmpty();
+            boolean nearOther=false;
+            for(BlockPos recorded:saved.placed)
+                if(!recorded.equals(from) && recorded.distSqr(site)<24L*24L)nearOther=true;
+            final boolean occupiedAtSite=occupied;
+            final boolean otherStationNearSite=nearOther;
+            LOG.info("[TC-DEV51B-R30A] GEOMETRY_{} position={} entitiesPresent={} otherStationWithin24={} requiresNetworkProof=true sitePlacementAuthorized=false routeCertified=false",
+                    s.side(),site,occupied,nearOther);
+            src.sendSuccess(()->Component.literal("[R30a] "+s.side()+
+                    " geometry only: entitiesPresent="+occupiedAtSite+
+                    " otherStationWithin24="+otherStationNearSite+"; no placement approved"),false);
+        }
+    }
+    src.sendSuccess(()->Component.literal("[R30a] AS-BUILT ONLY; networkRecorded="+networkRecorded+
+            ". Existing blocks observed, never repaired. NO PLACEMENT, NO TRAIN MOVEMENT, NO DISPATCH."),false);
+    return 1;
+}
+
+// DEV51B R30: A minimally invasive second recorded test STOP on the existing
+// straight mainline. One normal rail -> one station rail in the disposable
+// R27 copy only. No new mainline, architecture, workers, service, dispatch,
+// occupancy ticket or locomotive movement. Does not certify a complete route.
+private static int dev51bR30SecondStop(CommandSourceStack src,String mode) {
+    ServerLevel level=src.getLevel();
+    StationData data=stations(level);
+    BlockPos playerPos=BlockPos.containing(src.getPosition());
+    BlockPos source=data.closest(playerPos,48).orElse(null);
+    if(source==null || data.count()<1) {
+        src.sendFailure(Component.literal("[R30] HOLD NO_SOURCE_STATION_WITHIN_48. NO CHANGES."));return 0;
+    }
+    // A recorded R30 test stop must never become its own 'source'.
+    if(data.isR30TestStop(source)) {
+        BlockPos other=null;
+        for(BlockPos p:data.placed)if(!data.isR30TestStop(p)) {other=p;break;}
+        if(other==null || other.distSqr(playerPos)>48L*48L) {
+            src.sendFailure(Component.literal("[R30] HOLD STAND_NEAR_ORIGINAL_SOURCE. NO CHANGES."));return 0;
+        }
+        source=other;
+    }
+    final BlockPos from=source;
+    final BlockPos stop=from.offset(Dev51BSecondStationR30.EAST_OFFSET,0,0);
+    if("status".equals(mode)) {
+        boolean recorded=data.isR30TestStop(stop);
+        String block=level.hasChunkAt(stop)?String.valueOf(level.getBlockState(stop)):"UNLOADED";
+        src.sendSuccess(()->Component.literal("[R30] STOP STATUS source="+from.toShortString()+
+                " candidate="+stop.toShortString()+" recorded="+recorded+
+                " block="+block+" autoDispatch=false driveAuthorized=false"),false);
+        return 1;
+    }
+    if(!level.dimension().equals(Level.OVERWORLD) || !(src.getEntity() instanceof ServerPlayer)
+            || !dev51bR27Disposable(level)) {
+        src.sendFailure(Component.literal("[R30] HOLD: Requires a player in the marked DEV51B R27 Movement Copy (Overworld). NO CHANGES."));return 0;
+    }
+    if("undo".equals(mode)) {
+        boolean provenance=data.isR30TestStop(stop);
+        boolean exact=level.hasChunkAt(stop)
+                && level.getBlockState(stop).is(TCBlocks.TRACK_STATION.get())
+                && level.getBlockState(stop).hasProperty(RailBlock.SHAPE)
+                && level.getBlockState(stop).getValue(RailBlock.SHAPE)==RailShape.EAST_WEST;
+        boolean occupied=!level.getEntitiesOfClass(Entity.class,
+                new AABB(stop.getX()-10,stop.getY()-1,stop.getZ()-3,
+                        stop.getX()+11,stop.getY()+4,stop.getZ()+4),
+                e->!e.isRemoved() && !(e instanceof net.minecraft.server.level.ServerPlayer)).isEmpty();
+        boolean noJobs=data.service(stop)==null && data.staged(stop)==null
+                && !data.enclosed(stop) && !data.hasNetwork(stop) && !data.hasWideNetwork(stop)
+                && data.staff.values().stream().noneMatch(s->s.station.equals(stop));
+        boolean allowed=Dev51BSecondStationR30.canUndo(true,true,true,provenance,
+                data.placed.contains(stop),exact,noJobs,!occupied,level.hasChunkAt(stop));
+        if(!allowed) {
+            src.sendFailure(Component.literal("[R30] HOLD UNDO_SITE_NOT_EXACT_OR_OCCUPIED. NO CHANGES."));return 0;
+        }
+        BlockState before=level.getBlockState(stop);
+        BlockState normal=TCBlocks.TRACK_NORMAL.get().defaultBlockState()
+                .setValue(RailBlock.SHAPE,RailShape.EAST_WEST);
+        if(!level.setBlock(stop,normal,3) || !level.getBlockState(stop).equals(normal)) {
+            level.setBlock(stop,before,3);
+            src.sendFailure(Component.literal("[R30] HOLD UNDO_BLOCK_WRITE_FAILED. NO RECORD CHANGES."));return 0;
+        }
+        try {data.removeR30TestStop(stop);}catch(RuntimeException e){
+            level.setBlock(stop,before,3);
+            src.sendFailure(Component.literal("[R30] HOLD UNDO_ROLLED_BACK. NO RECORD CHANGES."));return 0;
+        }
+        LOG.info("[TC-DEV51B-R30] TEST_STOP_UNDO source={} stop={} restoredNormalRail=true savedMarkerRemoved=true trainMoved=false edits=1 autoDispatch=false",from,stop);
+        src.sendSuccess(()->Component.literal("[R30] TEST STOP UNDO PASS. One original normal rail restored and R30 record removed. NO TRAINS MOVED."),true);
+        return 1;
+    }
+    if(!"preview".equals(mode) && !"place".equals(mode))return 0;
+    boolean chunks=true,straight=true,clear=true,foundation=true;
+    for(int dx=-Dev51BSecondStationR30.STRAIGHT_HALF_WIDTH;
+            dx<=Dev51BSecondStationR30.STRAIGHT_HALF_WIDTH;dx++) {
+        BlockPos p=stop.offset(dx,0,0);
+        // The entire check must be observational; never force-load chunks.
+        if(!level.hasChunkAt(p) || !level.hasChunkAt(p.above(2)) || !level.hasChunkAt(p.below())) {
+            chunks=false;straight=false;clear=false;foundation=false;continue;
+        }
+        BlockState b=level.getBlockState(p);
+        if(!b.is(TCBlocks.TRACK_NORMAL.get()) || !b.hasProperty(RailBlock.SHAPE)
+                || b.getValue(RailBlock.SHAPE)!=RailShape.EAST_WEST)straight=false;
+        if(!level.getBlockState(p.above()).isAir() || !level.getBlockState(p.above(2)).isAir())clear=false;
+        if(level.getBlockState(p.below()).isAir())foundation=false;
+    }
+    // Far wider than the expected rail model and its occupancy footprint.
+    boolean entityFree=chunks && level.getEntitiesOfClass(Entity.class,
+            new AABB(stop.getX()-10,stop.getY()-1,stop.getZ()-3,
+                    stop.getX()+11,stop.getY()+4,stop.getZ()+4),
+            e->!e.isRemoved() && !(e instanceof net.minecraft.server.level.ServerPlayer)).isEmpty();
+    boolean alone=true;
+    for(BlockPos p:data.placed)if(!p.equals(from) && p.distSqr(stop)<24L*24L)alone=false;
+    boolean sourceRail=level.hasChunkAt(from) && level.getBlockState(from).is(TCBlocks.TRACK_STATION.get());
+    Dev51BSecondStationR30.Result check=Dev51BSecondStationR30.check(true,true,true,
+            data.count(),!data.r30TestStops.isEmpty(),data.placed.contains(from),
+            data.hasNetwork(from),sourceRail,true,chunks,straight,clear,foundation,entityFree,alone);
+    LOG.info("[TC-DEV51B-R30] TEST_STOP_{} source={} stop={} result={} reason={} siteLoaded={} normalRailNine={} clear={} supports={} entityFree={} worldEdits={} trainMoved=false autoDispatch=false",
+            mode.toUpperCase(java.util.Locale.ROOT),from,stop,check.verdict(),check.reason(),
+            chunks,straight,clear,foundation,entityFree,"place".equals(mode)&&check.mayPlace()?1:0);
+    if(!check.mayPlace()) {
+        src.sendFailure(Component.literal("[R30] HOLD "+check.reason()+" at "+stop.toShortString()+". NO CHANGES."));return 0;
+    }
+    if("preview".equals(mode)) {
+        src.sendSuccess(()->Component.literal("[R30] PREVIEW READY: one EXISTING normal rail at "+stop.toShortString()+
+                " can become a recorded test-platform stop, 32 blocks east of "+from.toShortString()),false);
+        src.sendSuccess(()->Component.literal("[R30] No rail extension/building; one rail + saved station record on /tcrailway network secondstation place confirm ONLY IN DISPOSABLE COPY. No driving permission."),false);
+        return 1;
+    }
+    BlockState before=level.getBlockState(stop);
+    BlockState replacement=TCBlocks.TRACK_STATION.get().defaultBlockState()
+            .setValue(RailBlock.SHAPE,RailShape.EAST_WEST);
+    if(!level.setBlock(stop,replacement,3) || !level.getBlockState(stop).equals(replacement)) {
+        level.setBlock(stop,before,3);
+        src.sendFailure(Component.literal("[R30] HOLD SITE_RAIL_WRITE_FAILED; reverted. NO RECORD."));return 0;
+    }
+    try {data.recordR30TestStop(stop);}catch(RuntimeException err){
+        level.setBlock(stop,before,3);
+        src.sendFailure(Component.literal("[R30] HOLD SAVED_RECORD_FAILED; reverted block."));return 0;
+    }
+    LOG.info("[TC-DEV51B-R30] TEST_STOP_PLACED source={} stop={} sourceUnchanged=true newRecordedStation=true blockEdits=1 trainMoved=false autoDispatch=false routeCertified=false",from,stop);
+    src.sendSuccess(()->Component.literal("[R30] TEST STOP PLACED at "+stop.toShortString()+
+            ". Source station untouched. Now /tcrailway network destinationaudit preview; HOLD on native turnout is expected. NO DRIVING."),true);
+    return 1;
+}
+
+    // DEV51B R29: read-only observation of two DISTINCT saved stations on
+    // fully loaded reciprocal single-cell tracks. Does not move trains or
+    // issue dispatch authority. No forced chunks, block writes or reservations.
+    private static int dev51bR29DestinationPreview(CommandSourceStack source) {
+        ServerLevel level=source.getLevel();
+        BlockPos player=BlockPos.containing(source.getPosition());
+        StationData records=stations(level); // SavedData read; no setDirty().
+        BlockPos station=records.closest(player,Dev51BDestinationR29.MAX_SOURCE_RADIUS).orElse(null);
+        if(station==null){
+            LOG.info("[TC-DEV51B-R29] DEST_AUDIT HOLD=NO_SOURCE_STATION_NEAR_PLAYER player={} stationRecords={} trainMoved=false worldEdits=0 chunksForced=0",player,records.count());
+            source.sendFailure(Component.literal("[R29] HOLD: NO_SOURCE_STATION_NEAR_PLAYER. Stand within 48 blocks of a recorded station. NO MOVEMENT."));
+            return 0;
+        }
+        java.util.List<BlockPos> targets=records.placed.stream().filter(p ->
+                !p.equals(station) && (long)(p.getX()-station.getX())*(p.getX()-station.getX())
+                +(long)(p.getZ()-station.getZ())*(p.getZ()-station.getZ())
+                >=(long)Dev51BDestinationR29.MIN_DISTINCT_HORIZONTAL*Dev51BDestinationR29.MIN_DISTINCT_HORIZONTAL)
+                .sorted(java.util.Comparator.comparingDouble(station::distSqr)).toList();
+        if(targets.isEmpty()){
+            LOG.info("[TC-DEV51B-R29] DEST_AUDIT source={} recordedStations={} HOLD=NO_DISTINCT_RECORDED_DESTINATION worldEdits=0 chunksForced=0 trainsMoved=0",station,records.count());
+            source.sendFailure(Component.literal("[R29] HOLD: NO_DISTINCT_RECORDED_DESTINATION. Only one recorded station/platform; no route to validate. NO MOVEMENT."));
+            return 0;
+        }
+        // Intentionally select just the nearest distinct recorded station.
+        // Never silently pick a farther destination if this one is unsuitable.
+        BlockPos target=targets.get(0);
+        String early=null;
+        if(Math.abs((long)target.getX()-station.getX())>Dev51BDestinationR29.MAX_ROUTE_RADIUS
+                ||Math.abs((long)target.getZ()-station.getZ())>Dev51BDestinationR29.MAX_ROUTE_RADIUS
+                ||Math.abs((long)target.getY()-station.getY())>24)early="DESTINATION_OUTSIDE_96_BLOCK_SCAN";
+        else if(!level.hasChunkAt(station))early="SOURCE_STATION_CHUNK_UNLOADED";
+        else if(!level.hasChunkAt(target))early="DESTINATION_CHUNK_NOT_LOADED";
+        else if(!level.getBlockState(station).is(TCBlocks.TRACK_STATION.get()))early="SOURCE_RECORDED_STATION_RAIL_MISSING";
+        else if(!level.getBlockState(target).is(TCBlocks.TRACK_STATION.get()))early="DESTINATION_RECORDED_STATION_RAIL_MISSING";
+        if(early!=null){
+            String hold=early;
+            LOG.info("[TC-DEV51B-R29] DEST_AUDIT source={} target={} savedStations={} outcome=HOLD reason={} trainsMoved=0 worldEdits=0 chunksForced=0 autoDispatch=false",station,target,records.count(),hold);
+            source.sendFailure(Component.literal("[R29] HOLD: "+hold+" source="+station.toShortString()+" target="+target.toShortString()+". NO MOVEMENT."));
+            return 0;
+        }
+        Dev51BTrackGraphR18.Pos from=new Dev51BTrackGraphR18.Pos(station.getX(),station.getY(),station.getZ());
+        Dev51BTrackGraphR18.Pos to=new Dev51BTrackGraphR18.Pos(target.getX(),target.getY(),target.getZ());
+        Dev51BTrackGraphR18.Reader reader=at->dev51bR18Observe(level,at);
+        if(reader.read(from).kind()!=Dev51BTrackGraphR18.Kind.PLAIN ||
+                reader.read(to).kind()!=Dev51BTrackGraphR18.Kind.PLAIN){
+            source.sendFailure(Component.literal("[R29] HOLD: Unsupported station rail shape. NO MOVEMENT."));
+            LOG.info("[TC-DEV51B-R29] DEST_AUDIT source={} target={} outcome=HOLD reason=UNSUPPORTED_STATION_RAIL worldEdits=0",station,target);
+            return 0;
+        }
+        Dev51BTrackGraphR18.Result graph=Dev51BTrackGraphR18.scan(reader,from);
+        java.util.List<Dev51BRoutePlannerR19.Anchor> anchors=java.util.List.of(
+                new Dev51BRoutePlannerR19.Anchor("recorded_source",from,0,0),
+                new Dev51BRoutePlannerR19.Anchor("recorded_destination",to,0,0));
+        Dev51BRoutePlannerR19.Plan plan=Dev51BRoutePlannerR19.plan(reader,graph,anchors);
+        Dev51BRouteSafetyR21.Report safety=Dev51BRouteSafetyR21.inspect(reader,graph,plan,pos -> {
+            BlockPos rail=new BlockPos(pos.x(),pos.y(),pos.z());
+            if(rail.getY()<level.getMinBuildHeight()+1||rail.getY()>=level.getMaxBuildHeight()-2
+                    ||!level.hasChunkAt(rail)||!level.hasChunkAt(rail.above(2)))
+                return Dev51BRouteSafetyR21.Witness.UNKNOWN;
+            BlockState state=level.getBlockState(rail);
+            if(state.getBlock() instanceof traincraft.block.track.AbstractLegacyBatchRailBlock ||
+                    state.getBlock() instanceof traincraft.block.track.LegacyMediumCurveRailBlock ||
+                    state.getBlock() instanceof traincraft.block.track.LegacyStraightAssemblyRailBlock)
+                return Dev51BRouteSafetyR21.Witness.NATIVE_OR_DYNAMIC;
+            ResourceLocation id=BuiltInRegistries.BLOCK.getKey(state.getBlock());
+            String path=id.getPath().toLowerCase(java.util.Locale.ROOT);
+            if(id.getNamespace().equals("traincraft") &&
+                    (path.contains("switch")||path.contains("turnout")||path.contains("_segment")))
+                return Dev51BRouteSafetyR21.Witness.NATIVE_OR_DYNAMIC;
+            if(!(state.getBlock() instanceof net.minecraft.world.level.block.BaseRailBlock))
+                return Dev51BRouteSafetyR21.Witness.BLOCKED;
+            if(level.getBlockState(rail.below()).isAir())
+                return Dev51BRouteSafetyR21.Witness.BLOCKED;
+            BlockPos above=rail.above(), top=rail.above(2);
+            if(!level.getBlockState(above).getCollisionShape(level,above).isEmpty() ||
+                    !level.getBlockState(top).getCollisionShape(level,top).isEmpty())
+                return Dev51BRouteSafetyR21.Witness.BLOCKED;
+            return Dev51BRouteSafetyR21.Witness.CLEAR;
+        });
+        Dev51BDestinationR29.Report result=Dev51BDestinationR29.inspect(graph,plan,safety,
+                "recorded_source","recorded_destination",true,true,true,true,true,true,true);
+        LOG.info("[TC-DEV51B-R29] DEST_AUDIT source={} destination={} sourceRecorded=true destinationRecorded=true observedNodes={} edges={} clipped={} unloaded={} complex={} ambiguous={} links={} clear={} blocked={} unknown={} native={} connected={} manualReview={} driveAuthorized=false reason={} verdict={} loadedOnly=true signalProven=false switchProven=false occupancyProven=false trainMoved=false worldEdits=0 chunksForced=0",
+                station,target,graph.nodes(),graph.edges(),graph.clippedPorts(),graph.unloadedBoundaries(),
+                graph.complexBoundaries(),graph.ambiguousPorts(),result.railLinks(),result.clearCells(),
+                result.blockedCells(),result.unknownCells(),result.nativeCells(),result.topologyConnected(),
+                result.manualReviewCandidate(),result.blockers(),result.verdict());
+        source.sendSuccess(()->Component.literal("[R29] "+result.verdict()+" from="+station.toShortString()+
+                " to="+target.toShortString()+" links="+result.railLinks()+" nodes="+graph.nodes()),false);
+        source.sendSuccess(()->Component.literal("[R29] Clear="+result.clearCells()+" blocked="+result.blockedCells()+
+                " unknown="+result.unknownCells()+" native="+result.nativeCells()+" holds="+result.blockers()),false);
+        source.sendSuccess(()->Component.literal("[R29] READ ONLY; loaded 1-cell rails only. No native switches, signals, train-width or occupancy certified. NO TRAVEL / AUTODISPATCH."),false);
+        return result.manualReviewCandidate()?1:0;
+    }
+
+    // DEV51B R20: loaded-chunk-only native multi-block assembly audit. No
+    // block writes, chunk tickets, train movement, dispatcher or route promotion.
+    private static int dev51bR20NativeAudit(CommandSourceStack source) {
+        ServerLevel level=source.getLevel();
+        BlockPos player=BlockPos.containing(source.getPosition());
+        java.util.Map<String,Dev51BNativeConnectivityR20.Piece> pieces=new java.util.TreeMap<>();
+        boolean clipped=false;
+        int nearbySpecial=0,unknownNative=0;
+        // Read nearby loaded positions only. Individual owners may extend outside
+        // this window; all of their declared parts are then checked explicitly.
+        outer: for(int dx=-12;dx<=12;dx++)for(int dz=-12;dz<=12;dz++)for(int dy=-24;dy<=12;dy++) {
+            BlockPos at=player.offset(dx,dy,dz);
+            if(at.getY()<level.getMinBuildHeight()||at.getY()>=level.getMaxBuildHeight()||!level.hasChunkAt(at))continue;
+            BlockState state=level.getBlockState(at);
+            net.minecraft.world.level.block.Block block=state.getBlock();
+            boolean batch=block instanceof traincraft.block.track.AbstractLegacyBatchRailBlock;
+            boolean straight=block instanceof traincraft.block.track.LegacyStraightAssemblyRailBlock;
+            boolean curve=block instanceof traincraft.block.track.LegacyMediumCurveRailBlock;
+            if(!batch&&!straight&&!curve){
+                if(block instanceof traincraft.block.track.ClassicSpecialTrackBlock)nearbySpecial++;
+                else if(block instanceof net.minecraft.world.level.block.BaseRailBlock
+                        && BuiltInRegistries.BLOCK.getKey(block).getNamespace().equals("traincraft")
+                        && !(state.hasProperty(RailBlock.SHAPE))) unknownNative++;
+                continue;
+            }
+            if(Math.abs(dx)==12||Math.abs(dz)==12)clipped=true;
+            BlockPos root;
+            net.minecraft.core.Direction facing;
+            int count;
+            java.util.List<Dev51BNativeConnectivityR20.Port> ports=new java.util.ArrayList<>();
+            java.util.List<Dev51BNativeConnectivityR20.Expected> expected=new java.util.ArrayList<>();
+            boolean dynamic=false;
+            if(batch){
+                var nativeBlock=(traincraft.block.track.AbstractLegacyBatchRailBlock)block;
+                if(!state.hasProperty(nativeBlock.partProperty())||
+                        !state.hasProperty(traincraft.block.track.AbstractLegacyBatchRailBlock.ASSEMBLY_FACING)){
+                    unknownNative++;continue;
+                }
+                var spec=nativeBlock.getSpec();
+                root=nativeBlock.getAssemblyRoot(at,state);
+                facing=nativeBlock.getAssemblyFacing(state);
+                count=spec.partCount();dynamic=spec.dynamicRouting();
+                for(int i=0;i<count;i++){
+                    BlockPos loc=spec.offsetForPart(root,facing,i);
+                    expected.add(new Dev51BNativeConnectivityR20.Expected(i,
+                            new Dev51BNativeConnectivityR20.Pos(loc.getX(),loc.getY(),loc.getZ())));
+                }
+                for(var endpoint:spec.endpoints()){
+                    BlockPos loc=spec.endpointPosition(root,facing,endpoint);
+                    net.minecraft.core.Direction dir=spec.rotateDirection(facing,endpoint.outward());
+                    ports.add(new Dev51BNativeConnectivityR20.Port(
+                            new Dev51BNativeConnectivityR20.Pos(loc.getX(),loc.getY(),loc.getZ()),
+                            Dev51BNativeConnectivityR20.Facing.valueOf(dir.name()),endpoint.hasLogicalOffset()));
+                }
+            } else if(straight){
+                if(!state.hasProperty(traincraft.block.track.LegacyStraightAssemblyRailBlock.PART)||
+                        !state.hasProperty(traincraft.block.track.LegacyStraightAssemblyRailBlock.ASSEMBLY_FACING)){
+                    unknownNative++;continue;
+                }
+                int part=state.getValue(traincraft.block.track.LegacyStraightAssemblyRailBlock.PART);
+                facing=state.getValue(traincraft.block.track.LegacyStraightAssemblyRailBlock.ASSEMBLY_FACING);
+                root=at.relative(facing.getOpposite(),part);
+                String id=BuiltInRegistries.BLOCK.getKey(block).getPath();
+                count=id.equals("track_medium_straight_segment")?3:
+                        id.equals("track_long_straight_segment")?6:
+                        id.equals("track_very_long_straight_segment")?12:0;
+                if(count==0){unknownNative++;continue;}
+                for(int i=0;i<count;i++){
+                    BlockPos loc=root.relative(facing,i);
+                    expected.add(new Dev51BNativeConnectivityR20.Expected(i,
+                            new Dev51BNativeConnectivityR20.Pos(loc.getX(),loc.getY(),loc.getZ())));
+                }
+                BlockPos end=root.relative(facing,count-1);
+                ports.add(new Dev51BNativeConnectivityR20.Port(
+                        new Dev51BNativeConnectivityR20.Pos(root.getX(),root.getY(),root.getZ()),
+                        Dev51BNativeConnectivityR20.Facing.valueOf(facing.getOpposite().name()),false));
+                ports.add(new Dev51BNativeConnectivityR20.Port(
+                        new Dev51BNativeConnectivityR20.Pos(end.getX(),end.getY(),end.getZ()),
+                        Dev51BNativeConnectivityR20.Facing.valueOf(facing.name()),false));
+            } else {
+                if(!state.hasProperty(traincraft.block.track.LegacyMediumCurveRailBlock.PART)||
+                        !state.hasProperty(traincraft.block.track.LegacyMediumCurveRailBlock.ASSEMBLY_FACING)){
+                    unknownNative++;continue;
+                }
+                int part=state.getValue(traincraft.block.track.LegacyMediumCurveRailBlock.PART);
+                facing=state.getValue(traincraft.block.track.LegacyMediumCurveRailBlock.ASSEMBLY_FACING);
+                // Legacy 5/6 part curve states are migration-only, not new assemblies.
+                if(part>=traincraft.block.track.LegacyMediumCurveRailBlock.PART_COUNT){unknownNative++;continue;}
+                root=at.subtract(traincraft.block.track.LegacyMediumCurveRailBlock.offsetForPart(BlockPos.ZERO,facing,part));
+                count=traincraft.block.track.LegacyMediumCurveRailBlock.PART_COUNT;
+                for(int i=0;i<count;i++){
+                    BlockPos loc=traincraft.block.track.LegacyMediumCurveRailBlock.offsetForPart(root,facing,i);
+                    expected.add(new Dev51BNativeConnectivityR20.Expected(i,
+                            new Dev51BNativeConnectivityR20.Pos(loc.getX(),loc.getY(),loc.getZ())));
+                }
+                // No exposed route endpoint API on this legacy curve: do NOT
+                // guess real entry/exit headings. Mark placeholder ports unresolved.
+                BlockPos first=traincraft.block.track.LegacyMediumCurveRailBlock.offsetForPart(root,facing,0);
+                BlockPos last=traincraft.block.track.LegacyMediumCurveRailBlock.offsetForPart(root,facing,4);
+                ports.add(new Dev51BNativeConnectivityR20.Port(
+                        new Dev51BNativeConnectivityR20.Pos(first.getX(),first.getY(),first.getZ()),
+                        Dev51BNativeConnectivityR20.Facing.valueOf(facing.name()),true));
+                ports.add(new Dev51BNativeConnectivityR20.Port(
+                        new Dev51BNativeConnectivityR20.Pos(last.getX(),last.getY(),last.getZ()),
+                        Dev51BNativeConnectivityR20.Facing.valueOf(facing.name()),true));
+            }
+            if(count<1||count>Dev51BNativeConnectivityR20.MAX_PARTS){unknownNative++;continue;}
+            String key=BuiltInRegistries.BLOCK.getKey(block)+"@"+root.asLong()+"/"+facing.name();
+            if(!pieces.containsKey(key)){
+                if(pieces.size()>=Dev51BNativeConnectivityR20.MAX_ASSEMBLIES){clipped=true;break outer;}
+                pieces.put(key,new Dev51BNativeConnectivityR20.Piece(key,
+                        BuiltInRegistries.BLOCK.getKey(block).getPath(),dynamic,expected,ports));
+            }
+        }
+        // Part states and neighbor probes are evaluated only on already-loaded chunks.
+        Dev51BNativeConnectivityR20.Audit result=Dev51BNativeConnectivityR20.audit(
+                pieces.values(),(owner,part,p)->{
+                    BlockPos pos=new BlockPos(p.x(),p.y(),p.z());
+                    if(pos.getY()<level.getMinBuildHeight()||pos.getY()>=level.getMaxBuildHeight()||
+                            !level.hasChunkAt(pos))return Dev51BNativeConnectivityR20.State.UNLOADED;
+                    BlockState got=level.getBlockState(pos);
+                    String blockId=BuiltInRegistries.BLOCK.getKey(got.getBlock()).toString();
+                    if(!owner.startsWith(blockId+"@"))return got.isAir()?
+                            Dev51BNativeConnectivityR20.State.MISSING:Dev51BNativeConnectivityR20.State.FOREIGN;
+                    net.minecraft.world.level.block.Block b=got.getBlock();
+                    if(b instanceof traincraft.block.track.AbstractLegacyBatchRailBlock batch){
+                        if(!got.hasProperty(batch.partProperty())||
+                                !got.hasProperty(traincraft.block.track.AbstractLegacyBatchRailBlock.ASSEMBLY_FACING))
+                            return Dev51BNativeConnectivityR20.State.FOREIGN;
+                        String exact=blockId+"@"+batch.getAssemblyRoot(pos,got).asLong()+"/"+
+                                batch.getAssemblyFacing(got).name();
+                        return batch.getPart(got)==part&&owner.equals(exact)?
+                                Dev51BNativeConnectivityR20.State.MATCH:Dev51BNativeConnectivityR20.State.FOREIGN;
+                    }
+                    if(b instanceof traincraft.block.track.LegacyStraightAssemblyRailBlock){
+                        if(!got.hasProperty(traincraft.block.track.LegacyStraightAssemblyRailBlock.PART)||
+                                !got.hasProperty(traincraft.block.track.LegacyStraightAssemblyRailBlock.ASSEMBLY_FACING))
+                            return Dev51BNativeConnectivityR20.State.FOREIGN;
+                        int i=got.getValue(traincraft.block.track.LegacyStraightAssemblyRailBlock.PART);
+                        var dir=got.getValue(traincraft.block.track.LegacyStraightAssemblyRailBlock.ASSEMBLY_FACING);
+                        String exact=blockId+"@"+pos.relative(dir.getOpposite(),i).asLong()+"/"+dir.name();
+                        return i==part&&owner.equals(exact)?Dev51BNativeConnectivityR20.State.MATCH:
+                                Dev51BNativeConnectivityR20.State.FOREIGN;
+                    }
+                    if(b instanceof traincraft.block.track.LegacyMediumCurveRailBlock){
+                        if(!got.hasProperty(traincraft.block.track.LegacyMediumCurveRailBlock.PART)||
+                                !got.hasProperty(traincraft.block.track.LegacyMediumCurveRailBlock.ASSEMBLY_FACING))
+                            return Dev51BNativeConnectivityR20.State.FOREIGN;
+                        int i=got.getValue(traincraft.block.track.LegacyMediumCurveRailBlock.PART);
+                        var dir=got.getValue(traincraft.block.track.LegacyMediumCurveRailBlock.ASSEMBLY_FACING);
+                        String exact=blockId+"@"+pos.subtract(traincraft.block.track.LegacyMediumCurveRailBlock.offsetForPart(
+                                BlockPos.ZERO,dir,i)).asLong()+"/"+dir.name();
+                        return i==part&&owner.equals(exact)?Dev51BNativeConnectivityR20.State.MATCH:
+                                Dev51BNativeConnectivityR20.State.FOREIGN;
+                    }
+                    return Dev51BNativeConnectivityR20.State.FOREIGN;
+                },p->{
+                    BlockPos pos=new BlockPos(p.x(),p.y(),p.z());
+                    if(pos.getY()<level.getMinBuildHeight()||pos.getY()>=level.getMaxBuildHeight()||
+                            !level.hasChunkAt(pos))return Dev51BNativeConnectivityR20.Neighbor.other(
+                                    Dev51BNativeConnectivityR20.NeighborKind.UNLOADED);
+                    BlockState state=level.getBlockState(pos);
+                    if(state.getBlock() instanceof traincraft.block.track.AbstractLegacyBatchRailBlock||
+                            state.getBlock() instanceof traincraft.block.track.LegacyStraightAssemblyRailBlock||
+                            state.getBlock() instanceof traincraft.block.track.LegacyMediumCurveRailBlock)
+                        return Dev51BNativeConnectivityR20.Neighbor.other(Dev51BNativeConnectivityR20.NeighborKind.COMPLEX);
+                    if(state.getBlock() instanceof net.minecraft.world.level.block.BaseRailBlock&&
+                            state.hasProperty(RailBlock.SHAPE)){
+                        var shape=Dev51BTrackGraphR18.Shape.valueOf(state.getValue(RailBlock.SHAPE).name());
+                        java.util.EnumSet<Dev51BNativeConnectivityR20.Facing> ports=
+                                java.util.EnumSet.noneOf(Dev51BNativeConnectivityR20.Facing.class);
+                        for(var dir:Dev51BNativeConnectivityR20.Facing.values())
+                            if(Dev51BTrackGraphR18.hasPort(shape,Dev51BTrackGraphR18.Dir.valueOf(dir.name())))
+                                ports.add(dir);
+                        return new Dev51BNativeConnectivityR20.Neighbor(
+                                Dev51BNativeConnectivityR20.NeighborKind.PLAIN,ports);
+                    }
+                    return Dev51BNativeConnectivityR20.Neighbor.other(
+                            Dev51BNativeConnectivityR20.NeighborKind.EMPTY);
+                },clipped);
+        LOG.info("[TC-DEV51B-R20] NATIVE_AUDIT player={} pieces={} complete={} incomplete={} foreignParts={} dynamic={} endpoints={} reciprocalNativePairs={} plainContacts={} open={} unknown={} logicalOffsets={} nearbySpecial={} otherNative={} clipped={} verdict={} previewOnly=true trainDispatch=false trainsMoved=0 forcedChunks=0 worldEdits=0",
+                player,result.pieces(),result.verified(),result.incomplete(),result.foreign(),
+                result.dynamicPieces(),result.endpointCount(),result.nativePairs(),result.plainContacts(),
+                result.openEnds(),result.unknownNeighbors(),result.logicalOffsetPorts(),
+                nearbySpecial,unknownNative,result.capReached(),result.verdict());
+        for(String note:result.warnings())LOG.info("[TC-DEV51B-R20] PART_WARNING {}",note);
+        source.sendSuccess(()->Component.literal("[R20] Native assemblies="+result.pieces()+
+                " complete="+result.verified()+" incomplete="+result.incomplete()+
+                " native-adjacencies="+result.nativePairs()+" plain-adjacencies="+result.plainContacts()),false);
+        source.sendSuccess(()->Component.literal("[R20] Unknown endpoints="+result.unknownNeighbors()+
+                " dynamic="+result.dynamicPieces()+" foreign parts="+result.foreign()+
+                ". "+result.verdict()+"; NOT train-drive certified. NO CHANGES."),false);
+        return 1;
+    }
+
+    // DEV51B R19: observational candidate paths BETWEEN nearby station markers.
+    // No block or NBT writes, no force-loading, NO native turnout routing or train AI.
+    private static int dev51bR19ReadOnlyRoutePlan(CommandSourceStack source) {
+        ServerLevel level=source.getLevel();
+        BlockPos player=BlockPos.containing(source.getPosition());
+        BlockPos seed=null;
+        long bestCost=Long.MAX_VALUE;
+        int complexNear=0;
+        for(int dx=-12;dx<=12;dx++)for(int dz=-12;dz<=12;dz++)for(int dy=-24;dy<=12;dy++) {
+            BlockPos at=player.offset(dx,dy,dz);
+            if(at.getY()<level.getMinBuildHeight()||at.getY()>=level.getMaxBuildHeight()
+                    ||!level.hasChunkAt(at))continue;
+            Dev51BTrackGraphR18.Cell cell=dev51bR18Observe(level,
+                    new Dev51BTrackGraphR18.Pos(at.getX(),at.getY(),at.getZ()));
+            if(cell.kind()==Dev51BTrackGraphR18.Kind.COMPLEX)complexNear++;
+            if(cell.kind()!=Dev51BTrackGraphR18.Kind.PLAIN)continue;
+            long distance=(long)dx*dx+(long)dz*dz+(long)dy*dy/4L;
+            if(distance<bestCost){bestCost=distance;seed=at;}
+        }
+        if(seed==null) {
+            int count=complexNear;
+            LOG.info("[TC-DEV51B-R19] ROUTE_NO_SEED player={} complexNearby={} source=LOADED_ONLY worldEdits=0 trainsMoved=0",player,count);
+            source.sendFailure(Component.literal("[R19] No supported single-cell rails nearby. Complex rail cells="+count+". NOT a route failure; no changes."));
+            return 0;
+        }
+        Dev51BTrackGraphR18.Pos start=new Dev51BTrackGraphR18.Pos(seed.getX(),seed.getY(),seed.getZ());
+        Dev51BTrackGraphR18.Reader observer=at->dev51bR18Observe(level,at);
+        Dev51BTrackGraphR18.Result graph=Dev51BTrackGraphR18.scan(observer,start);
+        java.util.List<Dev51BRoutePlannerR19.Anchor> anchors=new java.util.ArrayList<>();
+        java.util.List<Dev51BTrackGraphR18.Pos> markers=new java.util.ArrayList<>();
+        for(long stored:f1cMarkers(level).byVillage.values()) {
+            BlockPos marker=BlockPos.of(stored);
+            if(!level.hasChunkAt(marker))continue;
+            Dev51BTrackGraphR18.Pos pos=new Dev51BTrackGraphR18.Pos(marker.getX(),marker.getY(),marker.getZ());
+            boolean near=false;
+            for(Dev51BTrackGraphR18.Pos node:graph.observedNodes()) {
+                if(Math.abs((long)pos.x()-node.x())<=9 && Math.abs((long)pos.z()-node.z())<=9
+                        &&Math.abs((long)pos.y()-node.y())<=3){near=true;break;}
+            }
+            if(!near)continue;
+            if(markers.contains(pos))continue;
+            markers.add(pos);
+            anchors.add(new Dev51BRoutePlannerR19.Anchor("marker_"+marker.asLong(),pos,9,3));
+        }
+        // Exact station cells are useful when no saved marker identifies the
+        // same station. Adjacent station-cell groups are not distinct stations.
+        java.util.List<Dev51BTrackGraphR18.Pos> stations=new java.util.ArrayList<>();
+        for(Dev51BTrackGraphR18.Pos node:graph.observedNodes()) {
+            Dev51BTrackGraphR18.Cell cell=observer.read(node);
+            if(cell==null||!cell.station())continue;
+            boolean covered=false;
+            for(Dev51BTrackGraphR18.Pos marker:markers)
+                if(Math.abs((long)marker.x()-node.x())<=9 && Math.abs((long)marker.z()-node.z())<=9
+                        &&Math.abs((long)marker.y()-node.y())<=3){covered=true;break;}
+            for(Dev51BTrackGraphR18.Pos station:stations)
+                if(Math.abs((long)station.x()-node.x())<=6 && Math.abs((long)station.z()-node.z())<=6
+                        &&Math.abs((long)station.y()-node.y())<=2){covered=true;break;}
+            if(covered)continue;
+            stations.add(node);
+            anchors.add(new Dev51BRoutePlannerR19.Anchor("station_"+node.x()+"_"+node.y()+"_"+node.z(),node,0,0));
+        }
+        Dev51BRoutePlannerR19.Plan plan=Dev51BRoutePlannerR19.plan(observer,graph,anchors);
+        LOG.info("[TC-DEV51B-R19] ROUTE_PLAN seed={} nodes={} edges={} stationMarkers={} stationCells={} anchors={} matched={} unresolved={} pairs={} anchorCap={} pairCap={} consistent={} partial={} verdict={} nativeRoutingVerified=false trainServiceEnabled=false trainsMoved=0 chunksForced=0 worldEdits=0",
+                seed,graph.nodes(),graph.edges(),markers.size(),stations.size(),plan.inputAnchors(),
+                plan.matchedAnchors(),plan.unresolvedAnchors(),plan.routes().size(),plan.anchorLimitReached(),
+                plan.pairLimitReached(),plan.graphConsistent(),plan.partialNetwork(),plan.verdict());
+        int display=0;
+        for(Dev51BRoutePlannerR19.Match match:plan.matches()) {
+            if(display++>=16)break;
+            LOG.info("[TC-DEV51B-R19] ANCHOR id={} marker={} rail={} verdict={}",
+                    match.id(),match.station(),match.rail(),match.matchStatus());
+        }
+        display=0;
+        for(Dev51BRoutePlannerR19.Route route:plan.routes()) {
+            if(display++>=Dev51BRoutePlannerR19.MAX_PAIRS)break;
+            LOG.info("[TC-DEV51B-R19] ROUTE_CANDIDATE from={} to={} links={} turns={} slopes={} fingerprint={} samples={} verdict={} trainDispatch=false",
+                    route.from(),route.to(),route.railLinks(),route.turns(),route.slopes(),
+                    Long.toUnsignedString(route.pathFingerprint(),16),route.checkpoints(),route.verdict());
+        }
+        source.sendSuccess(()->Component.literal("[R19] "+plan.verdict()+". "+plan.matchedAnchors()+
+                " station anchors, "+plan.routes().size()+" candidate pairs; "+plan.scannedNodes()+" rails observed."),false);
+        source.sendSuccess(()->Component.literal("[R19] Partial="+plan.partialNetwork()+
+                " ambiguous/unmatched anchors="+plan.unresolvedAnchors()+
+                ". Loaded-only TOPOLOGY; no trains dispatched, no world edits."),false);
+        if(!plan.routes().isEmpty()) {
+            Dev51BRoutePlannerR19.Route first=plan.routes().get(0);
+            source.sendSuccess(()->Component.literal("[R19] First: "+first.from()+" -> "+first.to()+
+                    " links="+first.railLinks()+" turns="+first.turns()+" slopes="+first.slopes()+
+                    " "+first.verdict()),false);
+        }
+        return 1;
+    }
+
+    // DEV51B R21: READ-ONLY route stop/continuity/clearance audit. The R19
+    // graph is reconstructed and checked before reporting observational status.
+    // Native turnout movement and railway villagers remain DISABLED.
+    private static int dev51bR21ValidateRoute(CommandSourceStack source) {
+        return dev51bR21ValidateRoute(source,false);
+    }
+
+    // R22 is read-only: reuses exactly the observed R21 route report. The
+    // simulation cannot issue a real dispatch token or interact with trains.
+    private static int dev51bR22SimulateDispatch(CommandSourceStack source) {
+        return dev51bR21ValidateRoute(source,true);
+    }
+
+    // DEV51B R23/R24: bundled, read-only reservation + interlocking simulation.
+    private static int dev51bR23R24InterlockSimulate(CommandSourceStack source) {
+        return dev51bR21ValidateRoute(source,false,true);
+    }
+
+    private static int dev51bR21ValidateRoute(CommandSourceStack source,boolean simulateDispatch) {
+        return dev51bR21ValidateRoute(source,simulateDispatch,false);
+    }
+    // DEV51B R27 supervised shunt: opt-in ONLY on a named disposable save copy
+    // with a manually-created marker. Reuses accepted DEV50c8 shunt and brake.
+    private static boolean dev51bR27Disposable(ServerLevel level) {
+        try {
+            java.nio.file.Path root=level.getServer().getWorldPath(
+                    net.minecraft.world.level.storage.LevelResource.ROOT).toRealPath();
+            java.nio.file.Path folder=root.getFileName();
+            if(folder==null||!R27_COPY_FOLDER.equals(folder.toString()))return false;
+            java.nio.file.Path marker=root.resolve(R27_COPY_MARKER);
+            if(!java.nio.file.Files.isRegularFile(marker,
+                    java.nio.file.LinkOption.NOFOLLOW_LINKS))return false;
+            return R27_COPY_MARKER_VALUE.equals(java.nio.file.Files.readString(marker,
+                    java.nio.charset.StandardCharsets.UTF_8).trim());
+        }catch(java.io.IOException|SecurityException e){return false;}
+    }
+
+    private static void dev51bR27ObserveTick(ServerLevel level) {
+        R27Observation obs=r27Observation;
+        if(obs==null)return;
+        // Operator may revoke the disposable marker while the shunt is active.
+        // Stop without waiting for the 42-tick watchdog.
+        if(!dev51bR27Disposable(level)) {
+            ManualDeparture session=MANUAL_DEPARTURES.get(obs.station().asLong());
+            if(session!=null && session.locomotive().equals(obs.locomotive()))
+                haltManualDeparture(level,session,"R27 disposable marker revoked");
+            r27LastReport="FAILED: DISPOSABLE_MARKER_REVOKED";
+            LOG.warn("[TC-DEV51B-R27] {}",r27LastReport);
+            r27Observation=null;
+            return;
+        }
+        Entity entity=level.getEntity(obs.locomotive());
+        ManualDeparture running=MANUAL_DEPARTURES.get(obs.station().asLong());
+        boolean active=running!=null && running.locomotive().equals(obs.locomotive())
+                && running.operator().equals(obs.operator());
+        double dx=entity==null?0:entity.getX()-obs.x();
+        double dz=entity==null?0:entity.getZ()-obs.z();
+        double speed=entity==null?0:entity.getDeltaMovement().horizontalDistance();
+        boolean brake=entity instanceof LegacyPoweredLocomotive loco && loco.isHandBrakeApplied();
+        Dev51BSupervisedShuntR27.Verdict verdict=Dev51BSupervisedShuntR27.audit(
+                new Dev51BSupervisedShuntR27.Sample(level.getGameTime()-obs.tick(),dx,dz,speed,
+                        brake,active,entity instanceof LegacyPoweredLocomotive && !entity.isRemoved(),
+                        MANUAL_DEPARTURES.size()>(active?1:0)));
+        if(!verdict.finished())return;
+        // The existing tested parking API is responsible for all stopping.
+        // If the frozen departure guard already parked, do not alter anything.
+        if(verdict.emergencyStopRequired()) {
+            if(active)haltManualDeparture(level,running,"R27 supervised emergency stop: "+verdict.reason());
+            else {
+                StagedConsist staged=stations(level).staged(obs.station());
+                if(staged!=null && staged.locomotive().equals(obs.locomotive()))
+                    parkStagedPair(level,staged,obs.operator());
+            }
+        }
+        r27LastReport=verdict.state()+" reason="+verdict.reason()
+                +" dx="+String.format(java.util.Locale.ROOT,"%.3f",dx)
+                +" dz="+String.format(java.util.Locale.ROOT,"%.3f",dz)
+                +" speedBpt="+String.format(java.util.Locale.ROOT,"%.4f",speed)
+                +" ticks="+(level.getGameTime()-obs.tick())
+                +" loco="+obs.locomotive();
+        LOG.info("[TC-DEV51B-R27] SUPERVISED_SHUNT_RESULT {} automaticDriverEnabled=false worldEdits=0",r27LastReport);
+        ServerPlayer operator=level.getServer().getPlayerList().getPlayer(obs.operator());
+        if(operator!=null)operator.sendSystemMessage(Component.literal("[R27] "+r27LastReport));
+        r27Observation=null;
+    }
+
+    /** DEV51B R28: same-station micro departure / parked-arrival supervisor.
+     * No additional movement, no station-to-station route, no AI and no save flags.
+     * R27 remains the ONLY active driver/controller for this test.
+     */
+    private static int dev51bR28Command(CommandSourceStack src,String action) {
+        if(!(src.getEntity() instanceof ServerPlayer player)
+                || !src.getLevel().dimension().equals(Level.OVERWORLD)) {
+            src.sendFailure(Component.literal("[R28] Integrated Overworld player required. NO CHANGES"));return 0;
+        }
+        ServerLevel level=src.getLevel();
+        if("status".equals(action)) {
+            src.sendSuccess(()->Component.literal("[R28] "+(r28Cycle==null?"IDLE":"ACTIVE station="+r28Cycle.station())
+                    +" last="+r28LastReport+"; same-station micro-cycle only; auto-driving disabled"),false);
+            return 1;
+        }
+        if("abort".equals(action)) {
+            R28Cycle old=r28Cycle;
+            if(old==null){src.sendFailure(Component.literal("[R28] No active station cycle"));return 0;}
+            // R27 owns braking. It must remain abortable even if the world
+            // marker was revoked after the run began.
+            if(r27Observation!=null)dev51bR27Command(src,"abort");
+            StagedConsist pair=stations(level).staged(old.station());
+            if(pair!=null && pair.locomotive().equals(old.locomotive())
+                    && pair.coach().equals(old.coach()))parkStagedPair(level,pair,old.operator());
+            r28LastReport="ABORTED_BY_OPERATOR";
+            r28Cycle=null;
+            src.sendSuccess(()->Component.literal("[R28] ABORT: parked if loaded. No automatic departure."),true);
+            return 1;
+        }
+        if(r28Cycle!=null){src.sendFailure(Component.literal("[R28] Another station cycle is active"));return 0;}
+        if(!dev51bR27Disposable(level)) {
+            src.sendFailure(Component.literal("[R28] REFUSED: exact disposable R27 world+marker required. NO CHANGES"));return 0;
+        }
+        // The R27 preview is the AUTHORITATIVE safety gate. Do not substitute
+        // an R28 approximation for the accepted engineer, fuel, track,
+        // handbrake, clearance, spacing, ownership and 0.75-block room gates.
+        if("preview".equals(action)) {
+            if(dev51bR27Command(src,"preview")!=1)return 0;
+            src.sendSuccess(()->Component.literal("[R28] MICRO-CYCLE PREVIEW PASS: supervised 0.75-block"
+                    +" departure followed by parked-arrival audit at SAME station."
+                    +" No second-station route, timetable, AI or auto-dispatch."
+                    +" Start only with /tcrailway network stationcycle start confirm;"
+                    +" emergency /tcrailway network stationcycle abort."),false);
+            return 1;
+        }
+        if(!"start".equals(action))return 0;
+        // Capture only the exact R27-approved staged pair. The accepted R27
+        // controller owns all 24-38 ticks of actual movement and stopping.
+        StationData data=stations(level);
+        Optional<BlockPos> found=data.closest(BlockPos.containing(src.getPosition()),96);
+        if(found.isEmpty()){src.sendFailure(Component.literal("[R28] No station nearby"));return 0;}
+        BlockPos station=found.get();
+        StagedConsist pair=data.staged(station);
+        if(pair==null){src.sendFailure(Component.literal("[R28] No staged pair"));return 0;}
+        if(dev51bR27Command(src,"start")!=1 || r27Observation==null)return 0;
+        R27Observation r=r27Observation;
+        if(!r.station().equals(station) || !r.locomotive().equals(pair.locomotive())) {
+            dev51bR27Command(src,"abort");
+            src.sendFailure(Component.literal("[R28] R27 owner mismatch; parked and aborted"));return 0;
+        }
+        r28Cycle=new R28Cycle(station,pair.locomotive(),pair.coach(),player.getUUID(),
+                r.x(),r.z(),r.tick());
+        r28LastReport="RUNNING_SUPERVISED_MICRO_CYCLE";
+        LOG.info("[TC-DEV51B-R28] MICRO_CYCLE_START station={} gp7={} coach={} "
+                +"maxBlocks=0.75 maxTicks=38 automaticDriverEnabled=false worldEdits=0",
+                station,pair.locomotive(),pair.coach());
+        src.sendSuccess(()->Component.literal("[R28] SUPERVISED MICRO-CYCLE ARMED."
+                +" R27 controls the move; R28 checks parked arrival. No automatic driving."),false);
+        return 1;
+    }
+
+    private static void dev51bR28ObserveTick(ServerLevel level) {
+        R28Cycle cycle=r28Cycle;
+        if(cycle==null)return;
+        // Never continue after a cancelled/unloaded R27 observation.
+        if(r27Observation!=null)return;
+        StagedConsist recorded=stations(level).staged(cycle.station());
+        Entity first=level.getEntity(cycle.locomotive());
+        Entity second=level.getEntity(cycle.coach());
+        boolean owned=recorded!=null && cycle.locomotive().equals(recorded.locomotive())
+                && cycle.coach().equals(recorded.coach());
+        boolean loaded=first instanceof LegacyPoweredLocomotive && second instanceof SteamTender
+                && !first.isRemoved() && !second.isRemoved();
+        boolean linked=loaded && CouplingManager.areMutuallyLinked(first,
+                (LegacyPoweredLocomotive)first,second,(SteamTender)second);
+        boolean brake=first instanceof LegacyPoweredLocomotive loco && loco.isHandBrakeApplied();
+        double gap=loaded?Dev51BVisualClearanceR27c.observe(first.getX(),first.getZ(),
+                second.getX(),second.getZ(),first.getYRot(),
+                ((LegacyPoweredLocomotive)first).getTrainFacingYaw(),second.getYRot()).estimatedSeam():Double.NaN;
+        boolean noOther=MANUAL_DEPARTURES.isEmpty();
+        long elapsed=level.getGameTime()-cycle.tick();
+        Dev51BStationCycleR28.Verdict verdict=Dev51BStationCycleR28.audit(
+                new Dev51BStationCycleR28.Arrival(elapsed,
+                        first==null?Double.NaN:first.getX()-cycle.startX(),
+                        first==null?Double.NaN:first.getZ()-cycle.startZ(),
+                        first==null?Double.NaN:first.getDeltaMovement().horizontalDistance(),
+                        second==null?Double.NaN:second.getDeltaMovement().horizontalDistance(),
+                        gap,dev51bR27Disposable(level),owned,linked,brake,loaded,noOther,
+                        r27LastReport.startsWith("SUPERVISED_SHUNT_PASS"),true));
+        if(!verdict.passed() && recorded!=null && owned)parkStagedPair(level,recorded,cycle.operator());
+        final String prefix=verdict.passed()?"MICRO_STATION_DEPART_AND_PARK_PASS":"MICRO_STATION_CYCLE_REJECT";
+        r28LastReport=prefix+" reason="+verdict.reason()
+                +" dx="+String.format(java.util.Locale.ROOT,"%.3f",first==null?Double.NaN:first.getX()-cycle.startX())
+                +" seam="+String.format(java.util.Locale.ROOT,"%.3f",gap)
+                +" ticks="+elapsed+" sameStation=true autoDispatch=false worldEdits=0";
+        LOG.info("[TC-DEV51B-R28] {}",r28LastReport);
+        ServerPlayer operator=level.getServer().getPlayerList().getPlayer(cycle.operator());
+        if(operator!=null)operator.sendSystemMessage(Component.literal("[R28] "+r28LastReport));
+        r28Cycle=null;
+    }
+
+    /** R27c READ-ONLY measurement. No staging, changes, or movement. */
+    private static int dev51bR27cClearance(CommandSourceStack src) {
+        ServerLevel level=src.getLevel();
+        if (!level.dimension().equals(Level.OVERWORLD)
+                || !(src.getEntity() instanceof ServerPlayer)
+                || !dev51bR27Disposable(level)) {
+            src.sendFailure(Component.literal("[R27c] CLEARANCE REFUSED: confirmed disposable Overworld copy and operator required. NO CHANGES"));return 0;
+        }
+        StationData data=stations(level);
+        Optional<BlockPos> near=data.closest(BlockPos.containing(src.getPosition()),96);
+        if (near.isEmpty()) {
+            src.sendFailure(Component.literal("[R27c] CLEARANCE REFUSED: no recorded station within 96 blocks. NO CHANGES"));return 0;
+        }
+        StagedConsist pair=data.staged(near.get());
+        if (pair==null) {
+            src.sendFailure(Component.literal("[R27c] CLEARANCE: no saved staged pair. NO CHANGES"));return 0;
+        }
+        Entity first=level.getEntity(pair.locomotive()),second=level.getEntity(pair.coach());
+        if (!(first instanceof LegacyPoweredLocomotive loco) || !(second instanceof SteamTender coach)
+                || first.isRemoved() || second.isRemoved()
+                || !"traincraft:locomotive_diesel_gp7".equals(BuiltInRegistries.ENTITY_TYPE.getKey(first.getType()).toString())
+                || !"traincraft:passenger_coach_blue".equals(BuiltInRegistries.ENTITY_TYPE.getKey(second.getType()).toString())) {
+            src.sendFailure(Component.literal("[R27c] CLEARANCE REFUSED: exact staged GP7 + Blue Coach not loaded. NO CHANGES"));return 0;
+        }
+        Dev51BVisualClearanceR27c.Observation observation=Dev51BVisualClearanceR27c.observe(
+                first.getX(),first.getZ(),second.getX(),second.getZ(),
+                loco.getYRot(),loco.getTrainFacingYaw(),second.getYRot());
+        boolean linked=CouplingManager.areMutuallyLinked(first,loco,second,coach);
+        String status=observation.reason();
+        String line="[R27c] VISUAL CLEARANCE " + status
+                + " station=" + near.get().toShortString()
+                + " loco=(" + String.format(java.util.Locale.ROOT,"%.3f",first.getX())
+                + "," + String.format(java.util.Locale.ROOT,"%.3f",first.getZ()) + ")"
+                + " coach=(" + String.format(java.util.Locale.ROOT,"%.3f",second.getX())
+                + "," + String.format(java.util.Locale.ROOT,"%.3f",second.getZ()) + ")"
+                + " gap=" + String.format(java.util.Locale.ROOT,"%.3f",observation.centerGap())
+                + " estimatedSeam=" + String.format(java.util.Locale.ROOT,"%.3f",observation.estimatedSeam())
+                + " yaw=(" + loco.getYRot() + "," + loco.getTrainFacingYaw() + "," + second.getYRot() + ")"
+                + " linked=" + linked + " handbrake=" + loco.isHandBrakeApplied()
+                + " noMovement=true noWorldEdits=true";
+        LOG.warn("[TC-DEV51B-R27C] {}",line);
+        src.sendSuccess(()->Component.literal(line),false);
+        return 1;
+    }
+
+    /** R27b: EXPLICIT, disposable-save-only retirement of an incorrectly
+     * oriented recorded stage. Safety gates run before the first mutation.
+     * No tracks, station architecture, train physics or AI are modified.
+     * Does NOT respawn vehicles; /tcrailway service stage does that separately.
+     */
+    private static int dev51bR27bUnstage(CommandSourceStack src,ServerPlayer player,ServerLevel level) {
+        if(!dev51bR27Disposable(level)) {
+            src.sendFailure(Component.literal("[R27b] UNSTAGE REFUSED: exact disposable copy and marker required. NO CHANGES"));return 0;
+        }
+        if(r27Observation!=null||!MANUAL_DEPARTURES.isEmpty()||RailwayTurnoutMovementTest.isActive()) {
+            src.sendFailure(Component.literal("[R27b] UNSTAGE REFUSED: movement/test active. NO CHANGES"));return 0;
+        }
+        StationData data=stations(level);
+        Optional<BlockPos> found=data.closest(BlockPos.containing(src.getPosition()),96);
+        if(found.isEmpty()) {
+            src.sendFailure(Component.literal("[R27b] UNSTAGE REFUSED: no recorded station within 96 blocks. NO CHANGES"));return 0;
+        }
+        BlockPos station=found.get();
+        StagedConsist recorded=data.staged(station);
+        ServicePlan plan=data.service(station);
+        if(recorded==null||plan==null||!data.enclosed(station)
+                ||plan.coaches()!=1||!"traincraft:locomotive_diesel_gp7".equals(SERVICE_PROFILES[plan.index()].locomotive())
+                ||!"traincraft:passenger_coach_blue".equals(SERVICE_PROFILES[plan.index()].coach())) {
+            src.sendFailure(Component.literal("[R27b] UNSTAGE REFUSED: saved GP7 + one-coach service required. NO CHANGES"));return 0;
+        }
+        Entity first=level.getEntity(recorded.locomotive());
+        Entity second=level.getEntity(recorded.coach());
+        if(!(first instanceof LegacyPoweredLocomotive loco)||!(second instanceof SteamTender coach)
+                ||first.isRemoved()||second.isRemoved()
+                ||!"traincraft:locomotive_diesel_gp7".equals(BuiltInRegistries.ENTITY_TYPE.getKey(first.getType()).toString())
+                ||!"traincraft:passenger_coach_blue".equals(BuiltInRegistries.ENTITY_TYPE.getKey(second.getType()).toString())) {
+            src.sendFailure(Component.literal("[R27b] UNSTAGE REFUSED: both recorded train entities must be loaded and correct. NO CHANGES"));return 0;
+        }
+        if(first.getPersistentData().getLong("TC_RAILWAY_SERVICE_STATION")!=station.asLong()
+                ||second.getPersistentData().getLong("TC_RAILWAY_SERVICE_STATION")!=station.asLong()
+                ||!"locomotive".equals(first.getPersistentData().getString("TC_RAILWAY_SERVICE_ROLE"))
+                ||!"coach_1".equals(second.getPersistentData().getString("TC_RAILWAY_SERVICE_ROLE"))
+                ||!CouplingManager.areMutuallyLinked(first,loco,second,coach)) {
+            src.sendFailure(Component.literal("[R27b] UNSTAGE REFUSED: exact recorded ownership and coupling required. NO CHANGES"));return 0;
+        }
+        double distance=Math.sqrt(first.distanceToSqr(second));
+        if(distance<2.0D||distance>4.0D||first.getX()<=second.getX()
+                ||Math.abs(first.getZ()-(station.getZ()+0.5D))>0.35D
+                ||Math.abs(second.getZ()-(station.getZ()+0.5D))>0.35D
+                ||!level.hasChunkAt(first.blockPosition())||!level.hasChunkAt(second.blockPosition())
+                ||!level.getBlockState(first.blockPosition()).is(TCBlocks.TRACK_NORMAL.get())
+                ||!level.getBlockState(second.blockPosition()).is(TCBlocks.TRACK_NORMAL.get())
+                ||!first.getPassengers().isEmpty()||!second.getPassengers().isEmpty()
+                ||!loco.isHandBrakeApplied()
+                ||first.getDeltaMovement().horizontalDistance()>0.001D
+                ||second.getDeltaMovement().horizontalDistance()>0.001D
+                ||stagingLivingObstruction(level,loco,coach).isPresent()) {
+            src.sendFailure(Component.literal("[R27b] UNSTAGE REFUSED: pair must be parked, unoccupied, aligned on loaded rails and unobstructed. NO CHANGES"));return 0;
+        }
+        // All checks passed; only the exact two saved vehicle UUIDs are
+        // unlinked/retired, and ONLY from the explicitly confirmed test copy.
+        CouplingManager.unlinkPair(loco,loco,coach,coach);
+        loco.discard();coach.discard();
+        data.staged.remove(station.asLong());data.setDirty();
+        LOG.info("[TC-DEV51B-R27B] EXPLICIT_UNSTAGE station={} gp7={} coach={} operator={} scope=DISPOSABLE_COPY onlyTwoEntities=true worldBlocksChanged=0 autoDispatch=false",
+                station,recorded.locomotive(),recorded.coach(),player.getUUID());
+        src.sendSuccess(()->Component.literal("[R27b] UNSTAGE PASS: old reversed GP7/coach retired from DISPOSABLE COPY only. Saved Local Diesel roster unchanged. Now run /tcrailway service stage to create a fresh east-facing pair. NO AUTOMATIC MOVEMENT."),true);
+        return 1;
+    }
+
+    private static int dev51bR27Command(CommandSourceStack src,String action) {
+        if(!(src.getEntity() instanceof ServerPlayer player)||
+                !src.getLevel().dimension().equals(Level.OVERWORLD)) {
+            src.sendFailure(Component.literal("[R27] Overworld player required. NO CHANGES"));return 0;
+        }
+        ServerLevel level=src.getLevel();
+        if("status".equals(action)) {
+            String report=(r27Observation==null?"IDLE":"RUNNING station="+r27Observation.station())
+                    +" last="+r27LastReport;
+            src.sendSuccess(()->Component.literal("[R27] "+report),false);return 1;
+        }
+        // Stop must remain usable even after the marker is removed mid-shunt.
+        if("abort".equals(action)) {
+            R27Observation obs=r27Observation;
+            if(obs==null){src.sendFailure(Component.literal("[R27] No R27 shunt active"));return 0;}
+            ManualDeparture session=MANUAL_DEPARTURES.get(obs.station().asLong());
+            if(session!=null && session.locomotive().equals(obs.locomotive()))
+                haltManualDeparture(level,session,"R27 operator ABORT");
+            else {
+                StagedConsist staged=stations(level).staged(obs.station());
+                if(staged!=null && staged.locomotive().equals(obs.locomotive()))
+                    parkStagedPair(level,staged,obs.operator());
+            }
+            r27LastReport="ABORTED_BY_OPERATOR";
+            r27Observation=null;
+            src.sendSuccess(()->Component.literal("[R27] ABORT: frozen handbrake/park invoked if session active. No automatic dispatch."),true);
+            return 1;
+        }
+        // R27b unstage is a separate, explicit, restricted operation on a
+        // disposable save. Never attempt to relink/teleport the old reversed
+        // pair or automatically spawn replacements; the player may then use
+        // the existing well-guarded `/tcrailway service stage` command.
+        if("unstage".equals(action)) return dev51bR27bUnstage(src,player,level);
+        if(!dev51bR27Disposable(level)) {
+            src.sendFailure(Component.literal("[R27] REFUSED: exact disposable world folder + confirmation marker required. Never run in original/recovery worlds."));return 0;
+        }
+        StationData data=stations(level);
+        Optional<BlockPos> found=data.closest(BlockPos.containing(src.getPosition()),96);
+        if(found.isEmpty()){
+            src.sendFailure(Component.literal("[R27] No recorded station within 96 blocks in this copy."));return 0;
+        }
+        BlockPos station=found.get();
+        StagedConsist pair=data.staged(station);
+        String failure=manualDepartureGate(level,data,station,pair,true);
+        if(r27Observation!=null||!MANUAL_DEPARTURES.isEmpty())failure="Another departure/test active";
+        if(failure!=null){
+            LOG.info("[TC-DEV51B-R27] SUPERVISED_PRECHECK_REJECT station={} reason={} noMovement=true",station,failure);
+            src.sendFailure(Component.literal("[R27] REFUSED: "+failure+". NO CHANGES"));return 0;
+        }
+        if("preview".equals(action)) {
+            src.sendSuccess(()->Component.literal("[R27] PRECHECK PASS: GP7 + Blue Coach staged at "
+                    +station.toShortString()+" in disposable copy. The pre-existing manual departure is limited"
+                    +" to 0.75 block/38 ticks. START ONLY with /tcrailway network supervisedtest start confirm;"
+                    +" emergency /tcrailway network supervisedtest abort."),false);return 1;
+        }
+        if(!"start".equals(action))return 0;
+        Entity entity=level.getEntity(pair.locomotive());
+        if(!(entity instanceof LegacyPoweredLocomotive))return 0;
+        double startX=entity.getX(),startZ=entity.getZ();
+        long startTick=level.getGameTime();
+        // Trusted frozen subsystem does ALL movement, controls and braking.
+        int result=manualDepartureCommand(src,"start");
+        ManualDeparture running=MANUAL_DEPARTURES.get(station.asLong());
+        if(result!=1||running==null||!running.locomotive().equals(pair.locomotive())){
+            parkStagedPair(level,pair,player.getUUID());
+            src.sendFailure(Component.literal("[R27] Frozen departure refused; pair re-parked; no R27 observer armed."));return 0;
+        }
+        r27Observation=new R27Observation(station,pair.locomotive(),player.getUUID(),startX,startZ,startTick);
+        r27LastReport="RUNNING";
+        LOG.info("[TC-DEV51B-R27] SUPERVISED_START station={} loco={} driverAutomation=false worldEdit=false",station,pair.locomotive());
+        return 1;
+    }
+
+    // R25/R26: opt-in read-only diagnostics. No movement, spawn, AI, or station writes.
+    private static int dev51bR25R26DryRun(CommandSourceStack source,boolean includeCrew) {
+        return dev51bR21ValidateRoute(source,false,false,true,includeCrew);
+    }
+
+    private static int dev51bR21ValidateRoute(CommandSourceStack source,boolean simulateDispatch,
+                                               boolean simulateInterlocking) {
+        return dev51bR21ValidateRoute(source,simulateDispatch,simulateInterlocking,false,false);
+    }
+    private static int dev51bR21ValidateRoute(CommandSourceStack source,boolean simulateDispatch,
+                                               boolean simulateInterlocking,
+                                               boolean movementDryRun,boolean crewDryRun) {
+        ServerLevel level=source.getLevel();
+        BlockPos player=BlockPos.containing(source.getPosition());
+        BlockPos seed=null;
+        long bestCost=Long.MAX_VALUE;
+        int complexNear=0;
+        for(int dx=-12;dx<=12;dx++)for(int dz=-12;dz<=12;dz++)for(int dy=-24;dy<=12;dy++) {
+            BlockPos at=player.offset(dx,dy,dz);
+            if(at.getY()<level.getMinBuildHeight()||at.getY()>=level.getMaxBuildHeight()
+                    ||!level.hasChunkAt(at))continue;
+            Dev51BTrackGraphR18.Cell cell=dev51bR18Observe(level,
+                    new Dev51BTrackGraphR18.Pos(at.getX(),at.getY(),at.getZ()));
+            if(cell.kind()==Dev51BTrackGraphR18.Kind.COMPLEX)complexNear++;
+            if(cell.kind()!=Dev51BTrackGraphR18.Kind.PLAIN)continue;
+            long distance=(long)dx*dx+(long)dz*dz+(long)dy*dy/4L;
+            if(distance<bestCost){bestCost=distance;seed=at;}
+        }
+        if(seed==null) {
+            int count=complexNear;
+            LOG.info("[TC-DEV51B-R21] ROUTE_NO_SEED player={} complexNearby={} source=LOADED_ONLY worldEdits=0 trainsMoved=0",player,count);
+            source.sendFailure(Component.literal("[R21] No supported single-cell rails nearby. Complex rail cells="+count+". NOT a route failure; no changes."));
+            return 0;
+        }
+        Dev51BTrackGraphR18.Pos start=new Dev51BTrackGraphR18.Pos(seed.getX(),seed.getY(),seed.getZ());
+        Dev51BTrackGraphR18.Reader observer=at->dev51bR18Observe(level,at);
+        Dev51BTrackGraphR18.Result graph=Dev51BTrackGraphR18.scan(observer,start);
+        java.util.List<Dev51BRoutePlannerR19.Anchor> anchors=new java.util.ArrayList<>();
+        java.util.List<Dev51BTrackGraphR18.Pos> markers=new java.util.ArrayList<>();
+        for(long stored:f1cMarkers(level).byVillage.values()) {
+            BlockPos marker=BlockPos.of(stored);
+            if(!level.hasChunkAt(marker))continue;
+            Dev51BTrackGraphR18.Pos pos=new Dev51BTrackGraphR18.Pos(marker.getX(),marker.getY(),marker.getZ());
+            boolean near=false;
+            for(Dev51BTrackGraphR18.Pos node:graph.observedNodes()) {
+                if(Math.abs((long)pos.x()-node.x())<=9 && Math.abs((long)pos.z()-node.z())<=9
+                        &&Math.abs((long)pos.y()-node.y())<=3){near=true;break;}
+            }
+            if(!near)continue;
+            if(markers.contains(pos))continue;
+            markers.add(pos);
+            anchors.add(new Dev51BRoutePlannerR19.Anchor("marker_"+marker.asLong(),pos,9,3));
+        }
+        // Exact station cells are useful when no saved marker identifies the
+        // same station. Adjacent station-cell groups are not distinct stations.
+        java.util.List<Dev51BTrackGraphR18.Pos> stations=new java.util.ArrayList<>();
+        for(Dev51BTrackGraphR18.Pos node:graph.observedNodes()) {
+            Dev51BTrackGraphR18.Cell cell=observer.read(node);
+            if(cell==null||!cell.station())continue;
+            boolean covered=false;
+            for(Dev51BTrackGraphR18.Pos marker:markers)
+                if(Math.abs((long)marker.x()-node.x())<=9 && Math.abs((long)marker.z()-node.z())<=9
+                        &&Math.abs((long)marker.y()-node.y())<=3){covered=true;break;}
+            for(Dev51BTrackGraphR18.Pos station:stations)
+                if(Math.abs((long)station.x()-node.x())<=6 && Math.abs((long)station.z()-node.z())<=6
+                        &&Math.abs((long)station.y()-node.y())<=2){covered=true;break;}
+            if(covered)continue;
+            stations.add(node);
+            anchors.add(new Dev51BRoutePlannerR19.Anchor("station_"+node.x()+"_"+node.y()+"_"+node.z(),node,0,0));
+        }
+        Dev51BRoutePlannerR19.Plan plan=Dev51BRoutePlannerR19.plan(observer,graph,anchors);
+        Dev51BRouteSafetyR21.Report report=Dev51BRouteSafetyR21.inspect(observer,graph,plan,pos -> {
+            BlockPos rail=new BlockPos(pos.x(),pos.y(),pos.z());
+            if(rail.getY()<level.getMinBuildHeight()+1||rail.getY()>=level.getMaxBuildHeight()-2||
+                    !level.hasChunkAt(rail)||!level.hasChunkAt(rail.above(2)))
+                return Dev51BRouteSafetyR21.Witness.UNKNOWN;
+            BlockState state=level.getBlockState(rail);
+            if(state.getBlock() instanceof traincraft.block.track.AbstractLegacyBatchRailBlock ||
+                    state.getBlock() instanceof traincraft.block.track.LegacyMediumCurveRailBlock ||
+                    state.getBlock() instanceof traincraft.block.track.LegacyStraightAssemblyRailBlock)
+                return Dev51BRouteSafetyR21.Witness.NATIVE_OR_DYNAMIC;
+            ResourceLocation id=BuiltInRegistries.BLOCK.getKey(state.getBlock());
+            String name=id.getPath().toLowerCase(java.util.Locale.ROOT);
+            if(id.getNamespace().equals("traincraft") &&
+                    (name.contains("switch")||name.contains("turnout")||name.contains("_segment")))
+                return Dev51BRouteSafetyR21.Witness.NATIVE_OR_DYNAMIC;
+            if(!(state.getBlock() instanceof net.minecraft.world.level.block.BaseRailBlock))
+                return Dev51BRouteSafetyR21.Witness.BLOCKED;
+            if(level.getBlockState(rail.below()).isAir())
+                return Dev51BRouteSafetyR21.Witness.BLOCKED;
+            BlockPos a=rail.above(),b=rail.above(2);
+            if(!level.getBlockState(a).getCollisionShape(level,a).isEmpty() ||
+                    !level.getBlockState(b).getCollisionShape(level,b).isEmpty())
+                return Dev51BRouteSafetyR21.Witness.BLOCKED;
+            return Dev51BRouteSafetyR21.Witness.CLEAR;
+        });
+        LOG.info("[TC-DEV51B-R21] ROUTE_VALIDATION seed={} observedRails={} anchors={} candidatePairs={} reviewOnly={} held={} unknown={} consistent={} partial={} dispatchApproved=false verdict={} forcedChunks=0 blocksWritten=0 trainsMoved=0",
+                seed,graph.nodes(),plan.matchedAnchors(),report.candidates(),report.routeReviewOnly(),report.blocked(),
+                report.totalUnknown(),report.graphConsistent(),report.networkPartial(),report.verdict());
+        for(Dev51BRouteSafetyR21.CheckedRoute candidate:report.routes()){
+            LOG.info("[TC-DEV51B-R21] CANDIDATE from={} to={} links={} turns={} slopes={} clear={} blocked={} unknown={} native={} stopFrom={} stopTo={} verdict={} reasons={} trainDispatch=false",
+                    candidate.from(),candidate.to(),candidate.links(),candidate.turns(),candidate.slopes(),
+                    candidate.observedClear(),candidate.blocked(),candidate.unknown(),candidate.nativeCells(),
+                    candidate.sourceStopObserved(),candidate.destinationStopObserved(),candidate.verdict(),candidate.reasons());
+        }
+        source.sendSuccess(()->Component.literal("[R21] "+report.verdict()+". "+report.candidates()+
+                " candidates, "+report.routeReviewOnly()+" observational reviews, "+report.blocked()+" held."),false);
+        source.sendSuccess(()->Component.literal("[R21] Partial="+report.networkPartial()+
+                ", unknown="+report.totalUnknown()+
+                ". NEVER drive-certified. No world edits, no train movement."),false);
+        if(!report.routes().isEmpty()){
+            Dev51BRouteSafetyR21.CheckedRoute first=report.routes().get(0);
+            source.sendSuccess(()->Component.literal("[R21] First route: "+first.from()+" -> "+first.to()+
+                    " "+first.verdict()+" reasons="+first.reasons()),false);
+        }
+        if(simulateDispatch)dev51bR22ReportDispatchSimulation(source,level,plan,report);
+        if(simulateInterlocking)dev51bR23R24ReportInterlocking(source,observer,graph,plan,report);
+        if(movementDryRun)dev51bR25R26ReportDryRun(source,level,observer,graph,plan,report,crewDryRun);
+        return 1;
+    }
+
+    // R25/R26: one combined read-only route + locomotive stopping + crew
+    // assessment. Uses loaded-only station observations. There is deliberately
+    // NO tick hook, entity velocity, AI goal, switch operation, saved lease,
+    // chunk force, block mutation, or dispatch method anywhere in this probe.
+    private static void dev51bR25R26ReportDryRun(CommandSourceStack source,ServerLevel level,
+            Dev51BTrackGraphR18.Reader reader,Dev51BTrackGraphR18.Result graph,
+            Dev51BRoutePlannerR19.Plan plan,Dev51BRouteSafetyR21.Report safety,
+            boolean includeCrew) {
+        var reservation=Dev51BReservationR23.inspect(reader,graph,plan,safety,java.util.Map.of());
+        var interlock=Dev51BInterlockingR24.inspect(safety,reservation,java.util.Map.of());
+        // Hypothetical 2-block/s brake probe with 1 block/s^2 deceleration;
+        // not an empirical train performance measurement or speed command.
+        var braking=new Dev51BMovementEnvelopeR25.Braking(2.0,1.0,1.0,2.0);
+        var movement=Dev51BMovementEnvelopeR25.examine(safety,interlock,braking,java.util.Map.of());
+        LOG.info("[TC-DEV51B-R25] MOVEMENT_DRYRUN routes={} hypotheticalStopBlocks={} reviewed={} held={} drivingEnabled=false controlWitnesses=NONE worldEdits=0 trainsMoved=0 chunksForced=0",
+                movement.candidates(),Dev51BMovementEnvelopeR25.stoppingDistance(braking),
+                movement.reviewOnly(),movement.held());
+        for(var candidate:movement.results()){
+            LOG.info("[TC-DEV51B-R25] ROUTE from={} to={} links={} stopDistance={} envelopeFits={} blockers={} movementAuthorized=false",
+                    candidate.from(),candidate.to(),candidate.railLinks(),
+                    candidate.stoppingDistanceBlocks(),candidate.hypotheticalEnvelopeFits(),candidate.blockers());
+        }
+        source.sendSuccess(()->Component.literal("[R25] Route movement dry-run: "+movement.candidates()+
+                " candidates, "+movement.held()+" held, hypothetical stop="+
+                Dev51BMovementEnvelopeR25.stoppingDistance(braking)+" blocks. NO MOVEMENT."),false);
+        if(!includeCrew)return;
+        var stored=stations(level); // read-only station SavedData inspection
+        java.util.Map<String,Dev51BVillagerPilotR26.Crew> crew=new java.util.HashMap<>();
+        for(var match:plan.matches()) {
+            var rail=match.rail();
+            if(rail==null)continue;
+            BlockPos railPos=new BlockPos(rail.x(),rail.y(),rail.z());
+            BlockPos origin=stored.closest(railPos,16).orElse(null);
+            boolean loaded=origin!=null&&level.hasChunkAt(origin);
+            var assigned=origin==null?null:stored.getStaff(origin,"railway_engineer");
+            boolean engineerRecorded=assigned!=null&&assigned.uuid!=null&&assigned.respawnAt==0;
+            boolean engineerLoaded=loaded&&engineerRecorded&&level.getEntity(assigned.uuid) instanceof Villager;
+            var staged=origin==null?null:stored.staged(origin);
+            boolean loco=loaded&&staged!=null&&level.getEntity(staged.locomotive())!=null;
+            boolean coach=loaded&&staged!=null&&level.getEntity(staged.coach())!=null;
+            // Destination loaded observation is separate and conservative.
+            boolean destinationLoaded=false;
+            for(var other:plan.matches()){
+                if(match.id().equals(other.id()))continue;
+                var p=other.rail();if(p==null)continue;
+                var stop=stored.closest(new BlockPos(p.x(),p.y(),p.z()),16).orElse(null);
+                if(stop!=null&&level.hasChunkAt(stop)){destinationLoaded=true;break;}
+            }
+            crew.put(match.id(),new Dev51BVillagerPilotR26.Crew(
+                    loaded,destinationLoaded,engineerRecorded,engineerLoaded,
+                    false,false,loco,coach,false,false));
+        }
+        var pilot=Dev51BVillagerPilotR26.assess(movement,interlock,crew);
+        LOG.info("[TC-DEV51B-R26] VILLAGER_PILOT_STATUS routes={} held={} supervisedCandidates={} automationEnabled=false noAIInstalled=true noTrainsSpawned=true noTrainsMoved=true worldEdits=0",
+                pilot.routes(),pilot.held(),pilot.supervisedCandidates());
+        for(var decision:pilot.decisions()){
+            LOG.info("[TC-DEV51B-R26] CREW_ROUTE from={} to={} blockers={} villagerDispatch=false",
+                    decision.from(),decision.to(),decision.blockers());
+        }
+        source.sendSuccess(()->Component.literal("[R26] Villager pilot readiness: "+pilot.routes()+
+                " routes; "+pilot.held()+" held. AI / dispatch DISABLED. No world changes."),false);
+        if(!pilot.decisions().isEmpty()){
+            var first=pilot.decisions().get(0);
+            source.sendSuccess(()->Component.literal("[R26] First blockers: "+first.blockers()),false);
+        }
+    }
+
+    // DEV51B R23 + R24: reconstruct full loaded-only candidate routes before
+    // comparing potential reservations. Does NOT persist a lease or certify a
+    // signal, native switch, level crossing, braking distance or train separation.
+    private static void dev51bR23R24ReportInterlocking(CommandSourceStack source,
+            Dev51BTrackGraphR18.Reader reader,Dev51BTrackGraphR18.Result graph,
+            Dev51BRoutePlannerR19.Plan plan,Dev51BRouteSafetyR21.Report safety) {
+        var leases=Dev51BReservationR23.inspect(reader,graph,plan,safety,
+                java.util.Map.of()); // No persistent leases exist in R23.
+        var interlock=Dev51BInterlockingR24.inspect(safety,leases,
+                java.util.Map.of()); // No live signals or turnout proof in R24.
+        LOG.info("[TC-DEV51B-R23/R24] INTERLOCK_SIM pairs={} reconstructed={} conflicts={} reservationsHeld={} interlockHeld={} movementEnabled=false leaseIssued=false liveSignalsProven=false worldEdits=0 trainsMoved=0 chunksForced=0",
+                leases.pairs(),leases.reconstructed(),leases.conflicted(),leases.held(),interlock.held());
+        for(int i=0;i<leases.candidates().size();i++){
+            var candidate=leases.candidates().get(i);
+            var control=interlock.decisions().get(i);
+            LOG.info("[TC-DEV51B-R23/R24] ROUTE from={} to={} fullPath={} pathCells={} conflicts={} reservationBlockers={} interlockingBlockers={} movementAllowed=false",
+                    candidate.from(),candidate.to(),candidate.fullPathVerified(),candidate.fullPathCells(),
+                    candidate.conflicts(),candidate.blockers(),control.blockers());
+        }
+        source.sendSuccess(()->Component.literal("[R23/R24] Routes="+leases.pairs()+
+                ", full-path verified="+leases.reconstructed()+
+                ", reservation conflicts="+leases.conflicted()+
+                ", interlocking held="+interlock.held()),false);
+        source.sendSuccess(()->Component.literal("[R23/R24] READ ONLY. Unknown signals, turnout alignment, live occupancy and braking. No leases, trains or world changes."),false);
+    }
+
+    // DEV51B R22: SIMULATION ONLY; no movement calls, no saved departure state,
+    // no occupation lease, no redstone operations and no world writes.
+    private static void dev51bR22ReportDispatchSimulation(CommandSourceStack source,ServerLevel level,
+            Dev51BRoutePlannerR19.Plan plan,Dev51BRouteSafetyR21.Report prior) {
+        StationData saved=stations(level); // read-only SavedData access (no setDirty)
+        java.util.Map<String,Dev51BDispatchSimulationR22.Station> stationStates=new java.util.HashMap<>();
+        java.util.Map<String,Dev51BDispatchSimulationR22.Consist> consists=new java.util.HashMap<>();
+        for(Dev51BRoutePlannerR19.Match match:plan.matches()) {
+            Dev51BTrackGraphR18.Pos at=match.rail();
+            if(at==null)continue;
+            BlockPos rail=new BlockPos(at.x(),at.y(),at.z());
+            Optional<BlockPos> found=saved.closest(rail,16);
+            BlockPos station=found.orElse(null);
+            boolean loaded=station!=null && level.hasChunkAt(station);
+            boolean stationRail=loaded && level.getBlockState(station).is(TCBlocks.TRACK_STATION.get());
+            ServicePlan service=station==null?null:saved.service(station);
+            StaffSlot engineer=station==null?null:saved.getStaff(station,"railway_engineer");
+            boolean staffRecorded=engineer!=null && engineer.uuid!=null && engineer.respawnAt==0;
+            boolean staffLoaded=staffRecorded && level.getEntity(engineer.uuid) instanceof Villager;
+            stationStates.put(match.id(),new Dev51BDispatchSimulationR22.Station(
+                    service!=null,loaded,stationRail,staffRecorded,staffLoaded));
+            StagedConsist staged=station==null?null:saved.staged(station);
+            if(service==null || service.index()<0 || service.index()>=SERVICE_PROFILES.length)continue;
+            ServiceProfile profile=SERVICE_PROFILES[service.index()];
+            Entity loco=staged==null?null:level.getEntity(staged.locomotive());
+            Entity coach=staged==null?null:level.getEntity(staged.coach());
+            boolean locoType=loco!=null && profile.locomotive().equals(
+                    BuiltInRegistries.ENTITY_TYPE.getKey(loco.getType()).toString());
+            boolean coachType=coach!=null && profile.coach().equals(
+                    BuiltInRegistries.ENTITY_TYPE.getKey(coach.getType()).toString());
+            consists.put(match.id(),new Dev51BDispatchSimulationR22.Consist(
+                    profile.locomotive(),profile.coach(),service.coaches(),staged==null?0:1,
+                    BuiltInRegistries.ENTITY_TYPE.containsKey(new ResourceLocation(profile.locomotive())),
+                    BuiltInRegistries.ENTITY_TYPE.containsKey(new ResourceLocation(profile.coach())),
+                    locoType,coachType,false)); // coupler verification reserved for R23
+        }
+        // Conservative: no global occupancy reservation, native turnout state,
+        // signalling proof, brake-distance proof or collision lock exists yet.
+        var report=Dev51BDispatchSimulationR22.evaluate(prior,stationStates,consists,
+                java.util.Map.of(),new Dev51BDispatchSimulationR22.Controls(false,false,false,false));
+        LOG.info("[TC-DEV51B-R22] DISPATCH_SIM candidatePairs={} reviewOnly={} held={} occupancyUnknown={} dispatchEnabled=false verdict={} worldEdits=0 trainsMoved=0 forcedChunks=0",
+                report.candidatePairs(),report.reviewOnly(),report.held(),report.unknownOccupancy(),report.verdict());
+        for(Dev51BDispatchSimulationR22.Decision decision:report.decisions()) {
+            LOG.info("[TC-DEV51B-R22] SIM_CANDIDATE from={} to={} verdict={} blockers={} dispatchApproved=false trainSpawned=false",
+                    decision.from(),decision.to(),decision.verdict(),decision.blockers());
+        }
+        source.sendSuccess(()->Component.literal("[R22] "+report.verdict()+"; "+report.held()+
+                " held / "+report.candidatePairs()+" candidates. TRAIN DISPATCH DISABLED."),false);
+        if(!report.decisions().isEmpty()) {
+            var first=report.decisions().get(0);
+            source.sendSuccess(()->Component.literal("[R22] "+first.from()+" -> "+first.to()+
+                " reasons="+first.blockers()),false);
+        }
+    }
+
+    // DEV51B R18: READ-ONLY observation of player-built, reciprocal 1-cell rails.
+    // This does not certify native multi-block rail routing or enable train AI.
+    private static Dev51BTrackGraphR18.Cell dev51bR18Observe(ServerLevel level,
+                                                               Dev51BTrackGraphR18.Pos p) {
+        BlockPos block=new BlockPos(p.x(),p.y(),p.z());
+        if(p.y()<level.getMinBuildHeight() || p.y()>=level.getMaxBuildHeight()
+                ||!level.hasChunkAt(block))
+            return Dev51BTrackGraphR18.Cell.other(Dev51BTrackGraphR18.Kind.UNLOADED,"");
+        BlockState state=level.getBlockState(block);
+        if(state.getBlock() instanceof net.minecraft.world.level.block.BaseRailBlock
+                && state.hasProperty(RailBlock.SHAPE)) {
+            // RailShape name alignment is checked by the headless test helper.
+            Dev51BTrackGraphR18.Shape shape=Dev51BTrackGraphR18.Shape.valueOf(
+                    state.getValue(RailBlock.SHAPE).name());
+            return Dev51BTrackGraphR18.Cell.plain(shape,state.is(TCBlocks.TRACK_STATION.get()));
+        }
+        ResourceLocation id=BuiltInRegistries.BLOCK.getKey(state.getBlock());
+        String name=id.getPath().toLowerCase(java.util.Locale.ROOT);
+        // Unsupported native Traincraft/specialty rails are reported at graph
+        // boundaries, NEVER treated as plain reciprocal connections.
+        boolean complex=state.getBlock() instanceof net.minecraft.world.level.block.BaseRailBlock
+                || id.getNamespace().equals("traincraft")
+                && (name.contains("rail")||name.contains("track")||name.contains("switch")
+                        ||name.contains("turnout")||name.contains("curve"));
+        return Dev51BTrackGraphR18.Cell.other(complex?
+                Dev51BTrackGraphR18.Kind.COMPLEX:Dev51BTrackGraphR18.Kind.EMPTY,name);
+    }
+
+    private static int dev51bR18ReadOnlyNetworkScan(CommandSourceStack source) {
+        ServerLevel level=source.getLevel();
+        BlockPos player=BlockPos.containing(source.getPosition());
+        BlockPos seed=null;
+        long bestCost=Long.MAX_VALUE;
+        int unsupportedNear=0;
+        for(int dx=-12;dx<=12;dx++)for(int dz=-12;dz<=12;dz++) {
+            for(int dy=-24;dy<=12;dy++) {
+                BlockPos at=player.offset(dx,dy,dz);
+                if(at.getY()<level.getMinBuildHeight()||at.getY()>=level.getMaxBuildHeight()
+                        ||!level.hasChunkAt(at))continue;
+                Dev51BTrackGraphR18.Cell cell=dev51bR18Observe(level,
+                        new Dev51BTrackGraphR18.Pos(at.getX(),at.getY(),at.getZ()));
+                if(cell.kind()==Dev51BTrackGraphR18.Kind.COMPLEX)unsupportedNear++;
+                if(cell.kind()!=Dev51BTrackGraphR18.Kind.PLAIN)continue;
+                long cost=(long)dx*dx+(long)dz*dz+(long)dy*dy/4L;
+                if(cost<bestCost){bestCost=cost;seed=at;}
+            }
+        }
+        if(seed==null) {
+            int count=unsupportedNear;
+            source.sendFailure(Component.literal("[R18] No supported 1-cell rails within search area; nearby complex rail cells="+count+". NO CHANGES."));
+            LOG.info("[TC-DEV51B-R18] SCAN_NO_SEED player={} unsupportedCells={} loadedOnly=true worldEdits=0",player,count);
+            return 0;
+        }
+        Dev51BTrackGraphR18.Pos start=new Dev51BTrackGraphR18.Pos(seed.getX(),seed.getY(),seed.getZ());
+        Dev51BTrackGraphR18.Result result=Dev51BTrackGraphR18.scan(
+                at->dev51bR18Observe(level,at),start);
+        int markerCount=0;
+        for(long stored:f1cMarkers(level).byVillage.values()) {
+            BlockPos marker=BlockPos.of(stored);
+            if(!level.hasChunkAt(marker))continue;
+            for(Dev51BTrackGraphR18.Pos node:result.observedNodes()) {
+                if(Math.abs(marker.getX()-node.x())<=9&&Math.abs(marker.getY()-node.y())<=3
+                        &&Math.abs(marker.getZ()-node.z())<=9){markerCount++;break;}
+            }
+        }
+        int markers=markerCount;
+        LOG.info("[TC-DEV51B-R18] PLAYER_TRACK_SCAN seed={} nodes={} reciprocalEdges={} openPorts={} bends={} slopes={} stationCells={} stationMarkers={} complexBoundaries={} switches={} complexTurns={} unloaded={} ambiguous={} clipped={} capped={} verdict={} topologyOnly=true nativeRouteCertified=false trainsMoved=0 AIEnabled=false chunksForced=0 worldEdits=0",
+                seed,result.nodes(),result.edges(),result.openPorts(),result.curves(),result.slopes(),
+                result.stationCells(),markers,result.complexBoundaries(),result.switchCells(),
+                result.turnCells(),result.unloadedBoundaries(),result.ambiguousPorts(),
+                result.clippedPorts(),result.capReached(),result.verdict());
+        source.sendSuccess(()->Component.literal("[R18] "+result.nodes()+" observed 1-cell rails, "
+                +result.edges()+" reciprocal links, "+result.openPorts()+" unlinked ports. "
+                +result.verdict()),false);
+        source.sendSuccess(()->Component.literal("[R18] Bends="+result.curves()+" slopes="+result.slopes()
+                +" station cells="+result.stationCells()+" marked stops="+markers
+                +" complex neighbors="+result.complexBoundaries()+" switches="+result.switchCells()),false);
+        source.sendSuccess(()->Component.literal("[R18] Unloaded="+result.unloadedBoundaries()
+                +" ambiguous="+result.ambiguousPorts()+" range clipped="+result.clippedPorts()
+                +". Loaded-only read-only scan; NOT train drive certification."),false);
+        return 1;
+    }
 
     // DEV50f1: Construction-first pivot. A REAL but deliberately short native
     // straight rail stop, not a hypothetical loop. Explicit operator action,
@@ -6920,6 +10189,7 @@ public final class RailwayVillageWorldgen {
         return new F1Try(null,"NO_SAFE_STRAIGHT_SITE: "+failed);
     }
     private static int f1Railway(CommandSourceStack src,boolean place){
+        if (PLAYER_OPERATED_STATIONS_ONLY && place) {src.sendFailure(Component.literal("Experimental railway corridor construction retired."));return 0;}
         ServerLevel level=src.getLevel();
         if(!dev50e2WorldAllowed(level)) {
             src.sendFailure(Component.literal("DEV50f1 test-only railway placement allowed ONLY in "
@@ -7613,6 +10883,179 @@ public final class RailwayVillageWorldgen {
         return null;
     }
 
+    // DEV51B R17: photograph-driven follow-up to R16. R16 laid a solid
+    // surface around the walls but some columns retained *air underneath*
+    // and some outside edges still descended into 1-2 block pockets.
+    // Reconcile the FINISHED R16+R13+station plan, never the raw terrain
+    // independently. This helper has NO setBlock calls. It records every
+    // filled cell via f1PlanCell and uses the existing exact-state preview,
+    // place-time preimage verification and same-session undo. Do not touch
+    // the accepted DEV50E6 reference structure, player objects, original
+    // stations, rail bed or the designs of any of the ten station variants.
+    private static String dev51bR17SealDesertEdges(ServerLevel level,F1Proposal base,
+            F1eDesign design,Map<BlockPos,BlockState> before,
+            Map<BlockPos,BlockState> changes){
+        final int floorY=base.center().getY()-1;
+        // A surface is only recognized if this very transaction explicitly
+        // planned it, including when it equals the original block state.
+        // Thus ordinary sand outside the actual platform/building/paths does
+        // not silently become a new foundation or a construction target.
+        Map<BlockPos,Integer> surfaced=new LinkedHashMap<>();
+        for(int along=-10;along<=10;along++)for(int side=4;side<=16;side++){
+            BlockPos col=f1dAt(base,along,side);
+            BlockPos full=col.atY(floorY);
+            BlockState fullState=changes.getOrDefault(full,level.getBlockState(full));
+            if(before.containsKey(full)&&dev51bR17Paved(fullState)){
+                surfaced.put(col,floorY);
+                continue;
+            }
+            // R16's OUTER ring is one natural sand step lower.
+            BlockPos lower=col.atY(floorY-1);
+            BlockState lowState=changes.getOrDefault(lower,level.getBlockState(lower));
+            if(before.containsKey(lower)&&dev51bR17Paved(lowState)
+                    &&!f1eHut(design,along,side))surfaced.put(col,floorY-1);
+        }
+        if(surfaced.isEmpty())return "R17_NO_DESERT_STATION_FLOORS";
+        int sealed=0,checked=0,outerScanned=0,outerFilled=0,softCleared=0;
+        // Any planned floor must have a two-deep solid footing. R16 could
+        // leave air beneath a surface because its fill loop only ran when
+        // the ORIGINAL heightmap was lower than the finished floor.
+        for(var entry:surfaced.entrySet()){
+            BlockPos column=entry.getKey();int surfaceY=entry.getValue();
+            if(!level.hasChunkAt(column))return "R17_FOOTING_UNLOADED";
+            BlockPos witness=column.atY(surfaceY-3);
+            if(!dev51bR17SafeNaturalCell(level,witness))
+                return "R17_FOOTING_UNSAFE_WITNESS";
+            BlockState under=level.getBlockState(witness);
+            if(under.isAir()||under.canBeReplaced())return "R17_FOOTING_DEEP_VOID";
+            for(int y=surfaceY-2;y<surfaceY;y++){
+                BlockPos cell=column.atY(y);
+                if(!dev51bR17SafeNaturalCell(level,cell))return "R17_FOOTING_PROTECTED";
+                BlockState planned=changes.getOrDefault(cell,level.getBlockState(cell));
+                if(planned.isAir()||planned.canBeReplaced()){
+                    // Never overwrite a previously planned non-air station
+                    // detail, protected player block or fluid. Only shallow
+                    // natural voids may be sealed with sandstone subsoil.
+                    if(changes.containsKey(cell)&&!changes.get(cell).isAir())
+                        return "R17_FOOTING_PLAN_CONFLICT";
+                    BlockState fill=Blocks.SANDSTONE.defaultBlockState();
+                    if(!f1PlanCell(level,cell,fill,before,changes))
+                        return "R17_FOOTING_PLAN_REJECTED";
+                    sealed++;
+                }else if(!f1NaturalOrEmpty(planned)){
+                    // The original sandstone/sandstone-stair station footings
+                    // are allowed only when explicitly part of this plan.
+                    if(!before.containsKey(cell))return "R17_FOOTING_NON_NATURAL";
+                }
+            }
+            checked++;
+        }
+        // Every exposed perimeter edge gets a read-only depth check.
+        // Only a one-block safety shoulder is created for a low pocket,
+        // limited to natural terrain within the original +/-2 rule.
+        // Deep caves, changed material, structures, liquids or steep slopes
+        // block the proposal rather than causing an unbounded fill/clear.
+        for(var entry:surfaced.entrySet()){
+            BlockPos start=entry.getKey();int currentY=entry.getValue();
+            for(int dx=-1;dx<=1;dx++)for(int dz=-1;dz<=1;dz++){
+                if(Math.abs(dx)+Math.abs(dz)!=1)continue;
+                BlockPos col=start.offset(dx,0,dz);
+                int along=base.alongX()?col.getX()-base.center().getX()
+                        :col.getZ()-base.center().getZ();
+                int toward=base.alongX()
+                        ?Integer.compare(base.village().getZ(),base.center().getZ())
+                        :Integer.compare(base.village().getX(),base.center().getX());
+                if(toward==0)toward=1;
+                int side=base.alongX()?(col.getZ()-base.center().getZ())*toward
+                        :(col.getX()-base.center().getX())*toward;
+                if(along< -11||along>11||side<4||side>17)continue;
+                if(surfaced.containsKey(col))continue;
+                // A building or planned rail/canopy piece must never be
+                // rewritten by an outside shoulder; these get validated by
+                // the station's own earlier full 3D layout plan.
+                if(f1eHut(design,along,side))return "R17_UNPLANNED_HUT_EDGE";
+                if(!level.hasChunkAt(col))return "R17_EDGE_UNLOADED";
+                int naturalTop=level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                        col.getX(),col.getZ());
+                int safeShoulderY=currentY-1;
+                if(naturalTop<safeShoulderY-1)
+                    return "R17_EDGE_DEEP_HOLE";
+                if(naturalTop>currentY+2)
+                    return "R17_EDGE_STEEP_DUNE";
+                outerScanned++;
+                if(naturalTop>=currentY)continue;
+                // The near-flat one-block margin may be filled, but it
+                // cannot be extended indefinitely from this new surface:
+                // only ORIGINAL planned floors seed the one-cell edge scan.
+                long vx=(long)col.getX()-base.village().getX();
+                long vz=(long)col.getZ()-base.village().getZ();
+                if(vx*vx+vz*vz<40L*40L)return "R17_EDGE_VILLAGE_BUFFER";
+                if(f1aOverlapsQuarantine(col,base.alongX(),1))
+                    return "R17_EDGE_QUARANTINE";
+                BlockPos witness=col.atY(safeShoulderY-2);
+                if(!dev51bR17SafeNaturalCell(level,witness))
+                    return "R17_EDGE_UNSAFE_WITNESS";
+                BlockState support=level.getBlockState(witness);
+                if(support.isAir()||support.canBeReplaced())
+                    return "R17_EDGE_UNSUPPORTED";
+                for(int y=safeShoulderY-1;y<=currentY+2;y++){
+                    if(!dev51bR17SafeNaturalCell(level,col.atY(y)))
+                        return "R17_EDGE_PROTECTED";
+                }
+                for(int y=safeShoulderY-1;y<safeShoulderY;y++){
+                    BlockPos under=col.atY(y);
+                    BlockState target=changes.getOrDefault(under,level.getBlockState(under));
+                    if(target.isAir()||target.canBeReplaced()){
+                        if(changes.containsKey(under))return "R17_EDGE_PLAN_CONFLICT";
+                        if(!f1PlanCell(level,under,Blocks.SANDSTONE.defaultBlockState(),before,changes))
+                            return "R17_EDGE_FILL_REJECTED";
+                        outerFilled++;
+                    }
+                }
+                BlockPos top=col.atY(safeShoulderY);
+                // Do not override a previous hut/path or even an air plan.
+                if(changes.containsKey(top))continue;
+                if(!f1NaturalOrEmpty(level.getBlockState(top)))
+                    return "R17_EDGE_UNSAFE_SURFACE";
+                if(!f1PlanCell(level,top,Blocks.SAND.defaultBlockState(),before,changes))
+                    return "R17_EDGE_SURFACE_REJECTED";
+                outerFilled++;
+                for(int y=safeShoulderY+1;y<=currentY+2;y++){
+                    BlockPos head=col.atY(y);
+                    if(changes.containsKey(head))continue;
+                    BlockState old=level.getBlockState(head);
+                    if(old.isAir())continue;
+                    if(!f1NaturalOrEmpty(old))return "R17_EDGE_UNSAFE_HEADROOM";
+                    // Safely clear only two blocks of ordinary loose cover.
+                    if(y>safeShoulderY+2)return "R17_EDGE_TALL_OBSTRUCTION";
+                    if(!f1PlanCell(level,head,Blocks.AIR.defaultBlockState(),before,changes))
+                        return "R17_EDGE_CLEAR_REJECTED";
+                    softCleared++;
+                }
+            }
+        }
+        LOG.info("[TC-DEV51B-R17] FOOTING_EDGE_PLAN center={} design={} pavedColumns={}"
+                +" sealedShallowVoids={} rimChecks={} rimFillCells={} naturalHeadroom={}"
+                +" noDeepCaveFills=true onlyNaturalBlocks=true railUntouched=true"
+                +" originalStationUntouched=true exactPreimages=true worldEdits=0",
+                base.center(),design,checked,sealed,outerScanned,outerFilled,softCleared);
+        return null;
+    }
+
+    private static boolean dev51bR17Paved(BlockState state){
+        return state.is(Blocks.SANDSTONE)||state.is(Blocks.SAND)
+                ||state.is(Blocks.SMOOTH_SANDSTONE)||state.is(Blocks.CUT_SANDSTONE);
+    }
+
+    private static boolean dev51bR17SafeNaturalCell(ServerLevel level,BlockPos cell){
+        if(!level.hasChunkAt(cell))return false;
+        if(level.structureManager().getStructureWithPieceAt(cell,StructureTags.VILLAGE).isValid())
+            return false;
+        BlockState old=level.getBlockState(cell);
+        return old.getFluidState().isEmpty()&&level.getBlockEntity(cell)==null
+                &&f1NaturalOrEmpty(old);
+    }
+
     private static F1Try f1dDecorate(ServerLevel level,F1Proposal base,boolean abandoned){
         String style=f1dStyle(level,base.village());
         F1eDesign design=f1eDesign(level,base.village());
@@ -7770,6 +11213,11 @@ public final class RailwayVillageWorldgen {
             if(perimeterFailure!=null)return new F1Try(null,perimeterFailure);
             String failure=dev51bR13PlanDesertApproach(level,base,before,changes);
             if(failure!=null)return new F1Try(null,failure);
+            // R17 runs last, after all station/pillar/platform, perimeter,
+            // and walkway surfaces have been decided. It only seals shallow
+            // voids that would otherwise leave visible open trenches.
+            String edgeFailure=dev51bR17SealDesertEdges(level,base,design,before,changes);
+            if(edgeFailure!=null)return new F1Try(null,edgeFailure);
         }
         if(changes.size()>3500)return new F1Try(null,"STATION_CHANGE_LIMIT");
         int minX=Integer.MAX_VALUE,minY=Integer.MAX_VALUE,minZ=Integer.MAX_VALUE;
@@ -7892,6 +11340,9 @@ public final class RailwayVillageWorldgen {
         LOG.info("[TC-DEV51B-R15] COMPACT_STATION_PREVIEW railBlocks={} platformBlocks=15 extensionEnds=2 worldEdits=0",p.length());
         LOG.info("[TC-DEV51B-R16] SAFE_PERIMETER_PREVIEW station={} exactPreimages=true"
                 +" terrainApron=PLANNED approval=MANUAL_ONLY worldEdits=0",p.center());
+        LOG.info("[TC-DEV51B-R17] GUARDED_SURFACE_PREVIEW station={} railBlocks=17"
+                +" platformBlocks=15 terrainAudit=FOOTING_AND_EDGE_PLAN exactPreimages=true"
+                +" approval=MANUAL_ONLY worldEdits=0",p.center());
         LOG.info(F1_LOG+" STATION_TEST_PREVIEW {} forcedPreview=true naturalChancePolicyUnchanged=true noForcedChunks=true worldChanged=false subwayConstruction=DISABLED",details);
         src.sendSuccess(()->Component.literal("[F1H PREVIEW ONLY] "+details+". No blocks changed. Confirm within 2 min with /tcrailway village railway stationtestplace confirm; or /tcrailway village railway stationtestcancel."),false);
         return 1;
@@ -9046,7 +12497,7 @@ public final class RailwayVillageWorldgen {
             src.sendFailure(Component.literal("[R14] Existing station/rail marker near village. No changes."));return 0;
         }
         f1pSurvey=new F1pSurvey(level,village,player.getUUID());
-        f1pNote(f1pSurvey,"START","Stand still near the village while loaded-only scouting completes. Up to 96 positions; R16 checks 17 rails plus protected desert station perimeter; full validation runs one site per two seconds.");
+        f1pNote(f1pSurvey,"START","Stand still near the village while loaded-only scouting completes. Up to 96 positions; R17 checks station footings, wall/corner edges, R16 apron and 17 rails; full validation runs one site per two seconds.");
         return 1;
     }
     private static int f1pSurveyStatus(CommandSourceStack src){
@@ -9145,7 +12596,7 @@ public final class RailwayVillageWorldgen {
             if(s.scouted==F1P_CAP){
                 s.ranked.sort(java.util.Comparator.comparingInt(F1pScored::score));
                 f1pNote(s,"SCOUT_DONE","Loaded flat dry sites="+s.ranked.size()
-                        +"; starting complete 17-rail + R16 perimeter + R13 station/path validation.");
+                        +"; starting complete 17-rail + R17 edge/footing + R16 perimeter + R13 path validation.");
                 if(s.ranked.isEmpty())f1pFinish(s,"NO_LOADED_FLAT_SITES");
             }
             return;
@@ -9625,6 +13076,102 @@ public final class RailwayVillageWorldgen {
         return 1;
     }
 
+    // DEV51B R40M: explicit, READ-ONLY, loaded-only village site survey.
+    // It neither creates/loads distant chunks nor alters station records or terrain.
+    // Strictly limited to the disposable R40 acceptance save.
+    private record R40MFoundVillage(BlockPos structureCenter, String villageType) {}
+
+    private static int r40mAutoScan(CommandSourceStack src) {
+        ServerLevel level = src.getLevel();
+        if (!r40j4TestWorld(level)) {
+            src.sendFailure(Component.literal("[R40M] Autoscan is available ONLY in DEV51B R40 Station Acceptance."));
+            return 0;
+        }
+        BlockPos player = BlockPos.containing(src.getPosition());
+        final int chunkRadius = 24; // search existing, currently LOADED chunks only
+        final int maxReported = 12;
+        int pcx = player.getX() >> 4, pcz = player.getZ() >> 4;
+        int loadedChunks = 0, unloadedSkipped = 0, vanillaStarts = 0;
+        Map<String, R40MFoundVillage> found = new LinkedHashMap<>();
+        for (int cx = pcx - chunkRadius; cx <= pcx + chunkRadius; cx++) {
+            for (int cz = pcz - chunkRadius; cz <= pcz + chunkRadius; cz++) {
+                if (!level.hasChunk(cx, cz)) { unloadedSkipped++; continue; }
+                loadedChunks++;
+                // Existing code already uses hasChunk + getChunk for this exact
+                // read-only StructureStart API. Never call getChunk if absent.
+                for (StructureStart start : level.getChunk(cx, cz).getAllStarts().values()) {
+                    if (start == null || !start.isValid()) continue;
+                    ResourceLocation id = level.registryAccess()
+                            .registryOrThrow(Registries.STRUCTURE).getKey(start.getStructure());
+                    if (id == null || !"minecraft".equals(id.getNamespace())) continue;
+                    String type = id.getPath();
+                    if (!("village_plains".equals(type) || "village_desert".equals(type)
+                            || "village_savanna".equals(type) || "village_taiga".equals(type)
+                            || "village_snowy".equals(type))) continue;
+                    vanillaStarts++;
+                    BlockPos c = start.getBoundingBox().getCenter();
+                    String key = type + ":" + c.getX() + ":" + c.getZ();
+                    found.putIfAbsent(key, new R40MFoundVillage(c, type));
+                }
+            }
+        }
+        List<R40MFoundVillage> ranked = new ArrayList<>(found.values());
+        ranked.sort(Comparator.comparingDouble(v ->
+                Math.pow((double) v.structureCenter().getX() - player.getX(), 2)
+                + Math.pow((double) v.structureCenter().getZ() - player.getZ(), 2)));
+        int safe = 0, noSafe = 0, held = 0, reported = 0;
+        List<String> results = new ArrayList<>();
+        for (R40MFoundVillage v : ranked) {
+            if (reported >= maxReported) break;
+            reported++;
+            BlockPos anchor = v.structureCenter();
+            String status;
+            if (!level.hasChunk(anchor.getX() >> 4, anchor.getZ() >> 4)) {
+                held++;
+                status = "HOLD_UNLOADED_CENTER";
+            } else {
+                int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES,
+                        anchor.getX(), anchor.getZ());
+                BlockPos village = new BlockPos(anchor.getX(), y, anchor.getZ());
+                // Same exact 40-candidate R40J4 foundation rules as /tcrailway diagnose.
+                SiteSearch site = inspectSites(level, village);
+                if (site.site().isPresent()) {
+                    safe++;
+                    BlockPos candidate = site.site().get().center();
+                    status = "SAFE at " + candidate.toShortString();
+                } else {
+                    Map<String, Integer> rejects = site.rejections();
+                    // A partial loaded area is not proof terrain is unsuitable.
+                    boolean missing = rejects.containsKey("missing_chunk_or_height")
+                            || rejects.containsKey("unloaded");
+                    if (missing) { held++; status = "HOLD_PARTIAL rejects=" + rejects; }
+                    else { noSafe++; status = "NO_SAFE_SITE rejects=" + rejects; }
+                }
+            }
+            results.add("[R40M] " + reported + " " + v.villageType()
+                    + " center=" + anchor.getX() + "," + anchor.getZ()
+                    + " " + status);
+        }
+        String summary = "[R40M] loaded=" + loadedChunks + " skipped=" + unloadedSkipped
+                + " villageStarts=" + vanillaStarts + " distinct=" + found.size()
+                + " shown=" + reported + " SAFE=" + safe + " NO_SAFE=" + noSafe
+                + " HOLD=" + held + " writes=0 newChunks=0";
+        LOG.info("[TC-DEV51B-R40M] AUTOSCAN {}", summary);
+        src.sendSuccess(() -> Component.literal(summary), false);
+        for (String result : results) {
+            LOG.info("[TC-DEV51B-R40M] AUTOSCAN {}", result);
+            src.sendSuccess(() -> Component.literal(result), false);
+        }
+        if (found.isEmpty()) {
+            src.sendSuccess(() -> Component.literal(
+                    "[R40M] No village structure starts in loaded chunks. Scan a different loaded area; this does not search unexplored terrain."), false);
+        } else {
+            src.sendSuccess(() -> Component.literal(
+                    "[R40M] READ-ONLY. SAFE is terrain eligibility, not guaranteed natural spawning. Nothing built or teleported."), false);
+        }
+        return 1;
+    }
+
     private static int diagnose(CommandSourceStack src) {
         ServerLevel level=src.getLevel();
         if (!level.dimension().equals(Level.OVERWORLD)) {
@@ -9819,6 +13366,7 @@ public final class RailwayVillageWorldgen {
             src.sendFailure(Component.literal("Terrain changed; cancelled safely"));return 0;
         }
         placeStation(level,chosen);
+        if (r40j4TestWorld(level)) r40j4AddSupports(level,chosen.center());
         saved.add(chosen.center(),true);
         saved.setService(chosen.center(),chooseService(level,chosen.center(),0));
         LOG.info(LOG_PREFIX+"COMMAND station={} village={}",chosen.center(),chosen.villageReference());
@@ -10031,6 +13579,7 @@ public final class RailwayVillageWorldgen {
     }
 
     private static int networkCommand(CommandSourceStack src,boolean place) {
+        if (PLAYER_OPERATED_STATIONS_ONLY) {src.sendFailure(Component.literal("Generated network construction retired. Lay tracks yourself; network audit remains available."));return 0;}
         ServerLevel level=src.getLevel();
         if (!level.dimension().equals(Level.OVERWORLD)) {
             src.sendFailure(Component.literal("Surface network test is Overworld-only"));return 0;
@@ -10202,6 +13751,7 @@ public final class RailwayVillageWorldgen {
     // villager/train intersection or a failed post-audit all STOP before save.
     // An old world remains LEGACY_V1 until /tcrailway network widen apply.
     private static int widenNetwork(CommandSourceStack src, boolean apply) {
+        if (PLAYER_OPERATED_STATIONS_ONLY && apply) {src.sendFailure(Component.literal("Automatic network widening retired. Existing tracks stay unchanged."));return 0;}
         ServerLevel level=src.getLevel();
         if (!level.dimension().equals(Level.OVERWORLD)) {
             src.sendFailure(Component.literal("Widening is Overworld-only")); return 0;

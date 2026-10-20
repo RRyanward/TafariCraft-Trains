@@ -206,7 +206,11 @@ public final class Dev50D3VExactPoweredHeadlights {
         Spec spec = SPECS.get(meshId);
         if (spec == null || !e.isAlive() || !verified(meshId,spec)) return;
         float brightness = night(e.level().getDayTime());
-        boolean active = powered(e) && brightness > 0.005F;
+        // DEV55L3: only preview entities have this synced hidden name.
+        // Gameplay locomotives still require actual diesel/electric power.
+        boolean tcDev55L3ReviewLamp = e.getCustomName() != null
+                && "DEV55L3_TEST_LAMPS".equals(e.getCustomName().getString());
+        boolean active = (powered(e) || tcDev55L3ReviewLamp) && brightness > 0.005F;
         long bucket=e.level().getGameTime()/60L;
         boolean log = !java.util.Objects.equals(LAST_LOG.put(e.getUUID(),bucket),bucket);
         if (log) LOG.info("[TC-D3X1-GATE] mesh={} entity={} variant={} diesel={} electric={} "
@@ -218,6 +222,29 @@ public final class Dev50D3VExactPoweredHeadlights {
         VertexConsumer v=buffers.getBuffer(LIGHT_PASS);
         Matrix4f renderPose=pose.last().pose();
         Marker[] ms=spec.markers();
+        // DEV55L19: pilot-only powered front lamps, preserving the original red tails.
+        String tcL19Id=(meshId.equals("gp7")||meshId.equals("kof")||meshId.equals("shunter"))
+                ? "locomotive_diesel_"+meshId : "locomotive_electric_"+meshId;
+        if (traincraft.client.renderer.legacy.Dev55L19FleetBeams.active(e,tcL19Id)) {
+            double[][] tcL19Marks=new double[ms.length][4];
+            for(int i=0;i<ms.length;i++){
+                Marker lamp=ms[i];boolean front=meshId.equals("br_e69")?!lamp.front():lamp.front();
+                // DEV55L26: new Creative-review red tail face only;
+                // preserve reviewed lamp marker XYZ and ALL white beam paths.
+                // The rear of these exact powered meshes faces +X; negative
+                // depth sinks the red face inward in model coordinates.
+                float redDepth=front?0F:traincraft.debug.Dev55L19Settings.getTailDepth(tcL19Id);
+                Marker reviewLens=redDepth==0F?lamp:new Marker(lamp.x()+redDepth,lamp.y(),lamp.z(),false);
+                face(v,renderPose,reviewLens,front?-1F:1F,brightness,front);
+                tcL19Marks[i][0]=lamp.x();tcL19Marks[i][1]=lamp.y();
+                tcL19Marks[i][2]=lamp.z();tcL19Marks[i][3]=front?1D:0D;
+            }
+            traincraft.client.renderer.legacy.Dev55L19FleetBeams.setWorld(
+                traincraft.client.renderer.legacy.Dev55L19FleetBeams.worldMatrix(
+                    e.getRenderTrainFacingYaw(pt),0D,0F,tx,ty,tz,rx,ry,rz,sx,sy,sz));
+            if(traincraft.client.renderer.legacy.Dev55L19FleetBeams.render(
+                    e,tcL19Id,v,renderPose,tcL19Marks,brightness))return;
+        }
         // DEV50d3X2: keep all verified lens positions and assignments from X1. The accepted Shunter and
         // Minetrain dispatch below is deliberately not changed.
         if (meshId.equals("kof") || meshId.equals("gp7") || meshId.equals("br_e69")) {
@@ -315,7 +342,13 @@ public final class Dev50D3VExactPoweredHeadlights {
                              + "originalXYZ=({},{},{}) placedXYZ=({},{},{}) faceDir={} e69Swapped={}",
                     meshId,e.getId(),i+1,head,m.x(),m.y(),m.z(),x,m.y(),m.z(),
                     head?frontDir:-frontDir,brE69);
-            face(v,renderPose,placed[i],head?frontDir:-frontDir,brightness,head);
+            // DEV55L26: Creative-review rear RED lens shift ONLY.
+            // The accepted powered marker, and every white collision ray, stays frozen.
+            // -X is the front for these meshes; the red tail faces +X.
+            float sink=(!head && traincraft.debug.Dev55L19Settings.enabled(e))
+                ? traincraft.debug.Dev55L19Settings.getTailDepth(e.variantId()) : 0F;
+            Marker lens=(!head && sink!=0F)?new Marker(x+sink,m.y(),m.z(),false):placed[i];
+            face(v,renderPose,lens,head?frontDir:-frontDir,brightness,head);
             if (head) frontCount++; else tailCount++;
         }
         // The user-reviewed pattern is 3+3 for GP7/Kof, and 4+4 for BR E69.

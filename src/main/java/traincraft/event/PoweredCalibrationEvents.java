@@ -33,9 +33,10 @@ public final class PoweredCalibrationEvents {
 
     private PoweredCalibrationEvents() {}
 
+    @SubscribeEvent
     public static void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
-                Commands.literal("tccal")
+                Commands.literal("tct")
                         .then(Commands.literal("status")
                                 .executes(ctx -> status(ctx.getSource())))
                         .then(Commands.literal("next")
@@ -135,7 +136,7 @@ public final class PoweredCalibrationEvents {
         LegacyPoweredLocomotive target = selectedTarget(serverPlayer);
         if (target == null) {
             serverPlayer.displayClientMessage(
-                    Component.literal("[TC CAL] No selected train. Use /tccal select <name> or crouch + Compass."),
+                    Component.literal("[TC CAL] No selected train. Use /tct select <name> or crouch + Compass."),
                     false);
             consume(event);
             return;
@@ -303,7 +304,7 @@ public final class PoweredCalibrationEvents {
         LegacyPoweredLocomotive target = selectedTarget(player);
         if (target == null) {
             player.displayClientMessage(
-                    Component.literal("[TC CAL] No selected train. Use /tccal select <name>."),
+                    Component.literal("[TC CAL] No selected train. Use /tct select <name>."),
                     false);
         }
         return target;

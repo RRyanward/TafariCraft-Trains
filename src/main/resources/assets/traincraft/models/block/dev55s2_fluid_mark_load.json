@@ -1,0 +1,47 @@
+{
+  "parent": "minecraft:block/block",
+  "ambientocclusion": false,
+  "render_type": "minecraft:cutout",
+  "textures": {
+    "particle": "minecraft:block/rail",
+    "mark": "traincraft:block/fluid_port_load",
+    "metal": "minecraft:block/iron_block"
+  },
+  "elements": [
+    {
+      "from": [
+        2,
+        1,
+        2
+      ],
+      "to": [
+        14,
+        1.35,
+        14
+      ],
+      "faces": {
+        "up": {
+          "texture": "#mark",
+          "uv": [
+            0,
+            0,
+            16,
+            16
+          ]
+        },
+        "north": {
+          "texture": "#metal"
+        },
+        "south": {
+          "texture": "#metal"
+        },
+        "east": {
+          "texture": "#metal"
+        },
+        "west": {
+          "texture": "#metal"
+        }
+      }
+    }
+  ]
+}

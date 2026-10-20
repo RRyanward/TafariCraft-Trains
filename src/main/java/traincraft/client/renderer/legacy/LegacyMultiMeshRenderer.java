@@ -97,6 +97,10 @@ public abstract class LegacyMultiMeshRenderer<T extends Entity> extends EntityRe
             }
             VertexConsumer vertices = buffers.getBuffer(RenderType.entityTranslucentCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, p.texture)));
             p.mesh.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+            Dev55L19FleetBeams.setWorld(Dev55L19FleetBeams.worldMatrix(trainYaw,0D,0F,tx,ty,tz,rx,ry,rz,sx,sy,sz)
+                    .translate((float)p.tx,(float)p.ty,(float)p.tz)
+                    .rotateX((float)Math.toRadians(p.rx)).rotateY((float)Math.toRadians(p.ry))
+                    .rotateZ((float)Math.toRadians(p.rz)).scale(p.sx,p.sy,p.sz));
             Dev44TrainLightVisuals.draw(p.meshId, entity, poseStack, buffers,
                     p.mesh.minX(), p.mesh.maxX(), p.mesh.minY());
             poseStack.popPose();

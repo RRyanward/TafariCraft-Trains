@@ -47,11 +47,17 @@ public final class SmallSteamLocomotiveModel {
         // xRot spins the authored texture around the actual axle center.
         PartDefinition body = root.addOrReplaceChild("body", boxes, PartPose.ZERO);
 
-        body.addOrReplaceChild(
+        PartDefinition rightFront = body.addOrReplaceChild(
                 "wheel_right_front",
                 CubeListBuilder.create().texOffs(0, 24)
                         .addBox(-1.0F, -4.0F, -4.0F, 2.0F, 8.0F, 8.0F),
                 PartPose.offset(5.0F, 33.0F, 0.0F));
+        // DEV54H15AK: crank caps follow the wheel's existing rotation;
+        // these are hidden unless the independent Small Steam pilot is ON.
+        rightFront.addOrReplaceChild("h15ak_crank",
+                CubeListBuilder.create().texOffs(0, 24)
+                    .addBox(-.22F,-.45F,-.45F,.44F,.90F,.90F),
+                PartPose.offset(1.45F,0.0F,1.50F));
         body.addOrReplaceChild(
                 "wheel_right_rear",
                 CubeListBuilder.create().texOffs(0, 24)
@@ -62,11 +68,26 @@ public final class SmallSteamLocomotiveModel {
                 CubeListBuilder.create().texOffs(0, 40)
                         .addBox(-1.0F, -4.0F, -4.0F, 2.0F, 8.0F, 8.0F),
                 PartPose.offset(-5.0F, 33.0F, -12.0F));
-        body.addOrReplaceChild(
+        PartDefinition leftFront = body.addOrReplaceChild(
                 "wheel_left_front",
                 CubeListBuilder.create().texOffs(0, 40)
                         .addBox(-1.0F, -4.0F, -4.0F, 2.0F, 8.0F, 8.0F),
                 PartPose.offset(-5.0F, 33.0F, 0.0F));
+        leftFront.addOrReplaceChild("h15ak_crank",
+                CubeListBuilder.create().texOffs(0, 40)
+                    .addBox(-.22F,-.45F,-.45F,.44F,.90F,.90F),
+                PartPose.offset(-1.45F,0.0F,1.50F));
+        // A separate moving rod from each FRONT driving crank to a horizontal
+        // slider direction toward the piston. Existing wheels and any old rod
+        // decorations are NOT replaced, shifted or hidden.
+        body.addOrReplaceChild("h15ak_rod_right",
+                CubeListBuilder.create().texOffs(0, 24)
+                    .addBox(-.42F,-.43F,0.0F,.84F,.86F,8.0F),
+                PartPose.offset(6.45F,33.0F,1.5F));
+        body.addOrReplaceChild("h15ak_rod_left",
+                CubeListBuilder.create().texOffs(0, 40)
+                    .addBox(-.42F,-.43F,0.0F,.84F,.86F,8.0F),
+                PartPose.offset(-6.45F,33.0F,1.5F));
         return LayerDefinition.create(mesh, 128, 128);
     }
 
@@ -76,6 +97,25 @@ public final class SmallSteamLocomotiveModel {
         body.getChild("wheel_right_rear").xRot = phase;
         body.getChild("wheel_left_rear").xRot = phase;
         body.getChild("wheel_left_front").xRot = phase;
+    }
+    // DEV54H15AK: call after accepted animateWheels with identical phase.
+    // The 8-pixel connecting rod remains physically jointed to the orbiting
+    // front-wheel pin while the far endpoint slides on y=33 in model space.
+    public static void animateFrontCrankLinks(ModelPart body,float phase,boolean enabled){
+        ModelPart right=body.getChild("h15ak_rod_right");
+        ModelPart left=body.getChild("h15ak_rod_left");
+        right.visible=enabled;
+        left.visible=enabled;
+        body.getChild("wheel_right_front").getChild("h15ak_crank").visible=enabled;
+        body.getChild("wheel_left_front").getChild("h15ak_crank").visible=enabled;
+        if(!enabled)return;
+        final float radius=1.5F, length=8.0F;
+        final float pinY=33.0F-radius*(float)Math.sin(phase);
+        final float pinZ=radius*(float)Math.cos(phase);
+        final float dy=33.0F-pinY;
+        final float tilt=(float)Math.asin(Math.max(-1f,Math.min(1f,-dy/length)));
+        right.y=pinY;right.z=pinZ;right.xRot=tilt;
+        left.y=pinY;left.z=pinZ;left.xRot=tilt;
     }
     public static ModelPart body(ModelPart bakedRoot) {
         return bakedRoot.getChild("body");

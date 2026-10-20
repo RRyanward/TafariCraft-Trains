@@ -10,7 +10,8 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 
 import java.util.ArrayList;
-import java.util.Comparator;
+import java.util.Comparator;
+
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
@@ -190,6 +191,10 @@ public class MobTransportCar extends FreightCart {
                 && !this.allowingLockedDismount
                 && !this.isRemoved()
                 && passenger.isAlive()) {
+            if (!this.level().isClientSide && this.tickCount % 40 == 0) {
+                traincraft.Traincraft.LOGGER.info("[TC-DEV53C] MOB_DISEMBARK_HELD_LOCKED car={} passenger={} count={}",
+                        this.getId(), passenger.getName().getString(), this.getPassengers().size());
+            }
             return;
         }
         super.removePassenger(passenger);
@@ -207,6 +212,10 @@ public class MobTransportCar extends FreightCart {
     }
     @Override
     public InteractionResult interact(Player player, InteractionHand hand) {
+        if (!this.level().isClientSide && hand == InteractionHand.MAIN_HAND && !player.isShiftKeyDown()) {
+            traincraft.Traincraft.LOGGER.info("[TC-DEV53C] MOB_RIGHT_CLICK car={} passengers={} locked={} held={}",
+                    this.getId(), this.getPassengers().size(), this.prisonLocked, player.getItemInHand(hand));
+        }
         // Locked prisoner cannot use outside controls from inside.
         if (this.prisonLocked && this.hasPassenger(player)) {
             if (!this.level().isClientSide) {
@@ -240,8 +249,8 @@ public class MobTransportCar extends FreightCart {
                 this.level().playSound(
                         null,
                         this.blockPosition(),
-                        next ? SoundEvents.IRON_DOOR_CLOSE
-                                : SoundEvents.IRON_DOOR_OPEN,
+                        next ? traincraft.registry.TCSounds.DEV55_MOB_LOCK.get()
+                                : traincraft.registry.TCSounds.DEV55_MOB_UNLOCK.get(),
                         SoundSource.BLOCKS,
                         0.75F,
                         next ? 0.80F : 1.05F);
@@ -315,7 +324,7 @@ public class MobTransportCar extends FreightCart {
                                     + this.prisonOwnerDisplayName() + "."),
                             true);
                 }
-                return InteractionResult.sidedSuccess(this.level().isClientSide);
+                return super.interact(player, hand);
             }
             return super.interact(player, hand);
         }
@@ -356,23 +365,22 @@ public class MobTransportCar extends FreightCart {
                         }
                     }
 
-                    this.unlockAndEjectAll();
+                    
+                    // DEV53C: voluntary player boarding remains available via sneak + empty hand
+                    // when there are no other occupants or nearby mobs to load.
+                    if (this.getPassengers().isEmpty() && !player.isPassenger() && player.startRiding(this, true)) {
+                        tcEnsureCalibrationSeat(this.getPassengers().indexOf(player) + 1);
+                    } else {
+                        this.unlockAndEjectAll();
+                    }
                 }
 
                 return InteractionResult.sidedSuccess(this.level().isClientSide);
             }
 
-            // Players can still voluntarily enter an unlocked prisoner car.
-            if (this.getPassengers().size() < MAX_MOBS
-                    && !player.isPassenger()) {
-                if (!this.level().isClientSide
-                        && player.startRiding(this, true)) {
-                    int seat =
-                            this.getPassengers().indexOf(player) + 1;
-                    tcEnsureCalibrationSeat(seat);
-                }
-                return InteractionResult.sidedSuccess(this.level().isClientSide);
-            }
+            // DEV53C: ordinary empty-hand right-click consistently opens the manifest.
+            // Sneak + empty-hand still handles nearby mob loading and manual release.
+            return super.interact(player, hand);
         }
 
         return super.interact(player, hand);
@@ -451,10 +459,19 @@ public class MobTransportCar extends FreightCart {
                 tcFindTransportRope(player);
 
         if (rope.isEmpty()) {
-            player.displayClientMessage(
-                    Component.literal("You need a Transport Rope to unload prisoners."),
-                    true);
-            return false;
+            // DEV53C: without a rope, the GUI Unload button is a physical disembark.
+            // The prison lock was already checked before reaching this branch.
+            Entity passenger = this.getPassengers().get(slot);
+            passenger.stopRiding();
+            if (this.hasPassenger(passenger)) {
+                player.displayClientMessage(Component.literal("Unable to release passenger from car."), true);
+                return false;
+            }
+            traincraft.Traincraft.LOGGER.info("[TC-DEV53C] MOB_GUI_WORLD_UNLOAD car={} passenger={} remaining={}",
+                    this.getId(), passenger.getName().getString(), this.getPassengers().size());
+            player.displayClientMessage(Component.literal("Mob / Prisoner Car: released "
+                    + passenger.getName().getString() + " into world (no Transport Rope)."), true);
+            return true;
         }
 
         if (TransportRopeItem.freeBindings(rope) < 1) {
@@ -493,10 +510,12 @@ public class MobTransportCar extends FreightCart {
                 tcFindTransportRope(player);
 
         if (rope.isEmpty()) {
-            player.displayClientMessage(
-                    Component.literal("You need a Transport Rope to unload prisoners."),
-                    true);
-            return 0;
+            // DEV53C: physically disembark everyone if no Transport Rope is carried.
+            int released = 0;
+            for (int slot = this.getPassengers().size() - 1; slot >= 0; slot--) {
+                if (tcManifestUnloadSlot(player, slot)) released++;
+            }
+            return released;
         }
 
         int count = this.getPassengers().size();

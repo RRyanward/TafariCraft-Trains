@@ -41,6 +41,12 @@ public final class TCSounds {
     public static final RegistryObject<SoundEvent> MODULAR_CROSSING_BELL = register("modular_crossing_bell");
 
 
+    // DEV55S1: scoped TCT pump and prisoner-car latch sound events.
+    public static final RegistryObject<SoundEvent> DEV55_TANKER_PUMP_LOAD = register("dev55_tanker_pump_load");
+    public static final RegistryObject<SoundEvent> DEV55_TANKER_PUMP_UNLOAD = register("dev55_tanker_pump_unload");
+    public static final RegistryObject<SoundEvent> DEV55_MOB_LOCK = register("dev55_mob_lock");
+    public static final RegistryObject<SoundEvent> DEV55_MOB_UNLOCK = register("dev55_mob_unlock");
+
     // TC_BATCH7_R4A_ACTUAL_AUDIO_EVENTS
     public static final RegistryObject<SoundEvent> B7_HORN_LESLIE_S3L = register("b7_horn_leslie_s3l");
     public static final RegistryObject<SoundEvent> B7_HORN_NATHAN_P5 = register("b7_horn_nathan_p5");

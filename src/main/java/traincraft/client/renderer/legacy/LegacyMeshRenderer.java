@@ -93,6 +93,7 @@ public abstract class LegacyMeshRenderer<T extends Entity> extends EntityRendere
 
         VertexConsumer vertices = buffers.getBuffer(tcRenderType(getTextureLocation(entity)));
         mesh.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+        Dev55L19FleetBeams.setWorld(Dev55L19FleetBeams.worldMatrix(trainYaw,railLift,railPitch,tx,ty,tz,rx,ry,rz,sx,sy,sz));
         Dev44TrainLightVisuals.draw(tcDev44LightMeshId, entity, poseStack, buffers, mesh.minX(), mesh.maxX(), mesh.minY());
         LegacyRollingStockDebug.logRender(entity, stockName, trainYaw, mesh,
                 tx, ty, tz, rx, ry, rz, sx, sy, sz, renderedMinY, renderedMaxY);

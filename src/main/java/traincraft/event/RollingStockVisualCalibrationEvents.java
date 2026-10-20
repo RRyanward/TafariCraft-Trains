@@ -26,7 +26,7 @@ import java.util.UUID;
 /**
  * Universal visual-alignment selector.
  *
- * Existing /tccal powered-locomotive seat commands are untouched.
+ * Existing /tct powered-locomotive seat commands are untouched.
  * This subcommand adds model-Y calibration for every Traincraft minecart-based
  * rolling-stock entity without editing coupling/movement classes.
  */
@@ -41,9 +41,10 @@ public final class RollingStockVisualCalibrationEvents {
 
     private RollingStockVisualCalibrationEvents() {}
 
+    @SubscribeEvent
     public static void registerCommands(RegisterCommandsEvent event) {
         event.getDispatcher().register(
-                Commands.literal("tccal")
+                Commands.literal("tct")
                         .then(Commands.literal("visual")
                                 .then(Commands.literal("select")
                                         .then(Commands.argument(
@@ -253,8 +254,8 @@ public final class RollingStockVisualCalibrationEvents {
             player.displayClientMessage(
                     Component.literal(
                             "[TC VISUAL] No selected stock. Use " +
-                            "/tccal visual select <registry_id> or " +
-                            "/tccal visual next."),
+                            "/tct visual select <registry_id> or " +
+                            "/tct visual next."),
                     false);
         }
         return target;

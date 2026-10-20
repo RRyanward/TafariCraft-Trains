@@ -65,6 +65,35 @@ public final class RecoveredPoweredLocomotiveRenderer<T extends LegacyPoweredLoc
         // TC_DEV38_R1G1Z7W5_RENDERER_WHEEL_FACE_HOOK
         traincraft.client.renderer.animation.StructuralWheelFaceOverlayRenderer.renderNative(
                 model, p, v, light, OverlayTexture.NO_OVERLAY);
+        // DEV55L25R2: review-only lamp geometry for the TWO recovered trams.
+        // The L19 preview is Creative-only and does NOT require electric
+        // traction/backup redstone. Ordinary trains remain untouched.
+        final String tramId=e.variantId();
+        if (("locomotive_electric_tram".equals(tramId)
+             || "locomotive_electric_tram_ny".equals(tramId))
+                && traincraft.client.renderer.legacy.Dev55L19FleetBeams.active(e,tramId)) {
+            // Provisional model-space front lens positions (16 model units per
+            // block). Viewer-approved per-lamp coordinates were not in capture;
+            // keep these as review candidates, editable using /tclightfleet.
+            final double[][] front = "locomotive_electric_tram".equals(tramId)
+                    ? new double[][]{{-1.875D,1.59375D,0D,1D}}
+                    : new double[][]{{-2.09375D,1.8125D,0D,1D}};
+            traincraft.client.renderer.legacy.Dev55L19FleetBeams.setWorld(
+                    traincraft.client.renderer.legacy.Dev55L19FleetBeams.worldMatrix(
+                        e.getRenderTrainFacingYaw(partial),e.getPoweredModelLift(),0F,
+                        tx,ty,tz,rx,ry,rz,sx,sy,sz));
+            try {
+                var lightBuffer=b.getBuffer(traincraft.client.renderer.legacy.Dev44TrainLightVisuals.creativeBeamType());
+                boolean drawn=traincraft.client.renderer.legacy.Dev55L19FleetBeams.render(
+                        e,tramId,lightBuffer,p.last().pose(),front,1F);
+                if(traincraft.debug.Dev55L19Settings.diagnostic() && e.tickCount%80==0)
+                    org.slf4j.LoggerFactory.getLogger("DEV55L25R2-TRAM-PILOT").info(
+                      "[DEV55L25R2-TRAM] model={} entity={} drawn={} pilot=true linePower={} backup={} tractionUnchanged=true",
+                      tramId,e.getId(),drawn,e.isOnPoweredEnergyTrack(),e.hasPortableBackupRedstone());
+            } finally {
+                traincraft.client.renderer.legacy.Dev55L19FleetBeams.clearWorld();
+            }
+        }
         p.popPose();
         super.render(e,yaw,partial,p,b,light);
     }

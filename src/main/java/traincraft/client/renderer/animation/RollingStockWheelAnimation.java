@@ -52,6 +52,8 @@ public final class RollingStockWheelAnimation {
      * Native renderer/model wheel parts should consume this value.
      */
     public static double sampleNativePhase(Entity entity, float partialTick) {
+        final double dev54h2Phase = traincraft.debug.Dev54H2StationaryFleet.sampleOverrideOrNaN(entity, partialTick);
+        if (Double.isFinite(dev54h2Phase)) return dev54h2Phase;
         // TC_DEV38_R1G1Z7Y18C_STATIONARY_PHASE_OVERRIDE_DEBUG_ONLY
         // SINGLE-ENTITY, INTEGRATED-CLIENT ONLY. Original algorithm untouched below.
         final double tc_y18c_debug_phase =

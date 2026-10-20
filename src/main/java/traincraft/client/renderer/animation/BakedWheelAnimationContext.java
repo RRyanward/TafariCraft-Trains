@@ -33,6 +33,24 @@ public final class BakedWheelAnimationContext {
     private static final Logger DEEP_LOG = LogUtils.getLogger();
 
     private static final ThreadLocal<State> CURRENT = new ThreadLocal<>();
+    private static final java.util.Set<String> H12E_440_LOGGED = new java.util.HashSet<>();
+    private static final boolean H12E_440_REVIEW_ON = dev54h12eReview440Marker();
+    private static boolean dev54h12eReview440Marker() {
+        try {
+            var marker=net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                    .resolve("DEV54H12E-BATCH1-PIVOTS-ON.txt");
+            var previous=net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                    .resolve("DEV54H12D-BATCH1-CORRECTIONS-ON.txt");
+            return java.nio.file.Files.isRegularFile(marker)
+                 && java.nio.file.Files.isRegularFile(previous)
+                 && java.nio.file.Files.readString(previous,java.nio.charset.StandardCharsets.UTF_8)
+                         .replace("\uFEFF", "").trim().equals("DEV54H12D-BATCH1-ON-V1")
+                 && java.nio.file.Files.readString(marker,java.nio.charset.StandardCharsets.UTF_8)
+                         .replace("\uFEFF", "").trim().equals("DEV54H12E-BATCH1-ON-V1");
+        } catch(Exception ignored) { return false; }
+    }
+    private static boolean dev54h12eReview440On() { return H12E_440_REVIEW_ON; }
+
     private static final Map<String, MeshProfile> CACHE = new HashMap<>();
 
     // TC_DEV38_R1G1Z7D2_DEEP_WHEEL_UV_SELECTION_DEBUG
@@ -94,7 +112,21 @@ public final class BakedWheelAnimationContext {
             return;
         }
 
-        CURRENT.set(new State(key.getPath(), phase, entity.tickCount));
+        // DEV54H12E: 4-4-0 was reporting LIVE but zero phase throughout
+        // the H12A stationary fleet review. Only there, use the very same
+        // UUID-scoped server review phase as other test engines. In ordinary
+        // gameplay the original phase (signed travel) is never overridden.
+        float selectedPhase=phase;
+        if ("locomotive_steam_4_4_0".equals(key.getPath()) && dev54h12eReview440On()) {
+            double test=traincraft.debug.Dev54H12FleetReview
+                    .sampleOverrideOrNaN(entity,0.0f);
+            if(Double.isFinite(test)) {
+                selectedPhase=(float)test;
+                if(Math.abs(selectedPhase)>0.1f && H12E_440_LOGGED.add(key.getPath()))
+                    DEEP_LOG.info("[DEV54H12E-440-REVIEW-PHASE] source=H12A_UUID_MATCHED radians={} acceptedWheelTravelPath=UNCHANGED",selectedPhase);
+            }
+        }
+        CURRENT.set(new State(key.getPath(), selectedPhase, entity.tickCount));
 
         // Proves the baked context was entered even if no chunk is selected.
         if (DEEP_DEBUG_BEGUN.add(key.getPath())) {
@@ -104,6 +136,57 @@ public final class BakedWheelAnimationContext {
                     key.getPath(),
                     phase));
         }
+    }
+
+
+    // DEV54H12B: read only the already accepted runtime wheel phase for an
+    // exact source-qualified mesh. No clocks, tick-count simulation, or
+    // override of the H12A stationary fleet-review phase.
+    public static float dev54h12bPhase(String meshKey) {
+        State state = CURRENT.get();
+        if(state == null || meshKey == null || !meshKey.equals(
+                "legacy:traincraft:legacy_meshes/"+state.entityId+".tcm")) return Float.NaN;
+        return phaseFor(state.entityId,state.phase);
+    }
+
+
+
+    // DEV54H13B: 59-fleet preview supplies the same accepted phase to C62's
+    // single BODY mesh while its separate bogie meshes remain fully untouched.
+    public static float dev54h13bPartPhase(String meshKey){
+        State state=CURRENT.get();
+        if(state==null||meshKey==null)return Float.NaN;
+        if(meshKey.equals("legacy:traincraft:legacy_meshes/locomotive_steam_c62_body.tcm")
+                && "locomotive_steam_c62".equals(state.entityId))
+            return phaseFor(state.entityId,state.phase);
+        return dev54h12bPhase(meshKey);
+    }
+
+    // DEV54H12B explicit wheel changes are opt-in only, read once on client launch.
+    private static final java.util.Set<String> DEV54H12B_MARKED = dev54h12bReadMarker();
+    private static java.util.Set<String> dev54h12bReadMarker() {
+        try {
+            var path=net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                    .resolve("DEV54H12B-BATCH1-REPAIRS-ON.txt");
+            if(!java.nio.file.Files.isRegularFile(path))return java.util.Set.of();
+            java.util.HashSet<String> ids=new java.util.HashSet<>();
+            for(String r:java.nio.file.Files.readAllLines(path,java.nio.charset.StandardCharsets.UTF_8))
+                ids.add(r.replace("﻿", "").trim());
+            return java.util.Set.copyOf(ids);
+        } catch(Exception ex){return java.util.Set.of();}
+    }
+
+    // DEV54H13 guarded Batch 2 original TCM wheel faces. Read once at launch;
+    // marker absent means zero changes to the H12I accepted fleet.
+    private static final boolean DEV54H13_WHEELS_ON = dev54h13WheelsSelected();
+    private static boolean dev54h13WheelsSelected(){
+        try {
+            var p=net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                     .resolve("DEV54H13-BATCH2-SOURCE-PILOT-ON.txt");
+            return java.nio.file.Files.isRegularFile(p) &&
+              java.nio.file.Files.readString(p,java.nio.charset.StandardCharsets.UTF_8)
+                 .replace("\uFEFF","").trim().equals("DEV54H13-BATCH2-PILOT-V1");
+        }catch(Exception e){return false;}
     }
 
     // TC_DEV38_R1G1Z7P3_440_PAIRED_PANEL_PHASE
@@ -730,6 +813,134 @@ if ("locomotive_steam_br80".equals(state.entityId)
             int chunkIndex,
             float phase) {
 
+
+        // DEV54H12B: source-audited one-piece circular side wheel faces. These
+        // two models previously lacked explicit mapping; no other entity paths
+        // or user-accepted wheel cases are touched.
+        if("locomotive_steam_alco_sc4".equals(entityId) && DEV54H12B_MARKED.contains(entityId)
+                && meshKey.endsWith("legacy_meshes/locomotive_steam_alco_sc4.tcm")) {
+            return switch(chunkIndex) {
+                case 0 -> wheel(2, 2.71875F,-0.40625F,-0.31250F,phase);
+                case 204 -> wheel(2,1.96875F,-0.40625F,-0.31250F,phase);
+                case 205 -> wheel(2,1.21875F,-0.40625F,-0.31250F,phase);
+                case 206 -> wheel(2,0.46875F,-0.40625F,-0.31250F,phase);
+                case 207 -> wheel(2,0.46875F,-0.40625F,0.31250F,phase);
+                case 208 -> wheel(2,1.21875F,-0.40625F,0.31250F,phase);
+                case 209 -> wheel(2,1.96875F,-0.40625F,0.31250F,phase);
+                case 210 -> wheel(2,2.71875F,-0.40625F,0.31250F,phase);
+                case 1 -> wheel(2,-0.56250F,-0.25000F,-0.31250F,phase);
+                case 2 -> wheel(2,-0.56250F,-0.25000F,0.31250F,phase);
+                default -> null;
+            };
+        }
+        if("locomotive_steam_br_black_5".equals(entityId) && DEV54H12B_MARKED.contains(entityId)
+                && meshKey.endsWith("legacy_meshes/locomotive_steam_br_black_5.tcm")) {
+            return switch(chunkIndex) {
+                case 0 -> wheel(2,-1.68750F,0.25000F,-0.37500F,phase);
+                case 1 -> wheel(2,-0.93750F,0.25000F,-0.37500F,phase);
+                case 2 -> wheel(2,-0.28125F,0.09375F,-0.37500F,phase);
+                case 3 -> wheel(2,0.53125F,0.09375F,-0.37500F,phase);
+                case 4 -> wheel(2,1.40625F,0.09375F,-0.37500F,phase);
+                case 5 -> wheel(2,-1.68750F,0.25000F,0.37500F,phase);
+                case 6 -> wheel(2,-0.93750F,0.25000F,0.37500F,phase);
+                case 7 -> wheel(2,-0.28125F,0.09375F,0.37500F,phase);
+                case 8 -> wheel(2,0.53125F,0.09375F,0.37500F,phase);
+                case 9 -> wheel(2,1.40625F,0.09375F,0.37500F,phase);
+                default -> null;
+            };
+        }
+
+        // DEV54H13 geometry-audited source wheel faces, only after explicit opt-in.
+        if (DEV54H13_WHEELS_ON && "locomotive_steam_br_britannia".equals(entityId)
+                && meshKey.equals("legacy:traincraft:legacy_meshes/locomotive_steam_br_britannia.tcm")) {
+            return switch(chunkIndex) {
+                case 0 -> wheel(2,-1.81250000F,0.18750000F,-0.37515625F,phase);
+                case 1 -> wheel(2,-1.81250000F,0.18750000F,0.37484375F,phase);
+                case 2 -> wheel(2,-1.06250000F,0.18750000F,-0.37515625F,phase);
+                case 3 -> wheel(2,-1.06250000F,0.18750000F,0.37484375F,phase);
+                case 4 -> wheel(2,-0.39062500F,0.01562500F,-0.37515625F,phase);
+                case 5 -> wheel(2,-0.39062500F,0.01562500F,0.37484375F,phase);
+                case 6 -> wheel(2,0.42187500F,0.01562500F,-0.37515625F,phase);
+                case 7 -> wheel(2,0.42187500F,0.01562500F,0.37484375F,phase);
+                case 8 -> wheel(2,1.23437500F,0.01562500F,-0.37515625F,phase);
+                case 9 -> wheel(2,1.23437500F,0.01562500F,0.37484375F,phase);
+                case 10 -> wheel(2,2.43750000F,0.18750000F,-0.37515625F,phase);
+                case 11 -> wheel(2,2.43750000F,0.18750000F,0.37484375F,phase);
+                default -> null;
+            };
+        }
+        if (DEV54H13_WHEELS_ON && "locomotive_steam_c11".equals(entityId)
+                && meshKey.equals("legacy:traincraft:legacy_meshes/locomotive_steam_c11.tcm")) {
+            return switch(chunkIndex) {
+                case 0 -> wheel(2,0.59375000F,0.28125000F,0.31562501F,phase);
+                case 5 -> wheel(2,0.59375000F,0.28125000F,-0.31562501F,phase);
+                case 123 -> wheel(2,-1.03124997F,0.28125000F,-0.31562501F,phase);
+                case 359 -> wheel(2,-1.03124997F,0.28125000F,0.31562501F,phase);
+                case 370 -> wheel(2,-0.28125000F,0.28125000F,0.31562501F,phase);
+                case 373 -> wheel(2,-0.28125000F,0.28125000F,-0.31562501F,phase);
+                default -> null;
+            };
+        }
+        if (DEV54H13_WHEELS_ON && "locomotive_steam_c41".equals(entityId)
+                && meshKey.equals("legacy:traincraft:legacy_meshes/locomotive_steam_c41.tcm")) {
+            return switch(chunkIndex) {
+                case 0 -> wheel(2,2.71875000F,-0.40625000F,-0.31312500F,phase);
+                case 1 -> wheel(2,-0.56250000F,-0.25000000F,-0.31312500F,phase);
+                case 2 -> wheel(2,-0.56250000F,-0.25000000F,0.31312500F,phase);
+                case 253 -> wheel(2,1.96875006F,-0.40625000F,-0.31312500F,phase);
+                case 254 -> wheel(2,1.21874997F,-0.40625000F,-0.31312500F,phase);
+                case 255 -> wheel(2,0.46875000F,-0.40625000F,-0.31312500F,phase);
+                case 256 -> wheel(2,0.46875000F,-0.40625000F,0.31312500F,phase);
+                case 257 -> wheel(2,1.21874997F,-0.40625000F,0.31312500F,phase);
+                case 258 -> wheel(2,1.96875006F,-0.40625000F,0.31312500F,phase);
+                case 259 -> wheel(2,2.71875000F,-0.40625000F,0.31312500F,phase);
+                default -> null;
+            };
+        }
+        if (DEV54H13_WHEELS_ON && "locomotive_steam_c41_080".equals(entityId)
+                && meshKey.equals("legacy:traincraft:legacy_meshes/locomotive_steam_c41_080.tcm")) {
+            return switch(chunkIndex) {
+                case 0 -> wheel(2,2.71875000F,-0.40625000F,-0.31312501F,phase);
+                case 230 -> wheel(2,1.96875006F,-0.40625000F,-0.31312501F,phase);
+                case 231 -> wheel(2,1.21875003F,-0.40625000F,-0.31312501F,phase);
+                case 232 -> wheel(2,0.46875000F,-0.40625000F,-0.31312501F,phase);
+                case 233 -> wheel(2,0.46875000F,-0.40625000F,0.31312501F,phase);
+                case 234 -> wheel(2,1.21875003F,-0.40625000F,0.31312501F,phase);
+                case 235 -> wheel(2,1.96875006F,-0.40625000F,0.31312501F,phase);
+                case 236 -> wheel(2,2.71875000F,-0.40625000F,0.31312501F,phase);
+                default -> null;
+            };
+        }
+        if (DEV54H13_WHEELS_ON && "locomotive_steam_c41t".equals(entityId)
+                && meshKey.equals("legacy:traincraft:legacy_meshes/locomotive_steam_c41t.tcm")) {
+            return switch(chunkIndex) {
+                case 0 -> wheel(2,2.71875000F,-0.40625000F,-0.31312501F,phase);
+                case 1 -> wheel(2,-0.56250000F,-0.25000000F,-0.31312501F,phase);
+                case 2 -> wheel(2,-0.56250000F,-0.25000000F,0.31312501F,phase);
+                case 210 -> wheel(2,1.96875006F,-0.40625000F,-0.31312501F,phase);
+                case 211 -> wheel(2,1.21875003F,-0.40625000F,-0.31312501F,phase);
+                case 212 -> wheel(2,0.46875000F,-0.40625000F,-0.31312501F,phase);
+                case 213 -> wheel(2,0.46875000F,-0.40625000F,0.31312501F,phase);
+                case 214 -> wheel(2,1.21875003F,-0.40625000F,0.31312501F,phase);
+                case 215 -> wheel(2,1.96875006F,-0.40625000F,0.31312501F,phase);
+                case 216 -> wheel(2,2.71875000F,-0.40625000F,0.31312501F,phase);
+                default -> null;
+            };
+        }
+        if (DEV54H13_WHEELS_ON && "locomotive_steam_climax".equals(entityId)
+                && meshKey.equals("legacy:traincraft:legacy_meshes/locomotive_steam_climax.tcm")) {
+            return switch(chunkIndex) {
+                case 0 -> wheel(2,-2.90625000F,0.46875000F,-0.37500000F,phase);
+                case 1 -> wheel(2,-2.90625000F,0.46875000F,0.37500000F,phase);
+                case 2 -> wheel(2,-2.28125000F,0.46875000F,0.37500000F,phase);
+                case 3 -> wheel(2,-2.28125000F,0.46875000F,-0.37500000F,phase);
+                case 25 -> wheel(2,0.28125000F,0.46875000F,-0.37500000F,phase);
+                case 26 -> wheel(2,0.28125000F,0.46875000F,0.37500000F,phase);
+                case 27 -> wheel(2,0.90624997F,0.46875000F,0.37500000F,phase);
+                case 28 -> wheel(2,0.90624997F,0.46875000F,-0.37500000F,phase);
+                default -> null;
+            };
+        }
         // DEV44_G1_R1_EXACT_WHEEL_FACES — Only geom-verified thin wheel discs.
         // All other authored parts retain the existing production logic.
         if ("locomotive_steam_262t".equals(entityId)

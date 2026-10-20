@@ -85,6 +85,20 @@ public final class RollingStockSeatRenderEvents {
         // stock so first-person camera and third-person rider agree with the
         // accepted BODY + SEATS TOML during normal gameplay too.
 
+        // DEV53E3E: Stop the double-offset race. For powered stock with an
+        // authoritative physical seat, vanilla camera and rider follow the
+        // real mounted passenger instead of a second render-only Y offset.
+        // Every other powered/steam/passenger render path stays unchanged.
+        // DEV53E3G: Keep physical rider coordinates in normal gameplay.
+        // During an explicit /tc visual seat 1|2|3 preview on a wooden tram,
+        // temporarily show the SELECTED seat instead of skipping visual edits.
+        // GP7/CHME3 (and ordinary pinned powered seats) remain protected.
+        if (vehicle instanceof LegacyPoweredLocomotive powered
+                && powered.tcDev53E3EHasAuthoritativePhysicalSeat()
+                && !(powered.isWoodenPassengerTram()
+                    && RollingStockSeatCalibrationEvents.hasPreviewSeat(player.getUUID()))) {
+            return;
+        }
         String id = registryId(vehicle);
 
         int passengerIndex = vehicle.getPassengers().indexOf(player);

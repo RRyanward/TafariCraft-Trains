@@ -51,10 +51,13 @@ public class ForneySteamLocomotiveRenderer extends EntityRenderer<ForneySteamLoc
         poseStack.mulPose(Axis.YP.rotationDegrees(90.0F));
 
         VertexConsumer vertices = buffers.getBuffer(RenderType.entityCutoutNoCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, TEXTURE)));
-        this.model.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+        traincraft.client.renderer.animation.Dev54H15PNativeFleetEditor.renderNativeModel(this.model, poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY, entity);
 
         // DEV38 y18s: render true circular rear wheel faces over static carriers.
         traincraft.client.renderer.animation.ForneyRearWheelOverlayRenderer.render(
+                entity, partialTicks, poseStack, buffers, packedLight);
+        // DEV54H15N-R2-FORNEY-PISTON-CALL
+        traincraft.client.renderer.animation.ForneyPistonLinkPilotRenderer.render(
                 entity, partialTicks, poseStack, buffers, packedLight);
         // TC_DEV38_R1G1Z7P3_EXACT_PAIRED_WHEEL_PANEL_DRAW
         // DEV38 y18s: old rectangular rear-panel overlay disabled; carrier remains rigid.

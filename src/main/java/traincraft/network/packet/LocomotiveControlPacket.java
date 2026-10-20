@@ -9,6 +9,7 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.NetworkEvent;
 import traincraft.entity.train.steam.small.SmallSteamLocomotive;
+import traincraft.entity.train.power.LegacyPoweredLocomotive;
 
 import java.util.function.Supplier;
 
@@ -57,7 +58,14 @@ public final class LocomotiveControlPacket {
             }
 
             // Clients may control only the locomotive they are physically driving.
-            if (sender.getVehicle() != locomotive || locomotive.getFirstPassenger() != sender) {
+            // DEV53E3G: Seat 1 remains the driver even after passenger churn.
+            if (sender.getVehicle() != locomotive) {
+                return;
+            }
+            if (locomotive instanceof LegacyPoweredLocomotive powered
+                    && powered.isWoodenPassengerTram()) {
+                if (!powered.tcIsWoodenTramDriver(sender)) return;
+            } else if (locomotive.getFirstPassenger() != sender) {
                 return;
             }
 

@@ -84,6 +84,9 @@ public final class Dev44HeadlightWorldLights {
             if (type==null || !type.getNamespace().equals("traincraft")) continue;
             String id=type.getPath();
             if (!id.equals("locomotive_steam_berkshire_765") && !id.equals("locomotive_steam_berkshire_1225")) continue;
+            // DEV55L23: L19 preview Berkshire beams have their own exact
+            // clipped endpoint. Keep the old three block placers in production only.
+            if (Dev55L23GroundBridge.claims(ent,id)) continue;
             if (engine.getBurnTime()<=0 && engine.getSteamAmount()<=0) continue;
             engines++;
             double yaw=Math.toRadians(ent.getYRot());

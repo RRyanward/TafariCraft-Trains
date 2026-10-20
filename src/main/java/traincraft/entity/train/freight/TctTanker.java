@@ -138,6 +138,8 @@ public final class TctTanker extends FreightCart {
         }
         if (!player.getAbilities().instabuild) player.setItemInHand(hand, result.getResult());
         int moved = fluidStorage.getFluidAmount() - before;
+        // DEV55S1: manual bucket/canister fill also counts as successful pumping.
+        if (moved > 0) traincraft.audio.Dev55OperationalSounds.pump(level(), this, true);
         player.displayClientMessage(Component.literal("Loaded " + moved + " mB "
                 + offered.getDisplayName().getString() + ". Tank: " + fluidStorage.getFluidAmount()
                 + "/" + FLUID_CAPACITY_MB + " mB."), true);

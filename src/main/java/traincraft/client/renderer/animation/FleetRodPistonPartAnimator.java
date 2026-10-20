@@ -202,6 +202,13 @@ public final class FleetRodPistonPartAnimator {
 
         if (found.isEmpty()) return;
 
+        // DEV54F5 wheel-only capture: reset identified running gear to authored
+        // static poses. Wheel rotation remains owned by FleetNativeWheelPartAnimator.
+        if (traincraft.debug.Dev54FRodMask.enabled()) {
+            apply(id, model, 0.0F);
+            return;
+        }
+
         if (Math.abs(phase) >= 0.05F && MOTION_LOGGED.add(id)) {
             LOG.info(
                     "[TC-ROD-y16-MOTION] id={} phase={} found={}",
@@ -231,6 +238,30 @@ public final class FleetRodPistonPartAnimator {
         // required to change any allowlisted selected rod in the six-train rig.
         reloadY17TuningIfDue();
         rig.restore();
+        // DEV54F5: keep every rod/piston ModelPart static during local capture.
+        // Important: restore BEFORE returning, to avoid retaining the prior
+        // frame's movement when recording starts in the middle of a cycle.
+        if (traincraft.debug.Dev54FRodMask.enabled()) {
+            // DEV54F5: Forney/Mogul also use a separate y18n ModelPart rig.
+            // Hide ONLY the exact pre-identified linkage (never driver wheel IDs).
+            if ("locomotive_steam_forney".equals(id) || "locomotive_steam_mogul".equals(id)) {
+                Map<String, ModelPart> all = modelParts(model);
+                for (String partName : y18nLegacyLinks(id)) {
+                    ModelPart legacyLink = all.get(partName);
+                    if (legacyLink != null) legacyLink.visible = false;
+                }
+                synchronized (Y18N_CUSTOM) {
+                    Y18NCustomRig custom = Y18N_CUSTOM.get(model);
+                    if (custom != null) {
+                        custom.nearRod().visible = false;
+                        custom.farRod().visible = false;
+                        for (ModelPart pin : custom.nearPins()) pin.visible = false;
+                        for (ModelPart pin : custom.farPins()) pin.visible = false;
+                    }
+                }
+            }
+            return;
+        }
 
         switch (id) {
             case "locomotive_steam_heavy" -> applyHeavy(rig, phase);
@@ -1227,6 +1258,8 @@ public final class FleetRodPistonPartAnimator {
             y18nPlace(custom.farPins().get(i), custom.farX(), 4.5F + dy, z);
         }
 
+        if (mogul) dev54h15adMogulPiston(model, custom, dy, dz);
+
         if (Y18N_LOGGED.add(id)) {
             LOG.info("[TC-y18n-CUSTOM] id={} status=ACTIVE hiddenLegacy={} "
                             + "custom=COUPLING_RODS_PLUS_CRANK_PINS radiusPx={} "
@@ -1237,6 +1270,91 @@ public final class FleetRodPistonPartAnimator {
                     custom.restY(), custom.restZ(), java.util.Arrays.toString(custom.driverZ()),
                     centeredDrivers, centeredSmall);
         }
+    }
+
+    // DEV54H15AD: Mogul-only guarded piston/crosshead connector pilot.
+    // Uses existing Y18N accepted driver phase and crank pins; does not mutate wheels.
+    // DEV54H15AH: independently switchable geometry-only revision. Does not change
+    // wheel phases, crankpins, coupling rods, Forney, or the H15AD pilot switch.
+    private static final boolean DEV54H15AH_MOGUL_GEOMETRY_ON =
+            dev54h15ahEnabled("DEV54H15AH-MOGUL-GEOMETRY-ON.txt",
+                    "DEV54H15AH-MOGUL-ON-V1");
+    private static boolean dev54h15ahEnabled(String name, String token) {
+        try {
+            java.nio.file.Path file = net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve(name);
+            return java.nio.file.Files.isRegularFile(file)
+                    && java.nio.file.Files.readString(file, java.nio.charset.StandardCharsets.UTF_8)
+                        .replace("\uFEFF", "").trim().equals(token);
+        } catch (Exception ignored) { return false; }
+    }
+    private static final boolean DEV54H15AD_MOGUL_LINK_ON = dev54h15adEnabled();
+    private static final java.util.Set<String> DEV54H15AD_REPORTED =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private static boolean dev54h15adEnabled() {
+        try {
+            java.nio.file.Path file = net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV54H15AD-MOGUL-PISTON-LINKAGE-ON.txt");
+            return java.nio.file.Files.isRegularFile(file)
+                    && java.nio.file.Files.readString(file, java.nio.charset.StandardCharsets.UTF_8)
+                    .replace("\uFEFF", "").trim().equals("DEV54H15AD-ON-V1");
+        } catch (Exception ignored) { return false; }
+    }
+
+    private static void dev54h15adMogulPiston(Object model, Y18NCustomRig custom,
+                                               float dy, float dz) {
+        Map<String, ModelPart> all = modelParts(model);
+        String[] names = {"tc_h15ad_near_link", "tc_h15ad_far_link",
+                "tc_h15ad_near_slider", "tc_h15ad_far_slider"};
+        for (String n : names) {
+            ModelPart p = all.get(n);
+            if (p != null) p.visible = DEV54H15AD_MOGUL_LINK_ON;
+        }
+        if (!DEV54H15AD_MOGUL_LINK_ON) {
+            if (DEV54H15AD_REPORTED.add("OFF"))
+                LOG.info("[DEV54H15AD-MOGUL-PISTON] pilot=OFF accepted Y18N rods/wheels unchanged");
+            return;
+        }
+        // Source-grounded front driver crank (third-party ModelLocoMogul):
+        // pin at Y=4.5, Z=-11.5; piston guide near Y=7.5, Z=-23.5.
+        // Kinematic slider makes the link length constant, instead of guessing a tilt.
+        final float crankY = 4.5F + dy;
+        final float crankZ = -11.5F + dz;
+        // H15AH: piston-side end rises one mesh pixel and retracts 2 pixels
+        // longitudinally toward the front driver. Wheel-side crank remains fixed.
+        final float sliderY = DEV54H15AH_MOGUL_GEOMETRY_ON ? 8.5F : 7.5F;
+        final float guideZSpan = DEV54H15AH_MOGUL_GEOMETRY_ON ? 10.0F : 12.0F;
+        final float guideYSpan = sliderY - 4.5F;
+        final float length = (float)Math.sqrt(guideZSpan * guideZSpan
+                                              + guideYSpan * guideYSpan);
+        final float h = crankY - sliderY;
+        final float horizontal = (float)Math.sqrt(Math.max(0.0F, length*length - h*h));
+        final float sliderZ = crankZ - horizontal;
+        final float centerY = (sliderY + crankY) * 0.5F;
+        final float centerZ = (sliderZ + crankZ) * 0.5F;
+        final float angleX = -(float)Math.atan2(h, horizontal);
+        for (int side = 0; side < 2; side++) {
+            float x = side == 0 ? custom.nearX() : custom.farX();
+            String p = side == 0 ? "near" : "far";
+            ModelPart link = all.get("tc_h15ad_" + p + "_link");
+            ModelPart slider = all.get("tc_h15ad_" + p + "_slider");
+            if (link != null) {
+                link.visible = true;
+                link.x = x; link.y = centerY; link.z = centerZ;
+                link.xRot = angleX; link.yRot = 0.0F; link.zRot = 0.0F;
+            }
+            if (slider != null) {
+                slider.visible = true;
+                slider.x = x; slider.y = sliderY; slider.z = sliderZ;
+                slider.xRot = 0.0F; slider.yRot = 0.0F; slider.zRot = 0.0F;
+            }
+        }
+        if (DEV54H15AD_REPORTED.add("ON"))
+            LOG.info("[DEV54H15AD-MOGUL-PISTON] pilot=ON sides=2 linkLengthPx={} "
+                    + "sliderY={} sliderZ={} crankY={} crankZ={} sourceY18NwheelRods=UNCHANGED",
+                    length, sliderY, sliderZ, crankY, crankZ);
+        if (DEV54H15AH_MOGUL_GEOMETRY_ON && DEV54H15AD_REPORTED.add("H15AH"))
+            LOG.info("[DEV54H15AH-MOGUL-GEOMETRY] ON raisedSliderY=8.5 restGuideSpan=10 "
+                    + "crankAnchor=UNCHANGED wheelRods=UNCHANGED Forney=UNCHANGED");
     }
 
     private static java.util.List<String> y18nLegacyLinks(String id) {
@@ -1315,6 +1433,27 @@ public final class FleetRodPistonPartAnimator {
                             PartPose.ZERO);
                 }
 
+                // H15AD Mogul connection rods and sliding crosshead, created inside
+                // the existing Y18N root. Unchanged Forney and all other engines.
+                if (mogul) {
+                    final float connectLength = DEV54H15AH_MOGUL_GEOMETRY_ON
+                            ? (float)Math.sqrt(10.0F*10.0F + 4.0F*4.0F)
+                            : (float)Math.sqrt(12.0F*12.0F + 3.0F*3.0F);
+                    final float exposedSliderHalf = DEV54H15AH_MOGUL_GEOMETRY_ON
+                            ? 1.25F : 2.0F;
+                    for (String side : new String[] {"near", "far"}) {
+                        root.addOrReplaceChild("tc_h15ad_" + side + "_link",
+                                CubeListBuilder.create().texOffs(208, 232)
+                                        .addBox(-0.35F, -0.50F, -connectLength/2.0F,
+                                                0.70F, 1.00F, connectLength, none),
+                                PartPose.ZERO);
+                        root.addOrReplaceChild("tc_h15ad_" + side + "_slider",
+                                CubeListBuilder.create().texOffs(208, 232)
+                                        .addBox(-0.30F, -0.30F, -exposedSliderHalf,
+                                                0.60F, 0.60F, exposedSliderHalf * 2.0F, none),
+                                PartPose.ZERO);
+                    }
+                }
                 ModelPart baked = LayerDefinition.create(mesh, 256, 256).bakeRoot();
                 java.util.Map<String, ModelPart> liveChildren = y18nChildren(liveRoot);
                 if (liveChildren == null) return null;
@@ -1323,6 +1462,14 @@ public final class FleetRodPistonPartAnimator {
                 ModelPart farRod = baked.getChild("tc_y18n_far_rod");
                 liveChildren.put("tc_y18n_near_rod", nearRod);
                 liveChildren.put("tc_y18n_far_rod", farRod);
+                if (mogul) {
+                    for (String side : new String[] {"near", "far"}) {
+                        for (String piece : new String[] {"link", "slider"}) {
+                            String name = "tc_h15ad_" + side + "_" + piece;
+                            liveChildren.put(name, baked.getChild(name));
+                        }
+                    }
+                }
                 java.util.ArrayList<ModelPart> nearPins = new java.util.ArrayList<>();
                 java.util.ArrayList<ModelPart> farPins = new java.util.ArrayList<>();
                 for (int i = 0; i < driverZ.length; i++) {

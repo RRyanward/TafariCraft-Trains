@@ -400,7 +400,7 @@ public final class RollingStockSeatCalibrationEvents {
 
         int s = clampSlot(slot);
 
-        if (target instanceof LegacyPoweredLocomotive) {
+        if (target instanceof LegacyPoweredLocomotive powered && !powered.isWoodenPassengerTram()) {
             if (s != 1) {
                 source.sendFailure(Component.literal(
                         "[TC SEAT] Current powered locomotives use one driver seat. Select Seat 1."));
@@ -413,11 +413,11 @@ public final class RollingStockSeatCalibrationEvents {
         // Make the simple workflow immediate: if the rider is already mounted
         // and this seat has never been set, capture the current riding position
         // automatically as the starting point.
-        if (!(target instanceof LegacyPoweredLocomotive)
-                && player.getVehicle() == target
-                && !RollingStockCalibrationConfig.hasSeat(
-                        registryId(target), s)) {
-            captureSeatFromCurrentRide(player, target, s, false);
+        if (!(target instanceof LegacyPoweredLocomotive powered) || powered.isWoodenPassengerTram()) {
+            if (player.getVehicle() == target
+                    && !RollingStockCalibrationConfig.hasSeat(registryId(target), s)) {
+                captureSeatFromCurrentRide(player, target, s, false);
+            }
         }
 
         player.displayClientMessage(
@@ -472,8 +472,8 @@ public final class RollingStockSeatCalibrationEvents {
             return 1;
         }
 
-        // SEAT mode.
-        if (target instanceof LegacyPoweredLocomotive powered) {
+        // SEAT mode. Wooden trams use independent three-slot passenger calibration.
+        if (target instanceof LegacyPoweredLocomotive powered && !powered.isWoodenPassengerTram()) {
             if (slot != 1) return 0;
 
             switch (direction) {
@@ -497,7 +497,15 @@ public final class RollingStockSeatCalibrationEvents {
              * the command-running player to mount the car merely to create a
              * starting point. Seed that slot from the cage's real default.
              */
-            if (target instanceof traincraft.entity.train.freight.LivestockCar livestock) {
+            if (target instanceof LegacyPoweredLocomotive powered
+                    && powered.isWoodenPassengerTram()) {
+                // DEV53E3G: Unset slots start separately, never at the driver's feet.
+                // Any existing New York tram settings are preserved verbatim.
+                double seed = (slot - 2) *
+                        ("locomotive_electric_tram_ny".equals(id) ? 1.0D : 0.70D);
+                RollingStockCalibrationConfig.setSeat(
+                        id, slot, true, seed, -0.30D, 0.0D, false);
+            } else if (target instanceof traincraft.entity.train.freight.LivestockCar livestock) {
                 livestock.tcEnsureCalibrationSeat(slot);
             } else if (target instanceof traincraft.entity.train.freight.MobTransportCar mobTransport) {
                 mobTransport.tcEnsureCalibrationSeat(slot);
@@ -527,6 +535,12 @@ public final class RollingStockSeatCalibrationEvents {
 
         RollingStockCalibrationConfig.adjustSeat(
                 id, slot, dLong, dY, dSide);
+        // DEV53E3G: The selected tram seat should move visibly without waiting
+        // for the once-per-second automatic TOML snapshot.
+        if (target instanceof LegacyPoweredLocomotive powered
+                && powered.isWoodenPassengerTram()) {
+            traincraft.network.RollingStockCalibrationNetwork.sendToPlayer(player);
+        }
 
         showSeatStatus(player, target, slot);
         return 1;
@@ -541,7 +555,7 @@ public final class RollingStockSeatCalibrationEvents {
         int slot = PREVIEW_SLOTS.getOrDefault(
                 player.getUUID(), 1);
 
-        if (target instanceof LegacyPoweredLocomotive powered) {
+        if (target instanceof LegacyPoweredLocomotive powered && !powered.isWoodenPassengerTram()) {
             if (slot != 1) {
                 source.sendFailure(Component.literal(
                         "[TC SEAT] Powered locomotive uses Seat 1."));
@@ -594,6 +608,10 @@ public final class RollingStockSeatCalibrationEvents {
                 y,
                 side,
                 false);
+        if (target instanceof LegacyPoweredLocomotive powered
+                && powered.isWoodenPassengerTram()) {
+            traincraft.network.RollingStockCalibrationNetwork.sendToPlayer(player);
+        }
 
         if (announce) {
             player.displayClientMessage(
@@ -614,7 +632,7 @@ public final class RollingStockSeatCalibrationEvents {
         Integer slot = PREVIEW_SLOTS.get(player.getUUID());
 
         if (slot != null) {
-            if (target instanceof LegacyPoweredLocomotive powered) {
+            if (target instanceof LegacyPoweredLocomotive powered && !powered.isWoodenPassengerTram()) {
                 powered.tcRemoteClearSeat(player);
             } else {
                 RollingStockCalibrationConfig.clearSeat(
@@ -645,7 +663,7 @@ public final class RollingStockSeatCalibrationEvents {
         Entity target = requireTarget(player);
         if (target == null) return 0;
 
-        if (target instanceof LegacyPoweredLocomotive powered) {
+        if (target instanceof LegacyPoweredLocomotive powered && !powered.isWoodenPassengerTram()) {
             powered.tcLockCalibrationToConfig(player);
         } else {
             String id = registryId(target);
@@ -712,7 +730,7 @@ public final class RollingStockSeatCalibrationEvents {
                 player.getUUID(), 1);
         PREVIEW_SLOTS.put(player.getUUID(), slot);
 
-        if (target instanceof LegacyPoweredLocomotive powered) {
+        if (target instanceof LegacyPoweredLocomotive powered && !powered.isWoodenPassengerTram()) {
             if (dLong != 0.0D) {
                 powered.tcRemoteAdjustSeatLong(player, dLong);
             }
@@ -752,7 +770,7 @@ public final class RollingStockSeatCalibrationEvents {
         int slot = PREVIEW_SLOTS.getOrDefault(
                 player.getUUID(), 1);
 
-        if (target instanceof LegacyPoweredLocomotive powered) {
+        if (target instanceof LegacyPoweredLocomotive powered && !powered.isWoodenPassengerTram()) {
             powered.tcRemoteClearSeat(player);
         } else {
             RollingStockCalibrationConfig.clearSeat(
@@ -816,7 +834,7 @@ public final class RollingStockSeatCalibrationEvents {
         // not the shared TOML seat table. Report the values that the seat
         // direction commands actually modify so BR E69/KOF/etc. no longer
         // misleadingly display enabled=false / 0 / 0 / 0.
-        if (target instanceof LegacyPoweredLocomotive powered && slot == 1) {
+        if (target instanceof LegacyPoweredLocomotive powered && !powered.isWoodenPassengerTram() && slot == 1) {
             enabled = powered.tcCalibrationHasSeat();
             longitudinal = powered.tcCalibrationSeatLong();
             y = powered.tcCalibrationSeatFootY();

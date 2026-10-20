@@ -68,6 +68,9 @@ public final class Dev44TrainLightVisuals {
             false,
             true,
             BeamStates.beamState());
+    // DEV55L25R2: share the existing soft-beam layer with two Creative-only
+    // recovered tram previews. No legacy beam geometry or production path changes.
+    public static RenderType creativeBeamType(){return HEADLIGHT_BEAM;}
     private static final Logger DEBUG_LOG = LoggerFactory.getLogger("TC-DEV44-LIGHT-DEBUG5");
     private static final Map<java.util.UUID, Long> DEBUG_LAST = new HashMap<>();
     private static final Set<String> VERIFY_LOGGED = new HashSet<>();
@@ -174,7 +177,11 @@ public final class Dev44TrainLightVisuals {
             boolean engineActive = burnTicks > 0 || steamUnits > 0;
             if (debug) DEBUG_LOG.info("[TC-DEV44-LIGHT-ENGINE10] entity={} burnTicks={} steamUnits={} active={} speedIndependent=true",
                     entity.getId(), burnTicks, steamUnits, engineActive);
-            if (!engineActive) return;
+            // DEV55L3 review preview only: the synced, invisible entity name is
+            // set exclusively by /tclightreview. Do not alter real boiler state.
+            boolean tcDev55L3ReviewLamp = entity.getCustomName() != null
+                    && "DEV55L3_TEST_LAMPS".equals(entity.getCustomName().getString());
+            if (!engineActive && !tcDev55L3ReviewLamp) return;
         }
         String filename = meshId.getPath();
         if (!filename.startsWith("legacy_meshes/locomotive_steam_") || !filename.endsWith(".tcm")) {
@@ -194,6 +201,12 @@ public final class Dev44TrainLightVisuals {
         }
         // Preserve sunsetStrength() unchanged. Source marker locations are never shifted.
         Matrix4f m = pose.last().pose();
+        // DEV55L4: use true model Y orientation; Berkshire/Adler invert model Y.
+        // Applies ONLY to no-fuel preview entities. 262T and VB Shays are locked.
+        traincraft.debug.Dev55L4AimTuner.enter(entity,id,m.m11());
+        Dev55L13SoftBeam.enter(entity,id);
+        // DEV55L5: scoped to this viewer model, checked independently for each beam.
+        traincraft.debug.Dev55L5Optics.enter(entity,id);
         VertexConsumer v = buffers.getBuffer(HEADLIGHT_BEAM);
         Marker[] marks = entry.markers();
         if (marks.length == 0) return;
@@ -227,15 +240,70 @@ public final class Dev44TrainLightVisuals {
             // constant-X glow quad made even an accurate beam look misaligned.
             if ("locomotive_steam_vb_shay_2".equals(id)) {
                 shay2LensFace(v,m,x,y,z,brightness);
+            } else if("locomotive_steam_climax_2".equals(id)
+                    && Dev55L19FleetBeams.active(entity,id)) {
+                // DEV55L25: yellow preview lens is drawn by L19 after the
+                // center ray is resolved. The fixed-X glow face would otherwise
+                // intersect the rotated lens and make a protruding lightbox.
+            } else if("locomotive_steam_4_4_0".equals(id)) {
+                // DEV55L27: the accepted 4-4-0 front lens lies on model -Z.
+                // Rotate ONLY the emissive face; keep beam, reach, collision,
+                // terrain lighting, mesh markers and soft-beam settings frozen.
+                lampFaceZ(v,m,x,y,z,-1F,brightness);
+            } else if("locomotive_steam_u57".equals(id)) {
+                // DEV55L27: all three U57 headlamp housings face model +Z.
+                // An X-normal glow square appeared edge-on in-game.
+                lampFaceZ(v,m,x,y,z,1F,brightness);
+            } else if("locomotive_steam_adler".equals(id)
+                    && Dev55L19FleetBeams.active(entity,id)) {
+                // Adler's two lamps face +Z in the verified mesh, not +X.
+                // The L19 pilot aligns only the drawn yellow glow squares.
+                // Physical mesh blocks and production lamps remain unchanged.
+                lampFaceZ(v,m,x,y,z,1F,brightness);
             } else {
                 lampFace(v,m,x,y,z,dir,brightness);
             }
+        }
+        // DEV55L18 review-only opposite-end red lamp candidates. No white beams,
+        // no production locomotive changes, and no modification of existing marker records.
+        if (Dev55L18RearLampReview.active(entity)) {
+            for (double[] back : Dev55L18RearLampReview.positions(id)) {
+                tailFace(v,m,new Marker(back[0],back[1],back[2]),brightness,Dev55L19FleetBeams.active(entity,id)?traincraft.debug.Dev55L19Settings.getTailDepth(id):0F);
+            }
+        }
+        // DEV55L19: only opt-in Creative review entities use the common world-pose rays.
+        // The accepted 4-4-0, Shay and Berkshire paths bypass the entire pilot.
+        if (Dev55L19FleetBeams.active(entity,id)) {
+            double[][] positions=new double[marks.length][4];
+            for(int i=0;i<marks.length;i++){positions[i][0]=marks[i].x();positions[i][1]=marks[i].y();positions[i][2]=marks[i].z();positions[i][3]=1D;}
+            boolean rendered=Dev55L19FleetBeams.render(entity,id,v,m,positions,brightness);
+            if (rendered) {
+                if (traincraft.debug.Dev55L19Settings.diagnostic() && entity.tickCount % 80 == 0)
+                    DEBUG_LOG.info("[DEV55L22-NEW-PATH] model={} entity={} newOnly={} legacyVisible=SKIPPED",
+                        id,entity.getId(),traincraft.debug.Dev55L19Settings.newOnly());
+                return;
+            }
+            if("locomotive_steam_climax_2".equals(id)) {
+                // DEV55L25 fallback: a failed review renderer still shows the
+                // original fixed square, rather than a lamp that disappears.
+                for(Marker mark:marks)lampFace(v,m,(float)mark.x(),(float)mark.y(),(float)mark.z(),dir,brightness);
+            }
+            // DEV55L22: explicit Creative-only switch. Never silently layer the
+            // old static beam over a missing/broken new review ray. No effect on
+            // 4-4-0, VB Shays, ordinary production engines or world-light blocks.
+            if (traincraft.debug.Dev55L19Settings.newOnly()) {
+                if (entity.tickCount % 80 == 0)
+                    DEBUG_LOG.warn("[DEV55L22-NEW-PATH-MISSING] model={} entity={} newBeam=false legacyVisible=SUPPRESSED; inspect [DEV55L19-GUARD]",id,entity.getId());
+                return;
+            }
+            if (traincraft.debug.Dev55L19Settings.diagnostic() && entity.tickCount % 80 == 0)
+                DEBUG_LOG.warn("[DEV55L22-OLD-FALLBACK] model={} entity={} newBeam=false legacyVisible=ACTIVE",id,entity.getId());
         }
         // The red Shay 2 rear lamp is an independent outward-facing marker on +X.
         // No white beam is emitted from a tail light. Existing front lamp and
         // collision checks are preserved; only the Shay 2 branch enters here.
         if ("locomotive_steam_vb_shay_2".equals(id)) {
-            tailFace(v,m,VB_SHAY_2_TAIL,brightness);
+            tailFace(v,m,VB_SHAY_2_TAIL,brightness,0F); // Frozen accepted Shay 2
             if (debug) DEBUG_LOG.info("[TC-D3X3-SHAY] headlamp=-X tailLamp=+X front={} rear={}",
                     marks[main],VB_SHAY_2_TAIL);
         } else if ("locomotive_steam_vb_shay".equals(id) && debug) {
@@ -273,16 +341,21 @@ public final class Dev44TrainLightVisuals {
                            : primary.y()+Math.min(1.75F,reach*0.145F));
             return;
         }
-        float mainReach = contactReach(entity,id,m,primary,dir,0F,ground,12F,debug,"CENTER");
+        float mainMax=traincraft.debug.Dev55L5Optics.reach(0F,12F);
+        float mainReach = traincraft.debug.Dev55L7PoseClip.applies(entity,id)
+                ? traincraft.debug.Dev55L7PoseClip.blocks(entity,id,m,primary.x(),primary.y(),primary.z(),dir,0F,ground,mainMax)
+                : contactReach(entity,id,m,primary,dir,0F,ground,mainMax,debug,"CENTER");
         // Fix 8: wall contact was detected on Berkshire but its broad light
         // ribbon still appeared ~1 block beyond the face. Keep the ray result
         // intact and apply a conservative visual-only safety margin.
         boolean berkshireWall = (id.equals("locomotive_steam_berkshire_765")
-                || id.equals("locomotive_steam_berkshire_1225")) && mainReach < 11.85F;
+                || id.equals("locomotive_steam_berkshire_1225")) && mainReach < mainMax-0.15F;
         float visibleCenterReach = berkshireWall ? Math.max(0.28F,mainReach-0.85F) : mainReach;
         if (debug && berkshireWall) DEBUG_LOG.info("[TC-DEV44-LIGHT-DEBUG8] CENTER raw={} visual={} sharedWallCap={}",
                 mainReach,visibleCenterReach,Math.max(0.28F,mainReach-1.05F));
-        float centerEntityReach=entityReach(entity,id,primary,dir,0F,12F,debug,"CENTER");
+        float centerEntityReach=traincraft.debug.Dev55L7PoseClip.applies(entity,id)
+                ? traincraft.debug.Dev55L7PoseClip.entities(entity,id,m,primary.x(),primary.y(),primary.z(),dir,0F,ground,mainMax)
+                : entityReach(entity,id,primary,dir,0F,mainMax,debug,"CENTER");
         beam(v,m,primary,dir,0F,ground,brightness,true,Math.min(visibleCenterReach,centerEntityReach));
         // Only two actual lateral lamps (one on each side) can create a 45-degree
         // lateral beam. Never generate multiple beams from coincident center markers.
@@ -295,21 +368,31 @@ public final class Dev44TrainLightVisuals {
             if(dz > rightFar) {right=i;rightFar=dz;}
         }
         if(left>=0) {
-            float raw=contactReach(entity,id,m,marks[left],dir,-1F,ground,10.8F,debug,"LEFT");
+            float leftMax=traincraft.debug.Dev55L5Optics.reach(-1F,10.8F);
+            float raw=traincraft.debug.Dev55L7PoseClip.applies(entity,id)
+                    ? traincraft.debug.Dev55L7PoseClip.blocks(entity,id,m,marks[left].x(),marks[left].y(),marks[left].z(),dir,-1F,ground,leftMax)
+                    : contactReach(entity,id,m,marks[left],dir,-1F,ground,leftMax,debug,"LEFT");
             // A lateral ray can miss a wall while its broad rendered wedge
             // overlaps it. When the center sees a wall, do not let either
             // Berkshire auxiliary wash reach past that wall's X plane.
             float reach=berkshireWall ? Math.min(raw,Math.max(0.28F,mainReach-1.05F)) : raw;
             if(debug && berkshireWall) DEBUG_LOG.info("[TC-DEV44-LIGHT-DEBUG8] LEFT raw={} visual={}",raw,reach);
-            reach=Math.min(reach,entityReach(entity,id,marks[left],dir,-1F,10.8F,debug,"LEFT"));
+            reach=Math.min(reach,traincraft.debug.Dev55L7PoseClip.applies(entity,id)
+                    ? traincraft.debug.Dev55L7PoseClip.entities(entity,id,m,marks[left].x(),marks[left].y(),marks[left].z(),dir,-1F,ground,leftMax)
+                    : entityReach(entity,id,marks[left],dir,-1F,leftMax,debug,"LEFT"));
             beam(v,m,marks[left],dir,-1F,ground,brightness,false,reach);
             fillGaps(v,m,primary,marks[left],dir,-1F,ground,brightness,Math.min(Math.min(visibleCenterReach,centerEntityReach),reach));
         }
         if(right>=0) {
-            float raw=contactReach(entity,id,m,marks[right],dir,1F,ground,10.8F,debug,"RIGHT");
+            float rightMax=traincraft.debug.Dev55L5Optics.reach(1F,10.8F);
+            float raw=traincraft.debug.Dev55L7PoseClip.applies(entity,id)
+                    ? traincraft.debug.Dev55L7PoseClip.blocks(entity,id,m,marks[right].x(),marks[right].y(),marks[right].z(),dir,1F,ground,rightMax)
+                    : contactReach(entity,id,m,marks[right],dir,1F,ground,rightMax,debug,"RIGHT");
             float reach=berkshireWall ? Math.min(raw,Math.max(0.28F,mainReach-1.05F)) : raw;
             if(debug && berkshireWall) DEBUG_LOG.info("[TC-DEV44-LIGHT-DEBUG8] RIGHT raw={} visual={}",raw,reach);
-            reach=Math.min(reach,entityReach(entity,id,marks[right],dir,1F,10.8F,debug,"RIGHT"));
+            reach=Math.min(reach,traincraft.debug.Dev55L7PoseClip.applies(entity,id)
+                    ? traincraft.debug.Dev55L7PoseClip.entities(entity,id,m,marks[right].x(),marks[right].y(),marks[right].z(),dir,1F,ground,rightMax)
+                    : entityReach(entity,id,marks[right],dir,1F,rightMax,debug,"RIGHT"));
             beam(v,m,marks[right],dir,1F,ground,brightness,false,reach);
             fillGaps(v,m,primary,marks[right],dir,1F,ground,brightness,Math.min(Math.min(visibleCenterReach,centerEntityReach),reach));
         }
@@ -452,15 +535,20 @@ public final class Dev44TrainLightVisuals {
             final double collisionSign = berkshire ? -1D : 1D;
             final double fx = -Math.sin(yaw) * dir * collisionSign;
             final double fz =  Math.cos(yaw) * dir * collisionSign;
-            final double rx = -fz;
-            final double rz =  fx;
+            // DEV55L2: beam MODEL-Z is independent of front/reverse direction.
+            // 262T is runtime-accepted and must retain the exact old behavior.
+            final double tcDev55L2SideBasis = "locomotive_steam_262t".equals(meshId) ? 1D : dir*collisionSign;
+            final double rx = -fz*tcDev55L2SideBasis;
+            final double rz = fx*tcDev55L2SideBasis;
+            if (debug && lateral != 0F) DEBUG_LOG.info("[DEV55L2-SIDE-AXIS] mesh={} engine={} beam={} dir={} collisionSign={} sideBasis={} worldZ=({}, {})",
+                    meshId, entity.getId(), label, dir, collisionSign, tcDev55L2SideBasis, rx, rz);
             // Local marker X and Z are the existing verified mesh coordinates.
             // The marker X is measured along the oriented locomotive axis.
-            final double along = lamp.x() * dir;
-            final double width = lamp.z();
+            final double along = lamp.x() * dir + traincraft.debug.Dev55L5Optics.originForward(lateral);
+            final double width = lamp.z() + traincraft.debug.Dev55L5Optics.originSide(lateral);
             final boolean shay2Lens = meshId.equals("locomotive_steam_vb_shay_2");
-            final double alongSlope = shay2Lens ? VB_SHAY_2_LENS_FORWARD : 1D;
-            final double sideSlope = shay2Lens ? VB_SHAY_2_LENS_OUTWARD : lateral * 0.509525D;
+            final double alongSlope = shay2Lens ? VB_SHAY_2_LENS_FORWARD : traincraft.debug.Dev55L5Optics.forwardFactor(lateral);
+            final double sideSlope = shay2Lens ? VB_SHAY_2_LENS_OUTWARD : traincraft.debug.Dev55L5Optics.sidewaysFactor(lateral);
             final double forward = maximum;
             final double worldX = entity.getX() + fx*along + rx*width;
             final double worldZ = entity.getZ() + fz*along + rz*width;
@@ -487,8 +575,10 @@ public final class Dev44TrainLightVisuals {
             Vec3 closestTo = null;
             for (double height : heights) {
                 Vec3 from = new Vec3(worldX,baseY+height,worldZ);
+                // DEV55L4: use the same extra groundward slope as the preview beam.
                 Vec3 to = from.add(fx*alongSlope*forward+rx*sideSlope*forward,
-                                   -verticalDrop, fz*alongSlope*forward+rz*sideSlope*forward);
+                                   -verticalDrop-maximum*traincraft.debug.Dev55L4AimTuner.deltaWorldDownPerBlock(),
+                                    fz*alongSlope*forward+rz*sideSlope*forward);
                 BlockHitResult hit = entity.level().clip(new ClipContext(from,to,
                         ClipContext.Block.COLLIDER,ClipContext.Fluid.NONE,entity));
                 if (hit.getType()==HitResult.Type.BLOCK) {
@@ -524,12 +614,17 @@ public final class Dev44TrainLightVisuals {
                     || meshId.equals("locomotive_steam_berkshire_1225");
             double sign=berkshire ? -1D : 1D;
             double fx=-Math.sin(yaw)*dir*sign, fz=Math.cos(yaw)*dir*sign;
-            double rx=-fz,rz=fx;
-            double x=source.getX()+fx*(lamp.x()*dir)+rx*lamp.z();
-            double z=source.getZ()+fz*(lamp.x()*dir)+rz*lamp.z();
+            // DEV55L2: same MODEL-Z basis as the visible LEFT/RIGHT beam.
+            // Frozen 262T keeps the prior basis.
+            double tcDev55L2SideBasis="locomotive_steam_262t".equals(meshId) ? 1D : dir*sign;
+            double rx=-fz*tcDev55L2SideBasis,rz=fx*tcDev55L2SideBasis;
+            double opticsAlong=lamp.x()*dir+traincraft.debug.Dev55L5Optics.originForward(lateral);
+            double opticsSide=lamp.z()+traincraft.debug.Dev55L5Optics.originSide(lateral);
+            double x=source.getX()+fx*opticsAlong+rx*opticsSide;
+            double z=source.getZ()+fz*opticsAlong+rz*opticsSide;
             boolean shay2Lens=meshId.equals("locomotive_steam_vb_shay_2");
-            double along=shay2Lens ? VB_SHAY_2_LENS_FORWARD : 1D;
-            double side=shay2Lens ? VB_SHAY_2_LENS_OUTWARD : lateral*0.509525D;
+            double along=shay2Lens ? VB_SHAY_2_LENS_FORWARD : traincraft.debug.Dev55L5Optics.forwardFactor(lateral);
+            double side=shay2Lens ? VB_SHAY_2_LENS_OUTWARD : traincraft.debug.Dev55L5Optics.sidewaysFactor(lateral);
             double ox=fx*along+rx*side,oz=fz*along+rz*side;
             float result=maximum;
             int hitId=-1;
@@ -548,7 +643,7 @@ public final class Dev44TrainLightVisuals {
             for(double vertical : heights) {
                 for(double sideways : new double[]{-0.52D,0D,0.52D}) {
                     Vec3 from=new Vec3(x+rx*sideways,source.getY()+vertical,z+rz*sideways);
-                    Vec3 to=from.add(ox*maximum,-verticalDrop,oz*maximum);
+                    Vec3 to=from.add(ox*maximum,-verticalDrop-maximum*traincraft.debug.Dev55L4AimTuner.deltaWorldDownPerBlock(),oz*maximum);
                     AABB volume=new AABB(from,to).inflate(1.0D);
                     for(Entity target : source.level().getEntities(source,volume, e ->
                             e.isAlive() && !e.isSpectator() && e !=source &&
@@ -574,6 +669,20 @@ public final class Dev44TrainLightVisuals {
             return maximum;
         }
     }
+    /** DEV55L21R2: Adler test-preview yellow lens square normal to model +Z. */
+    private static void lampFaceZ(VertexConsumer v,Matrix4f m,float x,float y,float z,
+                                  float dir,float brightness) {
+        float h=0.072F,fz=z+dir*0.008F;
+        int alpha=(int)(236F*brightness);
+        vertex(v,m,x-h,y-h,fz,255,232,161,alpha);
+        vertex(v,m,x+h,y-h,fz,255,232,161,alpha);
+        vertex(v,m,x+h,y+h,fz,255,232,161,alpha);
+        vertex(v,m,x-h,y+h,fz,255,232,161,alpha);
+        vertex(v,m,x-h,y+h,fz,255,232,161,alpha);
+        vertex(v,m,x+h,y+h,fz,255,232,161,alpha);
+        vertex(v,m,x+h,y-h,fz,255,232,161,alpha);
+        vertex(v,m,x-h,y-h,fz,255,232,161,alpha);
+    }
     private static void lampFace(VertexConsumer v, Matrix4f m, float x,float y,float z,
                                  float dir,float brightness) {
         // A visible square lamp face at the SELECTED mesh point; no floating proxy.
@@ -590,8 +699,11 @@ public final class Dev44TrainLightVisuals {
         vertex(v,m,fx,y-h,z-h,255,232,161,alpha);
     }
     /** Explicit rear red lamp on the SHAY 2 marked +X end; no beam or terrain lighting. */
-    private static void tailFace(VertexConsumer v,Matrix4f matrix,Marker m,float brightness) {
-        float x=(float)m.x()+0.022F,y=(float)m.y(),z=(float)m.z(),h=0.075F;
+    private static void tailFace(VertexConsumer v,Matrix4f matrix,Marker m,float brightness,float tailDepth) {
+        // DEV55L26: opposite-end reviewed rear markers all face model +X.
+        // Negative tailDepth sinks the red lens inward without moving its marker,
+        // any white ray, collider, powered state or ground-light endpoint.
+        float x=(float)m.x()+0.022F+tailDepth,y=(float)m.y(),z=(float)m.z(),h=0.075F;
         int alpha=(int)(234F*brightness);
         vertex(v,matrix,x,y-h,z-h,255,43,35,alpha);
         vertex(v,matrix,x,y-h,z+h,255,43,35,alpha);
@@ -610,16 +722,19 @@ public final class Dev44TrainLightVisuals {
                              float lateral,float ground,float brightness,boolean primary,
                               float reach,boolean shayDown,boolean shay2YUp) {
         float x=(float)mark.x(), y=(float)mark.y(), z=(float)mark.z();
+        // DEV55L5: virtual beam origin only; square lens coordinates never move.
+        x+=dir*traincraft.debug.Dev55L5Optics.originForward(lateral);
+        z+=traincraft.debug.Dev55L5Optics.originSide(lateral);
         // Keep the main beam reach at 12 blocks, but narrow auxiliary lamps to
         // about 27 degrees. Each auxiliary uses a forward-projected footprint.
-        float maximum = primary ? 12.0F : 10.8F;
+        float maximum = traincraft.debug.Dev55L5Optics.reach(lateral,primary ? 12.0F : 10.8F);
         float forward = Math.max(0.28F,Math.min(maximum,reach));
         // Shay 2 alone uses the NORMALIZED model lens direction; its maximum
         // 10.8-block reach still means 10.8 horizontal blocks, not an 18-block
         // oversized ray after the 53.24-degree rotation.
-        float along = shay2YUp ? VB_SHAY_2_LENS_FORWARD : 1F;
+        float along = shay2YUp ? VB_SHAY_2_LENS_FORWARD : traincraft.debug.Dev55L5Optics.forwardFactor(lateral);
         float side = shay2YUp ? forward*VB_SHAY_2_LENS_OUTWARD
-                : primary ? 0.0F : lateral*forward*0.509525F; // legacy 27-degree fan
+                : forward*traincraft.debug.Dev55L5Optics.sidewaysFactor(lateral); // DEV55L6 quarter-turn, defaults unchanged
         float endX=x+dir*forward*along, endZ=z+side;
         // These legacy models invert Y. Project the FAR END onto the best
         // available model-space floor estimate instead of leaving it at lamp Y.
@@ -628,11 +743,16 @@ public final class Dev44TrainLightVisuals {
         float endY=shay2YUp ? y-Math.min(2.65F,forward*0.245F)
                              : shayDown ? y+Math.min(1.75F,forward*0.145F)
                                         : Math.max(y+0.40F,ground);
+        // DEV55L4: per-model vertical calibration on marked review previews ONLY.
+        // Positive degrees lower the endpoint; normal engines use exactly 0.
+        if (!shayDown && !shay2YUp)
+            endY += forward * traincraft.debug.Dev55L4AimTuner.deltaModelYPerBlock();
         // Geometry-only: align the midpoint height with its 65% beam distance.
         // No alpha, collision ray, endpoint, or lamp changes.
         float midY=y+(endY-y)*0.65F;
         float xNear=x+dir*along*0.035F;
-        float zNear=z+(shay2YUp ? VB_SHAY_2_LENS_OUTWARD*0.035F : 0F);
+        float zNear=z+(shay2YUp ? VB_SHAY_2_LENS_OUTWARD*0.035F
+                : traincraft.debug.Dev55L5Optics.turned(lateral) ? traincraft.debug.Dev55L5Optics.sidewaysFactor(lateral)*0.035F : 0F);
         float xMid=x+dir*along*forward*0.65F;
         float zMid=z+side*0.65F;
         float width=(primary ? 1.15F : 1.05F)*Math.min(1F,0.3F+forward*0.10F);
@@ -642,6 +762,9 @@ public final class Dev44TrainLightVisuals {
         int startA=(int)((primary?39F:30F)*brightness);
         // Broad double-sided horizontal wash. Edge alpha fades to zero in the
         // extended cone below; central strips cover the previously dark gaps.
+        if (Dev55L13SoftBeam.active() && primary && !shayDown && !shay2YUp) {
+            Dev55L13SoftBeam.ribbon(v,m,xNear,y,zNear,endX,endY,endZ,nX,nZ,width,brightness);
+        } else {
         doubleSideQuad(v,m,
             xNear+nX*nearWidth,y,zNear+nZ*nearWidth,
             xNear-nX*nearWidth,y,zNear-nZ*nearWidth,
@@ -652,6 +775,7 @@ public final class Dev44TrainLightVisuals {
             xMid-nX*width*0.78F,midY,zMid-nZ*width*0.78F,
             endX-nX*width,endY,endZ-nZ*width,
             endX+nX*width,endY,endZ+nZ*width,(int)(startA*0.66F));
+        }
         // Crossed vertical face keeps the beam visible from side angles.
         doubleSideQuad(v,m,
             xNear,y-0.06F,zNear,xNear,y+0.06F,zNear,
@@ -667,6 +791,12 @@ public final class Dev44TrainLightVisuals {
                     gx+nX*h,endY+h,gz+nZ*h,
                     gx-nX*h,endY+h,gz-nZ*h,
                     gx-nX*h,endY-h,gz-nZ*h,(int)(42F*brightness));
+            } else if(traincraft.debug.Dev55L5Optics.turned(lateral)) {
+                float gx=endX-dir*along*0.10F,gz=endZ-traincraft.debug.Dev55L5Optics.sidewaysFactor(lateral)*0.10F;
+                doubleSideQuad(v,m,gx+nX*h,endY-h,gz+nZ*h,
+                    gx+nX*h,endY+h,gz+nZ*h,
+                    gx-nX*h,endY+h,gz-nZ*h,
+                    gx-nX*h,endY-h,gz-nZ*h,(int)(42F*brightness));
             } else {
                 doubleSideQuad(v,m,endX-dir*0.10F,endY-h,endZ-h,
                     endX-dir*0.10F,endY+h,endZ-h,
@@ -674,7 +804,7 @@ public final class Dev44TrainLightVisuals {
                     endX-dir*0.10F,endY-h,endZ+h,(int)(42F*brightness));
             }
         }
-        if (forward >= maximum-0.10F) {
+        if (forward >= maximum-0.10F && !(Dev55L13SoftBeam.active() && primary && !shayDown && !shay2YUp)) {
             if (shay2YUp) {
                 // Groundward endpoint wash is perpendicular to the real lens axis.
                 doubleSideQuad(v,m,
@@ -682,6 +812,13 @@ public final class Dev44TrainLightVisuals {
                     endX-dir*along*1.25F-nX*width*1.20F,endY,endZ-VB_SHAY_2_LENS_OUTWARD*1.25F-nZ*width*1.20F,
                     endX+dir*along*0.45F-nX*width*1.35F,endY,endZ+VB_SHAY_2_LENS_OUTWARD*0.45F-nZ*width*1.35F,
                     endX+dir*along*0.45F+nX*width*1.35F,endY,endZ+VB_SHAY_2_LENS_OUTWARD*0.45F+nZ*width*1.35F,(int)(23F*brightness));
+            } else if(traincraft.debug.Dev55L5Optics.turned(lateral)) {
+                float pathX=dir*along,pathZ=traincraft.debug.Dev55L5Optics.sidewaysFactor(lateral);
+                doubleSideQuad(v,m,
+                    endX-pathX*1.25F+nX*width*1.20F,endY,endZ-pathZ*1.25F+nZ*width*1.20F,
+                    endX-pathX*1.25F-nX*width*1.20F,endY,endZ-pathZ*1.25F-nZ*width*1.20F,
+                    endX+pathX*0.45F-nX*width*1.35F,endY,endZ+pathZ*0.45F-nZ*width*1.35F,
+                    endX+pathX*0.45F+nX*width*1.35F,endY,endZ+pathZ*0.45F+nZ*width*1.35F,(int)(23F*brightness));
             } else {
                 doubleSideQuad(v,m,
                     endX-dir*1.25F,endY,endZ-width*1.20F,
@@ -695,12 +832,19 @@ public final class Dev44TrainLightVisuals {
      * central beam and any real left/right auxiliary lamp sources. */
     private static void fillGaps(VertexConsumer v,Matrix4f m,Marker center,
                                  Marker auxiliary,float dir,float sign,float ground,float brightness,float reach) {
-        float x=(float)center.x(), y=(float)center.y(), z=(float)center.z();
+        // The old fan-gap wedge must NOT remain visible when the side beam is straight.
+        if (traincraft.debug.Dev55L5Optics.turned(sign) ||
+            Math.abs(traincraft.debug.Dev55L5Optics.sideSlope(sign))<0.001F) return;
+        float x=(float)center.x()+dir*traincraft.debug.Dev55L5Optics.originForward(0F);
+        float y=(float)center.y(), z=(float)center.z()+traincraft.debug.Dev55L5Optics.originSide(0F);
         float floor=Math.max(y+0.40F,ground);
+        floor += reach * traincraft.debug.Dev55L4AimTuner.deltaModelYPerBlock();
         float startX=x+dir*0.11F;
         float farX=x+dir*reach;
         float innerZ=z+sign*0.40F;
-        float outerZ=(float)auxiliary.z()+sign*reach*0.338F;
+        float gapFactor = Math.abs(traincraft.debug.Dev55L5Optics.sideSlope(sign)-sign*0.509525F)<0.0001F
+                ? sign*0.338F : traincraft.debug.Dev55L5Optics.sideSlope(sign)*0.66336F;
+        float outerZ=(float)auxiliary.z()+traincraft.debug.Dev55L5Optics.originSide(sign)+reach*gapFactor;
         // Double-sided trapezoid, modest alpha to blend beams without a solid bar.
         doubleSideQuad(v,m,
             startX,y,z,startX,y,(float)auxiliary.z(),
