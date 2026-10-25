@@ -63,17 +63,22 @@ When fixing a placement, preview, GUI, or integration issue, prefer changing tha
 
 ## Current Release Work
 
-The project is in final development / release-candidate validation.
+**Checkpoint:** October 25, 2026 source sync (`93df72b`). Village station worldgen and cleanup are accepted/frozen; the project remains in **unreleased late-stage development**.
 
-Current work includes:
+**Agreed first-release scope:**
+- Spawn local railway station structures in eligible naturally generated villages, with railway staff and chance-based parked trains.
+- Let players create every inter-village railway connection themselves. **Do not generate automatic networks, timetables, or unsupervised train dispatch.**
+- Preserve accepted locomotive rods/pistons/wheels and DEV55 lighting calibrations. Reopen only for demonstrated regressions.
 
-- Full client/runtime regression testing
-- Tracks Builder and Blueprint route validation
-- Final visual/model cleanup
-- Documentation and in-game guide work
-- Packaging and release-page preparation
-- Capability-based modpack integration for cargo, fluids, and rail power
-- Tag-based vegetation and entity-interaction compatibility
+**Current release gates:**
+- Guarded GPU/static-mesh performance testing, especially FPS and memory with multiple trains on screen.
+- Medium Curve placement/preview and vegetation-aware placement edge cases.
+- Post-cleanup lighting regression checks and retirement of obsolete diagnostic/lighting code.
+- Reuse accepted test evidence, run automated build/headless regressions, and do targeted in-game visual checks.
+- Verify final survival gameplay, save/reload, dedicated server, multiplayer and packaging.
+- Ensure public binary distribution permissions are satisfied under `NOTICE.md` and `LICENSE.md` before publication.
+
+The source tree contains opt-in GPU render paths, locomotive `AUTO/ON/OFF` headlight modes, updated train instrument settings and villager/station lifecycle code; these are development features, **not** a substitute for release acceptance.
 
 ## Interoperability Direction
 
