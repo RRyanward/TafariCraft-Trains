@@ -26,7 +26,7 @@ This is not a compatibility wrapper around an old JAR. The current project conta
 
 ## Current Development State
 
-**Status: Late-stage development / release preparation — active regression for Performance testing. FPS at a very low 8 improving to 40-60 for the fleet**
+**Status: Late-stage development / release preparation — **active regression for Lights testing then to release testing**
 
 The Minecraft 1.20.1 / Forge / Java 17 port has substantial playable locomotive, rolling-stock, track, crafting, and railway infrastructure systems. Targeted checks have passed for many components, but not every locomotive, world seed, mod combination, or automated railway scenario has been certified.
 
