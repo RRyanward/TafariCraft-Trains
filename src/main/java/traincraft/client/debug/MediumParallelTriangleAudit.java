@@ -78,7 +78,8 @@ public final class MediumParallelTriangleAudit {
                 found++;
             }
         }
-        Traincraft.LOGGER.warn("[TC-DEV50B2X] WRAPPED curveStates={} F9=0 original; modes 1-4 diagnostic",found);
+
+        // DEV58B9R4R1: obsolete rail F-key developer hint retired; renderer stays at default mode zero.
     }
 
     private static boolean near(float x,float y){return Math.abs(x-y)<0.001f;}

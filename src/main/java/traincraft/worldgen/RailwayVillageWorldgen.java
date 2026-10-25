@@ -192,6 +192,8 @@ public final class RailwayVillageWorldgen {
         final long born;
         long nextCheck;
         int checks;
+        int dev56SiteCursor;
+        long dev56SiteVillage=Long.MIN_VALUE;
         FreshRegion(ChunkPos chunk, long tick) { this.chunk = chunk; this.born = tick; this.nextCheck = tick + 60; }
     }
     private record VillageProbe(Optional<BlockPos> center, int homes, int clustered, boolean natural) {}
@@ -215,6 +217,15 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
     private static final ForgeConfigSpec.BooleanValue R38_SUBWAY;
     // R39: true circular underground station, no generated routes or AI.
     private static final ForgeConfigSpec.BooleanValue R39_CIRCULAR_HUB;
+    // DEV56 R1: real vanilla village structure-start bridge. A disposable-world
+    // pilot only; the independently prepared jigsaw/API template adapter is NOT
+    // active in this patch. Never touches already generated/save-protected worlds.
+    private static final ForgeConfigSpec.BooleanValue DEV56_ENABLED;
+    private static final ForgeConfigSpec.IntValue DEV56_VILLAGE_PERCENT;
+    private static final ForgeConfigSpec.IntValue DEV56_ACTIVE_WEIGHT;
+    private static final ForgeConfigSpec.IntValue DEV56_ABANDONED_WEIGHT;
+    private static final ForgeConfigSpec.IntValue DEV56_OVERGROWN_WEIGHT;
+    private static final ForgeConfigSpec.IntValue DEV56_SUBWAY_WEIGHT;
     private static final ForgeConfigSpec.IntValue F1D_STATION_CHANCE;
     private static final ForgeConfigSpec.IntValue F1D_ABANDONED_CHANCE;
     private static final ForgeConfigSpec.IntValue ONE_PER_RADIUS;
@@ -265,6 +276,20 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
         cfg.push("villageRailwayVariety");
         SEEDED_VARIETY_FRESH = cfg.comment("OPT-IN only: for NEW fresh villages, seed-select 35% unmodified, 35% active-surface stations, 15% abandoned reserved, 10% construction reserved, 5% subway reserved. Reserved types produce NO station/tracks until those systems are safely implemented. Older saves retain accepted generation while this is false. Never retrofits.")
                 .define("applySeededSelectionToFreshStations", false);
+        cfg.pop();
+        cfg.push("dev56NativeVillageStationPilot");
+        DEV56_ENABLED = cfg.comment("DEV56 R1: STRICTLY for a NEW integrated world named 'DEV56 Village Test' in the Traincraft run/saves folder. Finds verified vanilla village structure starts in loaded chunks; never edits another world. Does NOT inject jigsaw templates yet.")
+                .define("enabledInDisposableWorldOnly", true);
+        DEV56_VILLAGE_PERCENT = cfg.comment("Deterministic chance (0..100) per verified village structure start, not per loaded chunk.")
+                .defineInRange("stationVillageChancePercent", 35, 0, 100);
+        DEV56_ACTIVE_WEIGHT = cfg.comment("Weighted share among selected villages: ordinary staffed surface station.")
+                .defineInRange("activeWeight", 60, 0, 100);
+        DEV56_ABANDONED_WEIGHT = cfg.comment("Weighted share among selected villages: unstaffed abandoned surface station.")
+                .defineInRange("abandonedWeight", 20, 0, 100);
+        DEV56_OVERGROWN_WEIGHT = cfg.comment("Weighted share among selected villages: unstaffed overgrown surface station.")
+                .defineInRange("overgrownWeight", 15, 0, 100);
+        DEV56_SUBWAY_WEIGHT = cfg.comment("Weighted share among selected villages: underground subway or circular hub; unsafe sites are rejected, not forcibly excavated.")
+                .defineInRange("subwayWeight", 5, 0, 100);
         cfg.pop();
         cfg.push("generatedRailwayStaff");
         STAFF_RESPAWN = cfg.comment("Replace tracked world-generated station workers only AFTER a recorded death; never infer death from an unloaded or wandering entity.")
@@ -436,6 +461,13 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
         // after all chunk generation has finished; never loads missing chunks.
         if (PLAYER_OPERATED_STATIONS_ONLY && !DEV50E2_PENDING.isEmpty()) DEV50E2_PENDING.clear();
         else if (!DEV50E2_PENDING.isEmpty()) tickDev50e2Networks(level);
+        // DEV56J1: native jigsaw API reserves actual village structure space.
+        // NEVER run the legacy post-generation station candidate scanner in the
+        // new API-only test save, even if the API reported a missing dependency.
+        if (Dev56JigsawVillagePool.isTestWorld(event.getServer())) {
+            FRESH_REGIONS.clear();
+            return;
+        }
         if (!AUTOMATIC.get()) return;
         // DEV50f1f: never inspect village POIs or station sites in the
         // disposable world until the operator EXPLICITLY opts in. Do not
@@ -466,7 +498,13 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
             region.checks++;
             region.nextCheck = ticks + 200; // allow POIs and structure starts to finish loading
             CHECKED.incrementAndGet();
-            VillageProbe probe = inspectVillage(level, origin, VILLAGE_RANGE.get() + 32);
+            boolean dev56Pilot = dev56PilotWorld(level) && DEV56_ENABLED.get();
+            // The R40 three-bed POI gate remains exactly as accepted outside the
+            // isolated test save. The test save instead uses the actual vanilla
+            // village StructureStart and its seed-stable anchor (no fake villages).
+            VillageProbe probe = dev56Pilot
+                    ? dev56NativeVillageProbe(level, origin, VILLAGE_RANGE.get() + 48)
+                    : inspectVillage(level, origin, VILLAGE_RANGE.get() + 32);
             if (probe.center().isEmpty()) {
                 if (probe.homes() < 3) HOMES_MISSING.incrementAndGet();
                 else NONVILLAGE_HOMES.incrementAndGet();
@@ -476,6 +514,22 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
                 continue;
             }
             BlockPos village = probe.center().get();
+            Dev56Kind dev56Kind = null;
+            if (dev56Pilot) {
+                int rolled = dev56Percent(level,village,0x5691890056BEEFL);
+                if (rolled >= DEV56_VILLAGE_PERCENT.get()) {
+                    LOG.info("[TC-DEV56R1] VILLAGE_UNMODIFIED anchor={} roll={} chance={} loadedOnly=true",village,rolled,DEV56_VILLAGE_PERCENT.get());
+                    FRESH_REGIONS.remove(entry.getKey(),region);
+                    continue;
+                }
+                dev56Kind = dev56KindFor(level,village);
+                if (dev56Kind == null) {
+                    LOG.warn("[TC-DEV56R1] CONFIG_HOLD: all station variant weights zero; no block writes");
+                    FRESH_REGIONS.remove(entry.getKey(),region);
+                    continue;
+                }
+                LOG.info("[TC-DEV56R1] SELECT anchor={} roll={} selected={} terrain=R40_MAX_RISE_4 loadedOnly=true noNetwork=true",village,rolled,dev56Kind);
+            }
             if (!PLAYER_OPERATED_STATIONS_ONLY && SEEDED_VARIETY_FRESH.get() && !(dev50e2WorldAllowed(level) && F1C_AUTO_STRAIGHT.get())) {
                 Optional<BlockPos> naturalAnchor=dev50e6bVillageStartAnchor(level,village,128);
                 if(naturalAnchor.isEmpty()) {
@@ -529,15 +583,84 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
                 site = choice.site();
                 routeWest = choice.west();
             } else {
-                SiteSearch sites = inspectSites(level, village);
+                SiteSearch sites = dev56Pilot
+                        ? dev56IncrementalSite(level,village,region)
+                        : inspectSites(level,village);
                 if (sites.site().isEmpty()) {
-                    SITE_MISSING.incrementAndGet();
-                    if (logging()) decision("village=" + village + " NO_SITE " + sites.rejections());
+                    if (dev56Pilot) {
+                        // Exactly ONE candidate per global 40 ticks. Never
+                        // synchronously evaluate R40's entire 40-site scan.
+                        if (region.dev56SiteCursor >= OFFSETS.length + R40J4_EXTRA_OFFSETS.length) {
+                            LOG.info("[TC-DEV56R1] SITE_EXHAUSTED village={} candidates={} noWrites=true",
+                                    village,region.dev56SiteCursor);
+                            FRESH_REGIONS.remove(entry.getKey(),region);
+                        } else region.nextCheck=ticks+40;
+                    } else {
+                        SITE_MISSING.incrementAndGet();
+                        if (logging()) decision("village=" + village + " NO_SITE " + sites.rejections());
+                    }
                     continue;
                 }
                 site = sites.site().get();
             }
             if (!safeFootprint(level, site.center())) { decision("site_changed=" + site.center()); continue; }
+            if (dev56Pilot) {
+                // Reuse the untouched, operator-accepted R37/R38/R39/R40 builders.
+                // Only this disposable fresh-village path chooses the 60/20/15/5
+                // variant policy. No connections, train AI or route construction.
+                BlockPos builtCenter = site.center();
+                if (dev56Kind == Dev56Kind.SUBWAY) {
+                    boolean hubFirst = dev56Percent(level,village,0x56C1ACCA56L) < 50;
+                    String hubHold = RailwayStationCircularHub.problem(level,site.center());
+                    String subwayHold = RailwayStationSubway.problem(level,site.center());
+                    if (hubHold != null && subwayHold != null) {
+                        LOG.info("[TC-DEV56R1] UNDERGROUND_HOLD village={} site={} hub={} subway={} writes=0",village,site.center(),hubHold,subwayHold);
+                        FRESH_REGIONS.remove(entry.getKey(),region);
+                        continue;
+                    }
+                    try {
+                        if (hubHold == null && (hubFirst || subwayHold != null)) {
+                            builtCenter = RailwayStationCircularHub.build(level,site.center());
+                            if (WORKERS.get()) {
+                                makeWorker(level,builtCenter.offset(-2,0,6),"station_chief",builtCenter);
+                                makeWorker(level,builtCenter.offset(2,0,6),"train_conductor",builtCenter);
+                                makeWorker(level,builtCenter.offset(0,0,6),"railway_engineer",builtCenter);
+                            }
+                            LOG.info("[TC-DEV56R1] UNDERGROUND_BUILT kind=CIRCULAR_HUB village={} surface={} railCenter={}",village,site.center(),builtCenter);
+                        } else {
+                            builtCenter = RailwayStationSubway.build(level,site.center());
+                            if (WORKERS.get()) {
+                                makeWorker(level,builtCenter.offset(-2,0,5),"station_chief",builtCenter);
+                                makeWorker(level,builtCenter.offset(2,0,5),"train_conductor",builtCenter);
+                                makeWorker(level,builtCenter.offset(0,0,5),"railway_engineer",builtCenter);
+                            }
+                            LOG.info("[TC-DEV56R1] UNDERGROUND_BUILT kind=SUBWAY village={} surface={} railCenter={}",village,site.center(),builtCenter);
+                        }
+                    } catch (RuntimeException error) {
+                        LOG.error("[TC-DEV56R1] UNDERGROUND_WRITE_HOLD noFallbackAfterException=true site={}",site.center(),error);
+                        FRESH_REGIONS.remove(entry.getKey(),region);
+                        continue;
+                    }
+                } else {
+                    RailwayStationSurfaceVariants.Kind variant = switch(dev56Kind) {
+                        case ACTIVE -> RailwayStationSurfaceVariants.Kind.REGULAR;
+                        case ABANDONED -> RailwayStationSurfaceVariants.Kind.ABANDONED;
+                        case OVERGROWN -> RailwayStationSurfaceVariants.Kind.OVERGROWN;
+                        default -> throw new IllegalStateException("Unexpected underground variant in surface builder");
+                    };
+                    VillageStyle style = chooseVillageStyle(level,site.center());
+                    placeStation(level,site,RailwayStationSurfaceVariants.hasStaff(variant),style);
+                    RailwayStationSurfaceVariants.decorate(level,site.center(),variant);
+                    RailwayStationVillageArchitecture.decorate(level,site.center(),style.name(),variant.name());
+                    r40j4AddSupports(level,site.center());
+                    LOG.info("[TC-DEV56R1] SURFACE_BUILT village={} site={} kind={} biomeStyle={} foundationMaxRise=4 noNetwork=true",village,site.center(),variant,style);
+                }
+                data.add(builtCenter,true);
+                BUILT_AUTOMATIC.incrementAndGet();
+                decision("DEV56_SUCCESS kind="+dev56Kind+" station="+builtCenter+" village="+village);
+                FRESH_REGIONS.remove(entry.getKey(),region);
+                continue;
+            }
             // R38: the underground rail center, not the street entrance, must be saved.
             BlockPos placedCenter=site.center();
             boolean r38Built=false;
@@ -5149,6 +5272,107 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
     }
     private static final int[][] OFFSETS = {{36,0},{-36,0},{0,36},{0,-36},{48,0},{-48,0},{0,48},{0,-48},
                 {40,40},{-40,40},{40,-40},{-40,-40},{56,0},{-56,0},{0,56},{0,-56}};
+    // DEV56 R1 TEST BRIDGE: This is verified StructureStart observation AFTER
+    // vanilla village generation, NOT jigsaw pool injection. Keeping it explicit
+    // prevents claiming native in-pool placement before templates exist.
+    private static final String DEV56_TEST_SAVE = "DEV56 Village Test";
+    private static int dev56Status(CommandSourceStack source) {
+        ServerLevel level=source.getLevel();
+        boolean allowed=dev56PilotWorld(level) && DEV56_ENABLED.get();
+        if (!allowed) {
+            source.sendSuccess(()->Component.literal("[DEV56 R1] INACTIVE. Requires NEW integrated test save named '"+DEV56_TEST_SAVE+"'. Existing worlds are not eligible for this pilot."),false);
+            return 1;
+        }
+        BlockPos player=BlockPos.containing(source.getPosition());
+        VillageProbe probe=dev56NativeVillageProbe(level,player,128);
+        String anchor=probe.center().map(BlockPos::toShortString).orElse("NONE_LOADED_WITHIN_128");
+        String kind=probe.center().map(v -> String.valueOf(dev56KindFor(level,v))).orElse("NONE");
+        int roll=probe.center().map(v -> dev56Percent(level,v,0x5691890056BEEFL)).orElse(-1);
+        boolean selected=roll>=0 && roll<DEV56_VILLAGE_PERCENT.get();
+        source.sendSuccess(()->Component.literal("[DEV56 R1] STRUCTURE_START_BRIDGE enabled=true world="+DEV56_TEST_SAVE
+                +" village="+anchor+" roll="+roll+" selected="+selected+" kind="+kind
+                +" chance="+DEV56_VILLAGE_PERCENT.get()+"% "
+                +" weights="+DEV56_ACTIVE_WEIGHT.get()+"/"+DEV56_ABANDONED_WEIGHT.get()+"/"
+                +DEV56_OVERGROWN_WEIGHT.get()+"/"+DEV56_SUBWAY_WEIGHT.get()
+                +". Read-only query; station construction only via fresh-chunk scheduler."),false);
+        return 1;
+    }
+    private enum Dev56Kind { ACTIVE, ABANDONED, OVERGROWN, SUBWAY }
+    private static boolean dev56PilotWorld(ServerLevel level) {
+        if (level == null || level.getServer() == null
+                || level.getServer().isDedicatedServer()
+                || !level.dimension().equals(Level.OVERWORLD)) return false;
+        try {
+            java.nio.file.Path save=level.getServer().getWorldPath(
+                    net.minecraft.world.level.storage.LevelResource.ROOT)
+                    .toAbsolutePath().normalize();
+            java.nio.file.Path accepted=java.nio.file.Paths.get(
+                    "D:/TafariCraft - Reborn Development/Traincraft", "run", "saves",
+                    DEV56_TEST_SAVE).toAbsolutePath().normalize();
+            return save.equals(accepted) && DEV56_TEST_SAVE.equals(
+                    level.getServer().getWorldData().getLevelName());
+        } catch (RuntimeException badPath) { return false; }
+    }
+    private static int dev56Percent(ServerLevel level,BlockPos village,long salt) {
+        return f1dPercentRoll(level,village,salt);
+    }
+    private static Dev56Kind dev56KindFor(ServerLevel level,BlockPos village) {
+        int active=DEV56_ACTIVE_WEIGHT.get();
+        int abandoned=DEV56_ABANDONED_WEIGHT.get();
+        int overgrown=DEV56_OVERGROWN_WEIGHT.get();
+        int subway=DEV56_SUBWAY_WEIGHT.get();
+        int total=active+abandoned+overgrown+subway;
+        if (total<=0) return null;
+        int roll=dev56Percent(level,village,0x56B0051138L)*total/100;
+        if (roll<active) return Dev56Kind.ACTIVE;
+        roll-=active;
+        if (roll<abandoned) return Dev56Kind.ABANDONED;
+        roll-=abandoned;
+        if (roll<overgrown) return Dev56Kind.OVERGROWN;
+        return Dev56Kind.SUBWAY;
+    }
+    private static VillageProbe dev56NativeVillageProbe(ServerLevel level,BlockPos near,int radius) {
+        // Bounded and loaded-only. Never calls getChunk on an unloaded coordinate;
+        // existing village bounding boxes locate villages even with 0 HOME POIs.
+        int cx=near.getX()>>4,cz=near.getZ()>>4;
+        int chunkRadius=Math.min(9,(radius+15)/16);
+        BlockPos best=null;
+        double score=Double.POSITIVE_INFINITY;
+        for(int dx=-chunkRadius;dx<=chunkRadius;dx++)
+            for(int dz=-chunkRadius;dz<=chunkRadius;dz++) {
+                int x=cx+dx,z=cz+dz;
+                if(!level.hasChunk(x,z))continue;
+                for(StructureStart start:level.getChunk(x,z).getAllStarts().values()) {
+                    if(start==null||!start.isValid())continue;
+                    ResourceLocation id=level.registryAccess().registryOrThrow(Registries.STRUCTURE)
+                            .getKey(start.getStructure());
+                    if(id==null||!"minecraft".equals(id.getNamespace()))continue;
+                    String path=id.getPath();
+                    if (!("village_plains".equals(path) || "village_desert".equals(path)
+                            || "village_savanna".equals(path) || "village_taiga".equals(path)
+                            || "village_snowy".equals(path))) continue;
+                    BoundingBox b=start.getBoundingBox();
+                    int ddx=Math.max(0,Math.max(b.minX()-near.getX(),near.getX()-b.maxX()));
+                    int ddz=Math.max(0,Math.max(b.minZ()-near.getZ(),near.getZ()-b.maxZ()));
+                    double gap=(double)ddx*ddx+(double)ddz*ddz;
+                    if(gap>(double)radius*radius)continue;
+                    // Bounding box coordinates are seed-stable even before
+                    // the center chunk's terrain heightmap is loaded. Never
+                    // derive the policy anchor Y from mutable roof/terrain data.
+                    BlockPos middle=b.getCenter();
+                    BlockPos anchor=new BlockPos(middle.getX(),b.minY(),middle.getZ());
+                    double mid=(double)(anchor.getX()-near.getX())*(anchor.getX()-near.getX())
+                            +(double)(anchor.getZ()-near.getZ())*(anchor.getZ()-near.getZ());
+                    double next=gap*1000000.0+mid;
+                    if(next>=score)continue;
+                    best=anchor;
+                    score=next;
+                }
+            }
+        return best==null ? new VillageProbe(Optional.empty(),0,0,false)
+                : new VillageProbe(Optional.of(best),0,0,true);
+    }
+
     // DEV51B R40J4: terrain-adaptive station foundations only in the exact
     // disposable R40 world. Never retrofits chunks, loads them, or controls trains.
     private static boolean r40j4TestWorld(ServerLevel level) {
@@ -5229,6 +5453,38 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
             return "occupied_by_entity";
         return null;
     }
+    // DEV56 pilot uses R40's EXACT 40 coordinates and strict footing validator,
+    // but never runs all 40 in a single server tick. A missing chunk holds the
+    // cursor for a later attempt, instead of generating or loading the chunk.
+    private static SiteSearch dev56IncrementalSite(ServerLevel level,BlockPos village,FreshRegion region) {
+        if(region.dev56SiteVillage != village.asLong()) {
+            region.dev56SiteVillage=village.asLong();
+            region.dev56SiteCursor=0;
+        }
+        int cursor=region.dev56SiteCursor;
+        if(cursor >= OFFSETS.length+R40J4_EXTRA_OFFSETS.length)
+            return new SiteSearch(Optional.empty(),Map.of("exhausted",1));
+        int[] offset=cursor<OFFSETS.length ? OFFSETS[cursor]
+                : R40J4_EXTRA_OFFSETS[cursor-OFFSETS.length];
+        int x=village.getX()+offset[0],z=village.getZ()+offset[1];
+        int y=r40j4HighestLoadedY(level,x,z);
+        if(y==Integer.MIN_VALUE) {
+            // No chunks are force-loaded. Stay on this candidate until it's
+            // naturally loaded or the existing fresh-ticket lifetime expires.
+            return new SiteSearch(Optional.empty(),Map.of("unloaded_or_height",1));
+        }
+        region.dev56SiteCursor++;
+        BlockPos c=new BlockPos(x,y,z);
+        String issue=r40j4FootprintProblem(level,c);
+        if(issue==null){
+            LOG.info("[TC-DEV56R1] SAFE_SITE village={} center={} candidate={}/{} terrainSupportMax=4",
+                    village,c,region.dev56SiteCursor,OFFSETS.length+R40J4_EXTRA_OFFSETS.length);
+            return new SiteSearch(Optional.of(new Site(c,village)),Map.of());
+        }
+        if(logging()) LOG.info("[TC-DEV56R1] SITE_REJECT village={} candidate={}/{} reason={} writes=0",
+                village,region.dev56SiteCursor,OFFSETS.length+R40J4_EXTRA_OFFSETS.length,issue);
+        return new SiteSearch(Optional.empty(),Map.of(issue,1));
+    }
     private static SiteSearch r40j4InspectSites(ServerLevel level, BlockPos village) {
         Map<String,Integer> rejects=new HashMap<>();
         int checked=0;
@@ -5262,7 +5518,7 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
     // Only fills AIR underneath floors just built by the accepted surface builder.
     // Underground variants deliberately never enter this method.
     private static void r40j4AddSupports(ServerLevel level, BlockPos c) {
-        if (!r40j4TestWorld(level) || !level.getBlockState(c).is(TCBlocks.TRACK_STATION.get()))
+        if (!(r40j4TestWorld(level) || dev56PilotWorld(level)) || !level.getBlockState(c).is(TCBlocks.TRACK_STATION.get()))
             return;
         int columns=0, blocks=0, held=0;
         for (int dx=-8;dx<=8;dx++) for (int dz=0;dz<=11;dz++) {
@@ -5289,7 +5545,7 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
     }
 
     private static SiteSearch inspectSites(ServerLevel level, BlockPos village) {
-        if (r40j4TestWorld(level)) return r40j4InspectSites(level,village);
+        if (r40j4TestWorld(level) || dev56PilotWorld(level)) return r40j4InspectSites(level,village);
         Map<String,Integer> rejections = new HashMap<>();
         for (int[] off : OFFSETS) {
             int x = village.getX() + off[0], z = village.getZ() + off[1];
@@ -5325,7 +5581,7 @@ private record SurfacePalette(BlockState platformBase, BlockState canopyRoof, Bl
         return null;
     }
     private static boolean safeFootprint(ServerLevel level, BlockPos c) {
-        if (r40j4TestWorld(level)) return r40j4FootprintProblem(level,c)==null;
+        if (r40j4TestWorld(level) || dev56PilotWorld(level)) return r40j4FootprintProblem(level,c)==null;
         return footprintProblem(level,c) == null;
     }
 
@@ -6891,6 +7147,8 @@ private static void buildEnclosedOffice(ServerLevel level, BlockPos c, boolean u
                     })))
                 .then(Commands.literal("diagnose").executes(ctx -> diagnose(ctx.getSource())))
                 .then(Commands.literal("autoscan").executes(ctx -> r40mAutoScan(ctx.getSource())))
+                .then(Commands.literal("dev56").executes(ctx -> dev56Status(ctx.getSource()))
+                    .then(Commands.literal("pool").executes(ctx -> Dev56JigsawVillagePool.status(ctx.getSource()))))
                 .then(Commands.literal("preview").executes(ctx -> commandSite(ctx.getSource(), false)))
                 .then(Commands.literal("place").executes(ctx -> commandSite(ctx.getSource(), true)))
                 .then(Commands.literal("upgrade").executes(ctx -> upgrade(ctx.getSource())))

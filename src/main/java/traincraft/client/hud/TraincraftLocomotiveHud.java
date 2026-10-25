@@ -38,6 +38,12 @@ public final class TraincraftLocomotiveHud {
         if (minecraft.player == null || minecraft.options.hideGui || minecraft.screen != null) {
             return;
         }
+        // G12R4R2: Instruments remain an optional third-person overlay.
+        // First-person drivers use existing R-key locomotive GUIs.
+        if (minecraft.options.getCameraType().isFirstPerson()
+                || !ClientInstrumentSettings.isEnabled()) {
+            return;
+        }
         var tcVehicle = minecraft.player.getVehicle();
 
         // TC_POWERED_THIRD_PERSON_HUD_R2
@@ -48,8 +54,13 @@ public final class TraincraftLocomotiveHud {
                         graphics,
                         minecraft,
                         powered,
-                        10,
-                        screenHeight - 100);
+                        ClientInstrumentSettings.isRightSide()
+                                ? Math.max(0, screenWidth - 156 - 10) : 10,
+                        screenHeight - 128);
+                drawLightMode(graphics, minecraft, powered,
+                        ClientInstrumentSettings.isRightSide()
+                                ? Math.max(0, screenWidth - 156 - 10) : 10,
+                        screenHeight - 28);
             }
             return;
         }
@@ -63,9 +74,11 @@ public final class TraincraftLocomotiveHud {
         // Traincraft 1.7.10 HUDloco used a fixed left offset of 10 and
         // windowHeight = scaledHeight - 100.
         // TC_DEV37_R1D8_HUD_FAMILY - clean steam third-person cab panel.
-        int panelX = 10;
-        int panelY = screenHeight - 106;
+        int panelX = ClientInstrumentSettings.isRightSide()
+                ? Math.max(0, screenWidth - 174 - 10) : 10;
+        int panelY = screenHeight - 135;
         drawSteamThirdPersonHud(graphics, minecraft, locomotive, panelX, panelY);
+        drawLightMode(graphics, minecraft, locomotive, panelX, screenHeight - 28);
     };
 
     /**
@@ -407,6 +420,16 @@ public final class TraincraftLocomotiveHud {
         }
         graphics.drawString(minecraft.font, p + "%", x - 1, y + 60, 0xFFFFFFFF, false);
     }
+    // The standard third-person play view has a captured mouse pointer, so
+    // a registered L key changes this displayed mode without opening a screen.
+    private static void drawLightMode(GuiGraphics graphics, Minecraft minecraft,
+            net.minecraft.world.entity.Entity locomotive, int x, int y) {
+        graphics.fill(x,y,x+156,y+18,0xD0181E23);
+        String mode=traincraft.lighting.LocomotiveLightMode.label(locomotive);
+        int shade=mode.equals("OFF")?0xFFE68C8C:mode.equals("ON")?0xFF9DE8AC:0xFFDAE8FE;
+        graphics.drawString(minecraft.font,"LIGHTS: "+mode+"   [L] Cycle",x+7,y+5,shade,false);
+    }
+
     private static String classicState(SmallSteamLocomotive locomotive) {
         if (locomotive.isBoilerCritical()) {
             return " DANGER";

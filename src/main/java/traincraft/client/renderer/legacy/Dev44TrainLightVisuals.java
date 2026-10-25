@@ -162,7 +162,7 @@ public final class Dev44TrainLightVisuals {
             if (debug) DEBUG_LOG.info("[TC-DEV44-LIGHT-DEBUG5] SKIP dead-entity");
             return;
         }
-        float brightness = sunsetStrength(entity.level().getDayTime());
+        float brightness = traincraft.lighting.LocomotiveLightMode.brightness(entity);
         if (brightness <= 0.005F) {
             if (debug) DEBUG_LOG.info("[TC-DEV44-LIGHT-DEBUG5] SKIP daytime brightness={}", brightness);
             return;
@@ -181,7 +181,9 @@ public final class Dev44TrainLightVisuals {
             // set exclusively by /tclightreview. Do not alter real boiler state.
             boolean tcDev55L3ReviewLamp = entity.getCustomName() != null
                     && "DEV55L3_TEST_LAMPS".equals(entity.getCustomName().getString());
-            if (!engineActive && !tcDev55L3ReviewLamp) return;
+            if (!engineActive && !tcDev55L3ReviewLamp &&
+                    !traincraft.client.renderer.legacy.Dev58B10F3ViewerRuntime.active(entity,
+                        meshId.getPath().replace("legacy_meshes/","").replace(".tcm",""))) return;
         }
         String filename = meshId.getPath();
         if (!filename.startsWith("legacy_meshes/locomotive_steam_") || !filename.endsWith(".tcm")) {
@@ -208,6 +210,13 @@ public final class Dev44TrainLightVisuals {
         // DEV55L5: scoped to this viewer model, checked independently for each beam.
         traincraft.debug.Dev55L5Optics.enter(entity,id);
         VertexConsumer v = buffers.getBuffer(HEADLIGHT_BEAM);
+        // DEV58B10F3: use the 108 user-marked positions, no old lens proxies,
+        // preset angles, or duplicate legacy white beams during this test.
+        if (Dev58B10F3ViewerRuntime.active(entity,id)) {
+            if (Dev55L19FleetBeams.render(entity,id,v,m,new double[0][0],brightness)) return;
+            // Incomplete world transform = hold, never overlay the old path.
+            return;
+        }
         Marker[] marks = entry.markers();
         if (marks.length == 0) return;
         double mid = 0.5D * (meshMinX + meshMaxX);
@@ -270,6 +279,25 @@ public final class Dev44TrainLightVisuals {
             for (double[] back : Dev55L18RearLampReview.positions(id)) {
                 tailFace(v,m,new Marker(back[0],back[1],back[2]),brightness,Dev55L19FleetBeams.active(entity,id)?traincraft.debug.Dev55L19Settings.getTailDepth(id):0F);
             }
+        }
+        // DEV58B10R2: SOURCE-VERIFIED production beam direction, two engines only.
+        // The U57 lenses have +Z face normals; WWCP front pair have -X normals.
+        // Do not turn WWCP's opposite +X red REAR candidates into white beams.
+        // The existing Creative L19 preview remains authoritative when active.
+        if (Dev58B10BeamRepair.handles(id)
+                && !Dev55L19FleetBeams.active(entity,id)) {
+            double[][] exactLenses = new double[marks.length][3];
+            for (int i=0; i<marks.length; i++) {
+                exactLenses[i][0]=marks[i].x();
+                exactLenses[i][1]=marks[i].y();
+                exactLenses[i][2]=marks[i].z();
+            }
+            // DEV58B10R3: for these TWO verified-axis models, never expose the
+            // known-wrong X-forward legacy beam if the pose safety guard fires.
+            // Both success and a guarded HOLD terminate this branch; any HOLD
+            // leaves the marked lens faces visible, but not an invalid beam.
+            Dev58B10BeamRepair.draw(entity,id,v,m,exactLenses,brightness);
+            return;
         }
         // DEV55L19: only opt-in Creative review entities use the common world-pose rays.
         // The accepted 4-4-0, Shay and Berkshire paths bypass the entire pilot.

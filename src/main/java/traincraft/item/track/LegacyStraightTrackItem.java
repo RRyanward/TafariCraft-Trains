@@ -67,11 +67,48 @@ public final class LegacyStraightTrackItem extends Item {
                 : material;
     }
 
+    // DEV58B8R3B: ghost and native item use the identical physical start/connector.
+    public record PlacementPreview(BlockPos start, Direction forward) {}
+
+    public PlacementPreview previewPlacement(Level level, Player player,
+            ItemStack stack, net.minecraft.world.InteractionHand hand,
+            net.minecraft.world.phys.BlockHitResult hit) {
+        if (level == null || player == null || stack == null || hit == null) return null;
+        boolean clickedRail = BaseRailBlock.isRail(level.getBlockState(hit.getBlockPos()));
+        if (hit.getDirection() != Direction.UP && !tcIsPlantCell(level, hit.getBlockPos())
+                && !clickedRail) return null;
+        UseOnContext context = new UseOnContext(player, hand, hit);
+        BlockPos start = clickedRail ? hit.getBlockPos()
+                : tcManualAnchor(level, hit.getBlockPos());
+        Direction forward = resolvePlacementForward(level, start, player.getDirection());
+        SnapTarget snap = findSnapTarget(level, context);
+        if (snap != null) {
+            forward = snap.outward;
+            start = snap.segment.relative(snap.outward);
+        }
+        // G12R3: return the intended footprint even if blocked, for a red
+        // ghost. Native useOn() still prevents occupied-cell replacement.
+        return new PlacementPreview(start, forward);
+    }
+
+    private static boolean tcIsPlantCell(Level level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        return TrackPlacementVegetation.isPlant(state);
+    }
+
+    private static BlockPos tcManualAnchor(Level level, BlockPos clicked) {
+        return tcIsPlantCell(level, clicked) ? clicked : clicked.above();
+    }
+
     @Override
     public InteractionResult useOn(UseOnContext context) {
         Level level = context.getLevel();
 
-        if (context.getClickedFace() != Direction.UP) {
+        // DEV58G12R2: the preview already allows rail side-clicks.  Native
+        // placement must honor that exact same targeting contract.
+        if (context.getClickedFace() != Direction.UP
+                && !tcIsPlantCell(level, context.getClickedPos())
+                && !BaseRailBlock.isRail(level.getBlockState(context.getClickedPos()))) {
             return InteractionResult.PASS;
         }
 
@@ -84,7 +121,7 @@ public final class LegacyStraightTrackItem extends Item {
             return InteractionResult.SUCCESS;
         }
 
-        BlockPos start = context.getClickedPos().above();
+        BlockPos start = tcManualAnchor(level, context.getClickedPos());
         Direction forward = resolvePlacementForward(
                 level, start, player.getDirection());
         ItemStack stack = context.getItemInHand();
@@ -96,6 +133,8 @@ public final class LegacyStraightTrackItem extends Item {
         if (snap != null) {
             forward = snap.outward;
             start = snap.segment.relative(snap.outward);
+        } else if (BaseRailBlock.isRail(level.getBlockState(context.getClickedPos()))) {
+            return InteractionResult.FAIL;
         }
 
         // Validate the complete footprint before changing the world.
@@ -104,7 +143,7 @@ public final class LegacyStraightTrackItem extends Item {
             BlockPos supportPos = railPos.below();
 
             BlockState existing = level.getBlockState(railPos);
-            if (!existing.isAir() && !existing.canBeReplaced()) {
+            if (!TrackPlacementVegetation.canReplace(existing)) {
                 return InteractionResult.FAIL;
             }
 
@@ -138,6 +177,13 @@ public final class LegacyStraightTrackItem extends Item {
             return InteractionResult.FAIL;
         }
 
+        // R7: never clear vegetation until every track cell validates.
+        for (int i = 0; i < length; i++) {
+            BlockPos plantPos = start.relative(forward, i);
+            if (TrackPlacementVegetation.isPlant(level.getBlockState(plantPos))) {
+                level.destroyBlock(plantPos, !player.getAbilities().instabuild, player);
+            }
+        }
         for (int i = 0; i < length; i++) {
             BlockPos railPos = start.relative(forward, i);
 
@@ -197,8 +243,15 @@ public final class LegacyStraightTrackItem extends Item {
         Vec3 click = context.getClickLocation();
 
         if (!BaseRailBlock.isRail(state)) {
+            BlockPos requestedCell = tcManualAnchor(level, clicked);
             SnapTarget nearby = findNearbyOpenEndpoint(
-                    level, clicked.above(), click);
+                    level, requestedCell, click);
+            // DEV58G12R2: broad endpoint acquisition must not steal a ground
+            // click laterally beside an existing railway.  Continuations stay
+            // available on the endpoint's *forward axis* up to the old radius.
+            if (nearby != null && !tcOnOutwardAxis(nearby, requestedCell)) {
+                nearby = null;
+            }
             if (nearby != null) {
                 traincraft.Traincraft.LOGGER.info(
                         "[TC-R3ZI-STRAIGHT-CAPTURE] requested={} sourceSegment={} outward={} distance={}",
@@ -286,6 +339,20 @@ public final class LegacyStraightTrackItem extends Item {
         }
 
         return withinSnapRadius(best);
+    }
+
+    // DEV58G12R2: forward-only ground capture; never treat a side-by-side
+    // parallel alignment as a request to extend the adjacent rail.
+    private static boolean tcOnOutwardAxis(SnapTarget target, BlockPos requested) {
+        if (target == null || requested == null) return false;
+        int dx = requested.getX() - target.segment.getX();
+        int dz = requested.getZ() - target.segment.getZ();
+        int longitudinal = dx * target.outward.getStepX()
+                + dz * target.outward.getStepZ();
+        int lateral = dx * target.outward.getStepZ()
+                - dz * target.outward.getStepX();
+        return longitudinal >= 1 && lateral == 0
+                && Math.abs(requested.getY() - target.segment.getY()) <= 1;
     }
 
     private static SnapTarget findNearbyOpenEndpoint(

@@ -218,7 +218,8 @@ public final class LegacyBatchTrackItem extends Item {
                                 hit.getBlockPos()));
 
         if (hit.getDirection() != Direction.UP
-                && !tcPreviewClickedRail) {
+                && !tcPreviewClickedRail
+                && !tcIsPlantCell(level, hit.getBlockPos())) {
             return null;
         }
 
@@ -298,13 +299,16 @@ public final class LegacyBatchTrackItem extends Item {
                         hit);
 
         Direction facing =
-                player.getDirection();
+                tcIsSingleIdQuarterCurve(spec.id()) && player.isShiftKeyDown()
+                        ? player.getDirection().getClockWise()
+                        : player.getDirection();
 
         LegacyBatchTrackSpec.Endpoint primaryEndpoint =
                 spec.endpoints().get(0);
 
         BlockPos manualAnchor =
-                hit.getBlockPos().above();
+                BaseRailBlock.isRail(level.getBlockState(hit.getBlockPos()))
+                        ? hit.getBlockPos() : tcManualAnchor(level, hit.getBlockPos());
 
         BlockPos root =
                 TARGET_DIAGONAL_CROSSING.equals(
@@ -343,14 +347,11 @@ public final class LegacyBatchTrackItem extends Item {
         }
 
         boolean directRailSnapRequest =
-                isEightWaySnapFamily(spec.id())
-                        && BaseRailBlock.isRail(
-                                clickedPlacementState);
+                BaseRailBlock.isRail(clickedPlacementState);
 
-        if (directRailSnapRequest
-                && connector == null) {
-            return null;
-        }
+        // G12R3: an occupied direct rail without a free connector still
+        // produces a diagnostic (red) ghost. Real placement keeps its own
+        // connector and overlap rejection unchanged.
 
         Candidate chosen =
                 null;
@@ -364,6 +365,12 @@ public final class LegacyBatchTrackItem extends Item {
                             connector,
                             null);
 
+            // DEV58B8R3E: visually approach at the OUTER curved-side end
+            // (right on the Right switch, mirrored on the Left switch).
+            // R3D attached the shared root instead, leaving the requested
+            // far-right straight lead behind the switch in the ghost.
+            // Use the same endpoint filter for preview and actual placement.
+            tcRestrictMediumSwitchToOuterApproach(candidates);
             if (candidates.isEmpty()) {
                 return null;
             }
@@ -371,6 +378,9 @@ public final class LegacyBatchTrackItem extends Item {
             candidates.sort(
                     Comparator
                             .comparingInt(
+                                    (Candidate c) -> tcIsMediumSwitch()
+                                            && c.endpointPart != tcMediumSwitchOuterPart() ? 1 : 0)
+                            .thenComparingInt(
                                     (Candidate c) -> c.penalty)
                             .thenComparingInt(
                                     c -> c.endpointPart)
@@ -385,7 +395,8 @@ public final class LegacyBatchTrackItem extends Item {
                         tcQuarterCurveDesiredCandidateIndex(
                                 candidates,
                                 connector,
-                                stack);
+                                stack,
+                                player.isShiftKeyDown());
 
                 if (handCandidateIndex > 0) {
                     Candidate handCandidate =
@@ -431,15 +442,8 @@ public final class LegacyBatchTrackItem extends Item {
             }
         }
 
-        if (!canPlaceAssembly(
-                level,
-                player,
-                stack,
-                root,
-                facing)) {
-            return null;
-        }
-
+        // G12R3: don't hide a blocked footprint; the ghost renderer will
+        // tint it red. Server useOn() still requires canPlaceAssembly().
         boolean tcGhostOriginalVisualRootOwnership =
                 isOriginalDiagonalVisualOwnership(
                         connector,
@@ -537,9 +541,8 @@ public final class LegacyBatchTrackItem extends Item {
         // a side face. Let a rail click reach the exact accepted connector /
         // candidate solver. Non-rail support/manual placement remains UP-only.
         if (context.getClickedFace() != Direction.UP
-                && !BaseRailBlock.isRail(
-                        context.getLevel().getBlockState(
-                                context.getClickedPos()))) {
+                && !BaseRailBlock.isRail(context.getLevel().getBlockState(context.getClickedPos()))
+                && !tcIsPlantCell(context.getLevel(), context.getClickedPos())) {
             return InteractionResult.PASS;
         }
 
@@ -628,7 +631,9 @@ public final class LegacyBatchTrackItem extends Item {
                     tcTargetPath);
             return tcDelegate.useOn(context);
         }
-        Direction facing = player.getDirection();
+        Direction facing = tcIsSingleIdQuarterCurve(spec.id()) && player.isShiftKeyDown()
+                ? player.getDirection().getClockWise()
+                : player.getDirection();
         List<String> oneShot = BatchTrackDiagnostics.isPlacementDebugArmed(player)
                 ? new ArrayList<>()
                 : null;
@@ -656,7 +661,7 @@ public final class LegacyBatchTrackItem extends Item {
         // its part 0 is the centered visual/owner rail, so a free placement
         // anchors that owner directly above the clicked support block.
         LegacyBatchTrackSpec.Endpoint primaryEndpoint = spec.endpoints().get(0);
-        BlockPos manualAnchor = context.getClickedPos().above();
+        BlockPos manualAnchor = tcManualAnchor(level, context.getClickedPos());
         BlockPos root = TARGET_DIAGONAL_CROSSING.equals(spec.id())
                 ? manualAnchor
                 : manualAnchor.subtract(
@@ -735,8 +740,7 @@ public final class LegacyBatchTrackItem extends Item {
         // t6 adds Small Diagonal to the same contract now that both exposed
         // route ends are real physical endpoint cores.
         boolean directRailSnapRequest =
-                isEightWaySnapFamily(spec.id())
-                && BaseRailBlock.isRail(clickedPlacementState);
+                BaseRailBlock.isRail(clickedPlacementState);
         if (chosen == null && directRailSnapRequest && connector == null) {
             String failure = "DIRECT_RAIL_SNAP_NO_OPEN_CONNECTOR";
             if (oneShot != null) {
@@ -757,6 +761,10 @@ public final class LegacyBatchTrackItem extends Item {
         if (connector != null) {
             List<Candidate> candidates = candidatesFor(
                     level, player, stack, connector, oneShot);
+            // R3E: snap the model's outer/curved-side rail end to the existing
+            // approach rail; ghost and final placement share this filter.
+            // Reject blocked/invalid candidates rather than shifting the rail.
+            tcRestrictMediumSwitchToOuterApproach(candidates);
             if (isEightWaySnapFamily(spec.id())) {
                 traincraft.Traincraft.LOGGER.info(
                         "[TC-FINAL-BATCH8WAY-R1R-CANDIDATES] incoming={} source={} sourcePart={} heading={} count={}",
@@ -790,7 +798,9 @@ public final class LegacyBatchTrackItem extends Item {
             }
 
             candidates.sort(Comparator
-                    .comparingInt((Candidate c) -> c.penalty)
+                    .comparingInt((Candidate c) -> tcIsMediumSwitch()
+                            && c.endpointPart != tcMediumSwitchOuterPart() ? 1 : 0)
+                    .thenComparingInt((Candidate c) -> c.penalty)
                     .thenComparingInt(c -> c.endpointPart)
                     .thenComparingInt(c -> c.facing.get2DDataValue()));
 
@@ -803,7 +813,8 @@ public final class LegacyBatchTrackItem extends Item {
                         tcQuarterCurveDesiredCandidateIndex(
                                 candidates,
                                 connector,
-                                stack);
+                                stack,
+                                player.isShiftKeyDown());
 
                 if (handCandidateIndex > 0) {
                     Candidate handCandidate =
@@ -924,6 +935,14 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
                     + " source=" + connector.sourceId);
         }
 
+        // R7: all parts passed canPlaceAssembly above. Clear only small,
+        // safe vegetation before writing any part of this rail assembly.
+        for (int part = 0; part < spec.partCount(); part++) {
+            BlockPos plantPos = spec.offsetForPart(root, facing, part);
+            if (TrackPlacementVegetation.isPlant(level.getBlockState(plantPos))) {
+                level.destroyBlock(plantPos, !player.getAbilities().instabuild, player);
+            }
+        }
         for (int part = 0; part < spec.partCount(); part++) {
             BlockPos railPos = spec.offsetForPart(root, facing, part);
             BlockState state = stateForPlacement(
@@ -1438,6 +1457,45 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
 
         return true;
     }
+    // DEV58B8R3B: exact clicked support, never the top of replaceable plants.
+    private static boolean tcIsPlantCell(Level level, BlockPos pos) {
+        BlockState state = level.getBlockState(pos);
+        return !BaseRailBlock.isRail(state)
+                && state.canBeReplaced()
+                && state.getFluidState().isEmpty();
+    }
+
+    private static BlockPos tcManualAnchor(Level level, BlockPos clicked) {
+        return tcIsPlantCell(level, clicked) ? clicked : clicked.above();
+    }
+
+    private boolean tcIsMediumSwitch() {
+        return "track_switch_medium_right".equals(spec.id())
+                || "track_switch_medium_left".equals(spec.id());
+    }
+
+    // DEV58B8R3E: the generated switch has three exposed connector roles:
+    // first = shared/common root, second = distant straight outlet, last =
+    // outer curved-side outlet. The player's requested connection is the
+    // outer right-hand visible lead (mirrored for LEFT), not the common root.
+    // Using the final declared endpoint avoids magic world offsets and keeps
+    // logical route/path, segment ownership and Energy variants unchanged.
+    private int tcMediumSwitchOuterPart() {
+        if (!tcIsMediumSwitch()) {
+            return -1;
+        }
+        return spec.endpoints().get(spec.endpoints().size() - 1).part();
+    }
+
+    // Shared by previewPlacementResolved() and useOn(): the white ghost must
+    // never promise a placement that is attached through another switch end.
+    private void tcRestrictMediumSwitchToOuterApproach(List<Candidate> candidates) {
+        if (tcIsMediumSwitch()) {
+            int outerPart = tcMediumSwitchOuterPart();
+            candidates.removeIf(candidate -> candidate.endpointPart != outerPart);
+        }
+    }
+
     private boolean canPlaceAssembly(Level level,
                                      Player player,
                                      ItemStack stack,
@@ -1496,7 +1554,7 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
     private static boolean canReplaceRailCell(Level level,
                                               BlockPos pos,
                                               BlockState state) {
-        if (state.isAir() || state.canBeReplaced()) {
+        if (TrackPlacementVegetation.canReplace(state)) {
             return true;
         }
 
@@ -3433,7 +3491,10 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
     // and candidate selection, without creating fake LEFT registry IDs.
     private static boolean tcIsSingleIdQuarterCurve(
             String id) {
-        return "track_curve_29x".equals(id)
+        return "track_curve_big".equals(id)
+                || "track_curve_very_big".equals(id)
+                || "track_curve_super_big".equals(id)
+                || "track_curve_29x".equals(id)
                 || "track_curve_32x".equals(id);
     }
 
@@ -3568,16 +3629,17 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
     private int tcQuarterCurveDesiredCandidateIndex(
             List<Candidate> candidates,
             Connector connector,
-            ItemStack stack) {
+            ItemStack stack,
+            boolean shiftHeld) {
         if (!tcIsSingleIdQuarterCurve(
                         spec.id())
                 || connector == null) {
             return -1;
         }
 
-        boolean left =
-                tcUnifiedSelectedLeft(
-                        stack);
+        // Holding Shift chooses the opposite hand without mutating item NBT.
+        // Same decision applies to white ghost and authoritative placement.
+        boolean left = tcUnifiedSelectedLeft(stack) ^ shiftHeld;
 
         Direction desiredExitOutward =
                 left
@@ -3717,10 +3779,16 @@ boolean tcLegacyShiftAlternate = player.isShiftKeyDown()
                     left
                             ? traincraft.block.track.LegacyBatchTrackSpecs.SWITCH_SMALL_LEFT
                             : traincraft.block.track.LegacyBatchTrackSpecs.SWITCH_SMALL_RIGHT;
+            // DEV58B8R3F: the accepted R3E outer-end approach exposes the
+            // switch's visual branch opposite to its historic spec name.
+            // Keep the visible control consistent with accepted big curves:
+            // no Shift = visible RIGHT branch; held Shift = visible LEFT.
+            // Swap ONLY this Medium Switch spec selection; do not touch
+            // path geometry, saved block IDs, toe/endpoints or other families.
             case "track_switch_medium" ->
                     left
-                            ? traincraft.block.track.LegacyBatchTrackSpecs.SWITCH_MEDIUM_LEFT
-                            : traincraft.block.track.LegacyBatchTrackSpecs.SWITCH_MEDIUM_RIGHT;
+                            ? traincraft.block.track.LegacyBatchTrackSpecs.SWITCH_MEDIUM_RIGHT
+                            : traincraft.block.track.LegacyBatchTrackSpecs.SWITCH_MEDIUM_LEFT;
             case "track_switch_large" ->
                     left
                             ? traincraft.block.track.LegacyBatchTrackSpecs.SWITCH_LARGE_LEFT

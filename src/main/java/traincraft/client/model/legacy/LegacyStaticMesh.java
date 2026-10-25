@@ -28,6 +28,818 @@ import org.lwjgl.glfw.GLFW;
 import java.nio.file.StandardOpenOption;
 
 public final class LegacyStaticMesh {
+    // DEV58G7: A/B rendering experiment. Default ON; the opt-out file is
+    // checked ONCE when the renderer class is initialized, never per vertex.
+    // OFF keeps the exact accepted G5R3 vertex submission chain.
+    private static final boolean DEV58G7_FAST_VERTEX =
+            !java.nio.file.Files.isRegularFile(
+                net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                    .resolve("DEV58G7-FAST-VERTEX-OFF.flag"));
+    // DEV58G8R1: isolated opt-in MILW + two Berkshire source-mesh pilots.
+    // Class-initialized flags are never polled within the render loop.
+    // Default OFF. Frozen DEV54 wheel/rod/piston, masks and accepted lighting stay dynamic.
+    private static final boolean DEV58G8R1_MILW_ON =
+            java.nio.file.Files.isRegularFile(net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                .resolve("DEV58G8R1-MILW-ON.flag"));
+    private static final boolean DEV58G8R1_B1225_ON =
+            java.nio.file.Files.isRegularFile(net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                .resolve("DEV58G8R1-B1225-ON.flag"));
+    private static final boolean DEV58G8R1_B765_ON =
+            java.nio.file.Files.isRegularFile(net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                .resolve("DEV58G8R1-B765-ON.flag"));
+    // DEV58G11: B765 only. Frozen source geometry + dynamic guard remain authoritative.
+    // OFF by default; requires full game restart after switching.
+    private static final String DEV58G11_B765_PATH =
+            "legacy_meshes/locomotive_steam_berkshire_765.tcm";
+    private static final boolean DEV58G11_B765_GPU_ON = java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R3-B765-GPU-ON.flag"));
+    // DEV58G11R8: fourth ten-model bounded GPU opt-in. OFF by default.
+    // Previous validated R4/R5-approved/R6/R7 paths remain active with R8,
+    // but Hall Class is still quarantined. All accepted dynamic source chunks,
+    // rods, wheels, pistons and lighting retain their original CPU paths.
+    private static final boolean DEV58G11R8_BATCH4_GPU_ON = java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R8-BATCH4-GPU-ON.flag"));
+    private static final java.util.Set<String> DEV58G11R8_BATCH4_PATHS = java.util.Set.of(
+            "legacy_meshes/locomotive_steam_vb_shay.tcm",
+            "legacy_meshes/locomotive_steam_262t.tcm",
+            "legacy_meshes/locomotive_steam_alice_0_4_0.tcm",
+            "legacy_meshes/locomotive_steam_glyn_042t.tcm",
+            "legacy_meshes/locomotive_steam_vb_shay_2.tcm",
+            "legacy_meshes/locomotive_steam_gs4.tcm",
+            "legacy_meshes/locomotive_steam_snow_plow.tcm",
+            "legacy_meshes/locomotive_steam_star_class.tcm",
+            "legacy_meshes/locomotive_steam_climax_2.tcm",
+            "legacy_meshes/locomotive_steam_lssp7.tcm");
+    private static boolean dev58g11r8PilotMesh(String path) {
+        return dev58g11r8OrR9() && DEV58G11R8_BATCH4_PATHS.contains(path);
+    }
+    // DEV58G11R10: batch-six 10-locomotive measurement course. Two newly
+    // eligible VERIFIED legacy static meshes (4-4-0 and VB 0-4-0). The eight
+    // native-model locomotives remain on their ORIGINAL renderer paths;
+    // no fake GPU dispatch is claimed for them. Accepted rods, dynamic parts,
+    // and all lighting are left untouched. OFF unless independent R10 flag.
+    private static final boolean DEV58G11R10_BATCH6_GPU_ON = java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R10-BATCH6-GPU-ON.flag"));
+    private static final java.util.Set<String> DEV58G11R10_BATCH6_PATHS = java.util.Set.of(
+            "legacy_meshes/locomotive_steam_4_4_0.tcm",
+            "legacy_meshes/locomotive_steam_vb_0_4_0.tcm");
+    private static boolean dev58g11r10PilotMesh(String path) {
+        return DEV58G11R10_BATCH6_GPU_ON && DEV58G11R10_BATCH6_PATHS.contains(path);
+    }
+    // DEV58G11R9: fifth ten-model bounded GPU static-mesh pilot.
+    // Only previously verified static chunks may use a GPU VBO; accepted dynamic
+    // wheels, rods, pistons, masking, and lighting still use the original paths.
+    // Flag OFF by default. R9 alone also enables R8/R7/R6/R5-approved/R4.
+    private static final boolean DEV58G11R9_BATCH5_GPU_ON = java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R9-BATCH5-GPU-ON.flag"));
+    private static final java.util.Set<String> DEV58G11R9_BATCH5_PATHS = java.util.Set.of(
+            "legacy_meshes/locomotive_steam_br01.tcm",
+            "legacy_meshes/locomotive_steam_forney.tcm",
+            "legacy_meshes/locomotive_steam_mogul.tcm",
+            "legacy_meshes/locomotive_steam_shay.tcm",
+            "legacy_meshes/locomotive_steam_br80.tcm",
+            "legacy_meshes/locomotive_steam_u57.tcm",
+            "legacy_meshes/locomotive_steam_cherepanov.tcm",
+            "legacy_meshes/locomotive_steam_c62_body.tcm",
+            "legacy_meshes/locomotive_steam_d51_body.tcm",
+            "legacy_meshes/locomotive_steam_d51_long_body.tcm");
+    private static boolean dev58g11r8OrR9() {
+        return DEV58G11R8_BATCH4_GPU_ON || DEV58G11R9_BATCH5_GPU_ON ||
+                DEV58G11R10_BATCH6_GPU_ON;
+    }
+    private static boolean dev58g11r9PilotMesh(String path) {
+        return (DEV58G11R9_BATCH5_GPU_ON || DEV58G11R10_BATCH6_GPU_ON) &&
+                DEV58G11R9_BATCH5_PATHS.contains(path);
+    }
+    // DEV58G11R7: third group of ten. R7 combined flag also enables
+    // R4 pair, the nine R5 accepted meshes (HALL QUARANTINED), and R6 ten.
+    // Mesh opt-in ONLY; animated rods, wheel parts, pistons, lights unchanged.
+    private static final boolean DEV58G11R7_BATCH3_GPU_ON = java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R7-BATCH3-GPU-ON.flag"));
+    private static final java.util.Set<String> DEV58G11R7_BATCH3_PATHS = java.util.Set.of(
+            "legacy_meshes/locomotive_steam_rw_type_3.tcm",
+            "legacy_meshes/locomotive_steam_fowler.tcm",
+            "legacy_meshes/locomotive_steam_climax.tcm",
+            "legacy_meshes/locomotive_steam_pe.tcm",
+            "legacy_meshes/locomotive_steam_sentinel_y3.tcm",
+            "legacy_meshes/locomotive_steam_adler.tcm",
+            "legacy_meshes/locomotive_steam_rw_type_2.tcm",
+            "legacy_meshes/locomotive_steam_skookum.tcm",
+            "legacy_meshes/locomotive_steam_gwr_101_class.tcm",
+            "legacy_meshes/locomotive_steam_milw_class_a.tcm");
+    private static boolean dev58g11r7PilotMesh(String path) {
+        return (DEV58G11R7_BATCH3_GPU_ON || dev58g11r8OrR9()) &&
+                DEV58G11R7_BATCH3_PATHS.contains(path);
+    }
+    // DEV58G11R6: second batch of ten. R6 enables R4 + the nine R5
+    // visually accepted meshes (Hall Class quarantined) + these ten.
+    // All moving rods, wheels, pistons, masks and lighting keep original logic.
+    private static final boolean DEV58G11R6_BATCH2_GPU_ON = java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R6-BATCH2-GPU-ON.flag"));
+    private static final java.util.Set<String> DEV58G11R6_BATCH2_PATHS = java.util.Set.of(
+            "legacy_meshes/locomotive_steam_s100_uk.tcm",
+            "legacy_meshes/locomotive_steam_a4_mallard.tcm",
+            "legacy_meshes/locomotive_steam_br_black_5.tcm",
+            "legacy_meshes/locomotive_steam_c11.tcm",
+            "legacy_meshes/locomotive_steam_coronation_class.tcm",
+            "legacy_meshes/locomotive_steam_pannier.tcm",
+            "legacy_meshes/locomotive_steam_midland_compound.tcm",
+            "legacy_meshes/locomotive_steam_wwcp_062t.tcm",
+            "legacy_meshes/locomotive_steam_gwr_72xx.tcm",
+            "legacy_meshes/locomotive_steam_gwr_42xx.tcm");
+    private static boolean dev58g11r6PilotMesh(String path) {
+        return (DEV58G11R6_BATCH2_GPU_ON || DEV58G11R7_BATCH3_GPU_ON ||
+                dev58g11r8OrR9()) &&
+                DEV58G11R6_BATCH2_PATHS.contains(path);
+    }
+    // Do not enable Hall Class's R5 static GPU path in combined R6 mode;
+    // its one-sided rod placement is on VISUAL HOLD. R5-only comparison
+    // mode remains bit-for-bit equivalent to the accepted R5 test.
+    private static boolean dev58g11r6ApprovedR5Mesh(String path) {
+        return (DEV58G11R6_BATCH2_GPU_ON || DEV58G11R7_BATCH3_GPU_ON ||
+                dev58g11r8OrR9()) &&
+                !"legacy_meshes/locomotive_steam_hall_class.tcm".equals(path);
+    }
+    // DEV58G11R5: ten-model GPU pilot (isolated from R3 765 and R4 baseline).
+    // All dynamic rods, wheels, pistons, headlamps and masks use frozen CPU paths.
+    // R5 opt-in also keeps the previously tested King/B1225 R4 GPU acceleration.
+    private static final boolean DEV58G11R5_BATCH10_GPU_ON = java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R5-BATCH10-GPU-ON.flag"));
+    private static final java.util.Set<String> DEV58G11R5_BATCH10_PATHS = java.util.Set.of(
+            "legacy_meshes/locomotive_steam_hall_class.tcm",
+            "legacy_meshes/locomotive_steam_alco_sc4.tcm",
+            "legacy_meshes/locomotive_steam_j50.tcm",
+            "legacy_meshes/locomotive_steam_c41.tcm",
+            "legacy_meshes/locomotive_steam_c41_080.tcm",
+            "legacy_meshes/locomotive_steam_c41t.tcm",
+            "legacy_meshes/locomotive_steam_southern1102.tcm",
+            "legacy_meshes/locomotive_steam_shay_3_truck.tcm",
+            "legacy_meshes/locomotive_steam_s100_us.tcm",
+            "legacy_meshes/locomotive_steam_br_britannia.tcm");
+    private static boolean dev58g11r5PilotMesh(String path) {
+        return (DEV58G11R5_BATCH10_GPU_ON || dev58g11r6ApprovedR5Mesh(path)) &&
+                DEV58G11R5_BATCH10_PATHS.contains(path);
+    }
+    // DEV58G11R4: isolated heavy-mesh extension of accepted R3 GPU pilot.
+    // Only King Class and Berkshire 1225 join the R3 renderer when explicitly
+    // enabled. The original B765 flag and frozen light/rod data stay untouched.
+    private static final String DEV58G11R4_KING_PATH =
+            "legacy_meshes/locomotive_steam_king_class.tcm";
+    private static final String DEV58G11R4_B1225_PATH =
+            "legacy_meshes/locomotive_steam_berkshire_1225.tcm";
+    private static final boolean DEV58G11R4_HEAVY_GPU_ON = java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R4-HEAVY-GPU-ON.flag"));
+    private static boolean dev58g11r4PilotMesh(String path) {
+        return (DEV58G11R4_HEAVY_GPU_ON || DEV58G11R5_BATCH10_GPU_ON ||
+                DEV58G11R6_BATCH2_GPU_ON || DEV58G11R7_BATCH3_GPU_ON ||
+                dev58g11r8OrR9()) &&
+                (DEV58G11R4_KING_PATH.equals(path) || DEV58G11R4_B1225_PATH.equals(path));
+    }
+    // DEV58G11R15: 3 source-verified tenders. Hall remains CPU/quarantined:
+    // prior Hall GPU trial displaced a rod, so a fresh A/B side proof is required.
+    private static final boolean DEV58G11R15_TENDERS_ON=java.nio.file.Files.isRegularFile(
+        net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R15-ONE-BATCH-GPU-ON.flag"));
+    private static boolean dev58g11r15TenderMesh(String path) {
+        return DEV58G11R15_TENDERS_ON &&
+            ("legacy_meshes/steam_tender_berkshire.tcm".equals(path) ||
+             "legacy_meshes/steam_tender_4000_gallon.tcm".equals(path) ||
+             "legacy_meshes/steam_tender_a4_mallard.tcm".equals(path));
+    }
+    // DEV58G11R16: exact five-locomotive A/B performance pilot. Hall is separately
+    // disableable by removing its marker and restarting the client. Source rod,
+    // wheel and piston geometry remains managed by the frozen DEV54 paths.
+    private static final boolean DEV58G11R16_FIVE_ON=java.nio.file.Files.isRegularFile(
+        net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R16-FIVE-LOCO-GPU-ON.flag"));
+    private static final boolean DEV58G11R16_HALL_ON=DEV58G11R16_FIVE_ON && java.nio.file.Files.isRegularFile(
+        net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R16-HALL-SHELL-TRIAL-ON.flag"));
+    private static final java.util.Set<String> DEV58G11R16_BOGIES=java.util.Set.of(
+        "legacy_meshes/locomotive_steam_c11_front_truck.tcm",
+        "legacy_meshes/locomotive_steam_c11_rear_truck.tcm",
+        "legacy_meshes/locomotive_steam_pe_front_truck.tcm",
+        "legacy_meshes/locomotive_steam_pe_rear_truck.tcm");
+    private static boolean dev58g11r16GpuMesh(String path){
+        return DEV58G11R16_FIVE_ON && (DEV58G11R16_BOGIES.contains(path) ||
+            (DEV58G11R16_HALL_ON && "legacy_meshes/locomotive_steam_hall_class.tcm".equals(path)));
+    }
+    // R16 Hall trial admits only BODY chunks after excluding accepted wheel,
+    // rod, piston and edited source candidates. A/B visual approval is mandatory.
+    private static boolean dev58g11r16ProtectedHallChunk(String path,int chunk){
+        if(!"legacy_meshes/locomotive_steam_hall_class.tcm".equals(path))return false;
+        var tags=DEV54H14_TAGS.get(path);
+        return dev44R10Mapped(path,chunk) ||
+             (tags!=null && (tags.rod(chunk) || java.util.Arrays.binarySearch(tags.pistons(),chunk)>=0));
+    }
+    private static boolean dev58g11GpuMesh(String path) {
+        return (DEV58G11_B765_GPU_ON && DEV58G11_B765_PATH.equals(path)) ||
+                dev58g11r4PilotMesh(path) || dev58g11r5PilotMesh(path) ||
+                dev58g11r6PilotMesh(path) || dev58g11r7PilotMesh(path) ||
+                dev58g11r8PilotMesh(path) || dev58g11r9PilotMesh(path) ||
+                dev58g11r10PilotMesh(path) || dev58g11r15TenderMesh(path) ||
+                dev58g11r16GpuMesh(path);
+    }
+    private static boolean dev58g8r1AllowedModel(String path) {
+        return switch(path) {
+            case "legacy_meshes/locomotive_steam_milw_class_a.tcm" -> DEV58G8R1_MILW_ON || dev58g11r7PilotMesh(path);
+            case "legacy_meshes/locomotive_steam_berkshire_1225.tcm" ->
+                    DEV58G8R1_B1225_ON || dev58g11r4PilotMesh(path);
+            case "legacy_meshes/locomotive_steam_king_class.tcm" -> dev58g11r4PilotMesh(path);
+            case "legacy_meshes/locomotive_steam_berkshire_765.tcm" ->
+                    DEV58G8R1_B765_ON || DEV58G11_B765_GPU_ON;
+            default -> dev58g11r5PilotMesh(path) || dev58g11r6PilotMesh(path) ||
+                    dev58g11r7PilotMesh(path) || dev58g11r8PilotMesh(path) ||
+                    dev58g11r9PilotMesh(path) || dev58g11r10PilotMesh(path) ||
+                    dev58g11r15TenderMesh(path) || dev58g11r16GpuMesh(path);
+        };
+    }
+    // The same shared mesh resource can be rendered for many locomotives per frame.
+    // Keep up to 16 pose/light variants per source chunk (12-train scene); never
+    // reuse a packet for a different pose, normal transform, light or overlay.
+    private record Dev58G8R1Packet(org.joml.Matrix4f pose, org.joml.Matrix3f normal,
+                                  int light, int overlay, byte[] bytes) {}
+    private final java.util.Map<Integer,java.util.ArrayDeque<Dev58G8R1Packet>> dev58g8r1Packets =
+            new java.util.HashMap<>();
+    private long dev58g8r1CacheHits=0L, dev58g8r1CacheMisses=0L;
+    // DEV58G11R1: one bounded scratch builder per loaded mesh, allocated lazily.
+    // Before R1, EVERY pose-cache miss allocated a new BufferBuilder with direct
+    // vertex memory. In a moving 12-train scene this occurred millions of times.
+    // Keeping and clearing one builder avoids unbounded native allocation churn.
+    private com.mojang.blaze3d.vertex.BufferBuilder dev58g11r1PacketScratch;
+    private boolean dev58g8r1Announced=false;
+    private boolean dev58g8r2FrameReported=false;
+    // Only reached after existing hide/motion predicates have proved the full
+    // 24-vertex source chunk unmodified. The vanilla NEW_ENTITY encoder supplies
+    // the bytes, not a bespoke packing format.
+    private java.nio.ByteBuffer dev58g8r1StaticPacket(int chunk,
+            PoseStack.Pose pose,int packedLight,int packedOverlay) {
+        var packets=dev58g8r1Packets.get(chunk);
+        if(packets!=null) {
+            for(var p : packets) {
+                if(p.light()==packedLight && p.overlay()==packedOverlay &&
+                   p.pose().equals(pose.pose()) && p.normal().equals(pose.normal())) {
+                    dev58g8r1CacheHits++;
+                    return java.nio.ByteBuffer.wrap(p.bytes());
+                }
+            }
+        }
+        final int start=chunk*24*FLOATS_PER_VERTEX;
+        if(start<0 || start+24*FLOATS_PER_VERTEX>this.vertices.length) return null;
+        var builder=dev58g11r1PacketScratch;
+        if(builder==null) {
+            builder=new com.mojang.blaze3d.vertex.BufferBuilder(24*40);
+            dev58g11r1PacketScratch=builder;
+        }
+        // This renderer runs on the render thread. A nested builder indicates
+        // an unexpected call state; do not corrupt an active draw buffer.
+        if(builder.building()) throw new IllegalStateException("R1 scratch buffer unexpectedly building");
+        builder.clear();
+        byte[] payload;
+        try {
+            builder.begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS,
+                          com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY);
+            for(int q=0;q<24;q++) {
+                int o=start+q*FLOATS_PER_VERTEX;
+                builder.vertex(pose.pose(),vertices[o],vertices[o+1],vertices[o+2])
+                        .color(255,255,255,255)
+                        .uv(vertices[o+3],vertices[o+4])
+                        .overlayCoords(packedOverlay).uv2(packedLight)
+                        .normal(pose.normal(),vertices[o+5],vertices[o+6],vertices[o+7])
+                        .endVertex();
+            }
+            var done=builder.end();
+            try {
+                java.nio.ByteBuffer data=done.vertexBuffer();
+                payload=new byte[data.remaining()];data.get(payload);
+            } finally {done.release();}
+        } finally {
+            if(builder.building()) builder.discard();
+            builder.clear();
+        }
+        if(payload.length!=24*com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY.getVertexSize())
+            return null;
+        if(packets==null){packets=new java.util.ArrayDeque<>();dev58g8r1Packets.put(chunk,packets);}
+        if(packets.size()>=16) packets.removeFirst();
+        packets.addLast(new Dev58G8R1Packet(new org.joml.Matrix4f(pose.pose()),
+                new org.joml.Matrix3f(pose.normal()),packedLight,packedOverlay,payload));
+        dev58g8r1CacheMisses++;
+        return java.nio.ByteBuffer.wrap(payload);
+    }
+    // DEV58G9: research-backed GPU-residency POC. OFF BY DEFAULT.
+    // Geometry is uploaded only; NO VBO draw or source vertex suppression.
+    // Reason: production materials use entityTranslucentCull and require an
+    // ordered shader/lightmap integration test before any render replacement.
+    private static final boolean DEV58G9_GPU_UPLOAD_ONLY =
+            java.nio.file.Files.isRegularFile(
+                    net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                    .resolve("DEV58G9-GPU-RESIDENCY-ON.flag"));
+    private final java.util.BitSet dev58g9EligibleStaticChunks=new java.util.BitSet();
+    private com.mojang.blaze3d.vertex.VertexBuffer dev58g9GpuBuffer;
+    private boolean dev58g9UploadAttempted=false;
+
+    private void dev58g9UploadOnlyProof() {
+        if ((!DEV58G9_GPU_UPLOAD_ONLY && !dev58g11GpuMesh(this.source.getPath())) ||
+                dev58g9UploadAttempted || !dev58g8r1AllowedModel(this.source.getPath())) return;
+        final int count=dev58g9EligibleStaticChunks.cardinality();
+        // DEV58G11R7R1 PE: the PE body is largely dynamic; its few individually
+        // certified rigid chunks are still safe to accelerate. Never admit
+        // unverified/moving chunks or relax the guard for any other model.
+        final boolean r7r1PeSmallStaticPilot =
+                (DEV58G11R7_BATCH3_GPU_ON || dev58g11r8OrR9()) &&
+                this.dev44R11Verified &&
+                "legacy_meshes/locomotive_steam_pe.tcm".equals(this.source.getPath());
+        final int minimumStaticChunks = r7r1PeSmallStaticPilot ? 1 : 8;
+        if (count < minimumStaticChunks) return; // Never upload an empty model.
+        dev58g9UploadAttempted=true;
+        com.mojang.blaze3d.vertex.VertexBuffer trial=null;
+        try {
+            // Upload source-local geometry: moving the camera must not require
+            // changing vertex coordinates. All dynamic/frozen hide decisions
+            // were made by the existing G8R2 guard BEFORE these chunks are added.
+            var fmt=com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY;
+            var builder=new com.mojang.blaze3d.vertex.BufferBuilder(
+                    Math.max(1024,count*24*fmt.getVertexSize()));
+            builder.begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS,fmt);
+            int n=0;
+            for (int ch=dev58g9EligibleStaticChunks.nextSetBit(0);ch>=0;
+                     ch=dev58g9EligibleStaticChunks.nextSetBit(ch+1)) {
+                int start=ch*24*FLOATS_PER_VERTEX;
+                if(start<0||start+24*FLOATS_PER_VERTEX>vertices.length)continue;
+                for(int vi=0;vi<24;vi++) {
+                    int i=start+vi*FLOATS_PER_VERTEX;
+                    builder.vertex(vertices[i],vertices[i+1],vertices[i+2])
+                            .color(255,255,255,255)
+                            .uv(vertices[i+3],vertices[i+4])
+                            .overlayCoords(0).uv2(0x00F000F0)
+                            .normal(vertices[i+5],vertices[i+6],vertices[i+7])
+                            .endVertex();
+                    n++;
+                }
+            }
+            var ready=builder.end();
+            try {
+                trial=new com.mojang.blaze3d.vertex.VertexBuffer(
+                        com.mojang.blaze3d.vertex.VertexBuffer.Usage.STATIC);
+                trial.bind();
+                trial.upload(ready);
+            } finally {
+                com.mojang.blaze3d.vertex.VertexBuffer.unbind();
+                // Vanilla VertexBuffer.upload owns/recycles the RenderedBuffer.
+            }
+            if(trial.isInvalid())throw new IllegalStateException("GPU buffer invalid after upload");
+            dev58g9GpuBuffer=trial;
+            LOGGER.info("[DEV58G9-GPU-RESIDENCY-PASS] mesh={} chunks={} vertices={} "
+                    +"gpuVertexBytes={} draw=DISABLED unchangedRender=YES",
+                    this.source,count,n,n*fmt.getVertexSize());
+        } catch(Exception ex) {
+            if(trial!=null)try{trial.close();}catch(Exception ignored){}
+            LOGGER.warn("[DEV58G9-GPU-RESIDENCY-HOLD] mesh={} "
+                    +"sourceVertexRenderingUnaffected=true cause={}",this.source,ex.toString());
+        }
+    }
+    // DEV58G10 read-only cost audit. OFF by default; no geometry or render-state changes.
+    private static final boolean DEV58G10_METRICS_ON =
+            java.nio.file.Files.isRegularFile(
+                net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                    .resolve("DEV58G10-METRICS-ON.flag"));
+    private long dev58g10LegacyVertices=0L,dev58g10KnownMotionVertices=0L;
+    private long dev58g10CpuPacketVertices=0L,dev58g10GpuSkippedVertices=0L;
+    private long dev58g10RestoredVertices=0L,dev58g10UploadNanos=0L;
+    /** Cumulative render-thread counters: not independently rendered timings. */
+    public long[] dev58g10Counters() {
+        return new long[]{dev58g10LegacyVertices,dev58g10KnownMotionVertices,
+            dev58g10CpuPacketVertices,dev58g10GpuSkippedVertices,
+            dev58g10RestoredVertices,dev58g8r1CacheHits,dev58g8r1CacheMisses,
+            dev58g9s2Draws,dev58g9s2Uploads,dev58g9s2Fallbacks,dev58g10UploadNanos};
+    }
+    // DEV58G9S2: OFF-by-default real GPU DRAW A/B, only source-certified MILW.
+    // All chunk admission/hide checks remain in the original CPU render loop.
+    // We suppress a cached chunk only when the current frame certifies it again;
+    // if even one GPU-resident chunk loses eligibility, every skipped packet is
+    // restored to CPU output and GPU drawing is cancelled for that frame.
+    private static final boolean DEV58G9S2_GPU_DRAW_ON =
+            java.nio.file.Files.isRegularFile(
+                net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get()
+                    .resolve("DEV58G9S2-GPU-DRAW-ON.flag"));
+    private com.mojang.blaze3d.vertex.VertexBuffer dev58g9s2DrawBuffer;
+    private org.joml.Matrix3f dev58g9s2UploadedNormal;
+    private int dev58g9s2UploadedLight=-1, dev58g9s2UploadedOverlay=-1;
+    private final java.util.BitSet dev58g9s2Skipped=new java.util.BitSet();
+    private boolean dev58g9s2SkipThisRender=false,dev58g9s2Disabled=false;
+    private long dev58g9s2Draws=0,dev58g9s2Fallbacks=0,dev58g9s2Uploads=0;
+
+    private boolean dev58g9s2PrepareGpu(PoseStack.Pose pose,int light,int overlay) {
+        if (!DEV58G9S2_GPU_DRAW_ON || !DEV58G9_GPU_UPLOAD_ONLY ||
+            dev58g9s2Disabled || dev58g9GpuBuffer==null ||
+            !this.source.getPath().equals("legacy_meshes/locomotive_steam_milw_class_a.tcm") ||
+            dev58g9EligibleStaticChunks.cardinality()<8) return false;
+        final org.joml.Matrix3f normals=pose.normal();
+        if(dev58g9s2DrawBuffer!=null && !dev58g9s2DrawBuffer.isInvalid() &&
+           dev58g9s2UploadedLight==light && dev58g9s2UploadedOverlay==overlay &&
+           dev58g9s2UploadedNormal!=null && dev58g9s2UploadedNormal.equals(normals))return true;
+        com.mojang.blaze3d.vertex.VertexBuffer next=null;
+        final long dev58g10UploadStart=DEV58G10_METRICS_ON ? System.nanoTime() : 0L;
+        try {
+            // Unlike G9 Stage 1, use EXACT per-entity light, overlay and
+            // CPU-equivalent normal transformation. Source vertex positions
+            // remain local so the model pose can be applied by the GPU.
+            var fmt=com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY;
+            final int chunks=dev58g9EligibleStaticChunks.cardinality();
+            var b=new com.mojang.blaze3d.vertex.BufferBuilder(
+                    Math.max(1024,chunks*24*fmt.getVertexSize()));
+            b.begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS,fmt);
+            for(int ch=dev58g9EligibleStaticChunks.nextSetBit(0);ch>=0;
+                    ch=dev58g9EligibleStaticChunks.nextSetBit(ch+1)) {
+                int start=ch*24*FLOATS_PER_VERTEX;
+                if(start<0||start+24*FLOATS_PER_VERTEX>vertices.length)
+                    throw new IllegalStateException("certified chunk outside mesh");
+                for(int vi=0;vi<24;vi++) {
+                    int i=start+vi*FLOATS_PER_VERTEX;
+                    var n=new org.joml.Vector3f(vertices[i+5],vertices[i+6],vertices[i+7]).mul(normals);
+                    b.vertex(vertices[i],vertices[i+1],vertices[i+2])
+                        .color(255,255,255,255)
+                        .uv(vertices[i+3],vertices[i+4])
+                        .overlayCoords(overlay).uv2(light)
+                        .normal(n.x(),n.y(),n.z()).endVertex();
+                }
+            }
+            var ready=b.end();
+            try {
+                next=new com.mojang.blaze3d.vertex.VertexBuffer(
+                    com.mojang.blaze3d.vertex.VertexBuffer.Usage.STATIC);
+                next.bind();next.upload(ready);
+            }finally {com.mojang.blaze3d.vertex.VertexBuffer.unbind();}
+            if(next.isInvalid())throw new IllegalStateException("GPU upload invalid");
+            var prev=dev58g9s2DrawBuffer;
+            dev58g9s2DrawBuffer=next; next=null;
+            dev58g9s2UploadedLight=light; dev58g9s2UploadedOverlay=overlay;
+            dev58g9s2UploadedNormal=new org.joml.Matrix3f(normals);
+            dev58g9s2Uploads++;
+            if(DEV58G10_METRICS_ON) dev58g10UploadNanos+=System.nanoTime()-dev58g10UploadStart;
+            if(prev!=null)prev.close();
+            if(dev58g9s2Uploads<=3)
+                LOGGER.info("[DEV58G9S2-UPLOAD] model={} chunks={} light={} overlay={} uploadNumber={} normalsExact=true",
+                    source,chunks,light,overlay,dev58g9s2Uploads);
+            return true;
+        }catch(Exception ex) {
+            if(next!=null)try{next.close();}catch(Exception ignored){}
+            dev58g9s2Disabled=true;
+            LOGGER.error("[DEV58G9S2-SAFETY-HOLD] GPU preparation failed; CPU renderer retained model={}",source,ex);
+            return false;
+        }
+    }
+
+    // DEV58G11R3: one GPU copy per packed-light/overlay pair, never per camera
+    // or locomotive normal matrix. Source-local normals stay in immutable VBO;
+    // the two entity-shader diffuse light directions are temporarily transformed
+    // by transpose(current PoseStack normal matrix) immediately before this draw.
+    // This reproduces dot(light, pose.normal * localNormal) algebraically without
+    // reuploading geometry whenever the camera or locomotive orientation changes.
+    // Vertex source, dynamic pieces, and accepted headlamps are untouched.
+    private record Dev58G11Variant(int light, int overlay,
+                                   com.mojang.blaze3d.vertex.VertexBuffer buffer) {}
+    // G11R2: bounded access-ordered variants. No permanent 24-pose saturation.
+    // Render thread owns all mutations and VertexBuffer calls.
+    private final java.util.List<Dev58G11Variant> dev58g11Variants = new java.util.ArrayList<>();
+    private long dev58g11r2Evictions = 0L;
+    private long dev58g11r2Throttled = 0L;
+    private long dev58g11r3CacheHits = 0L, dev58g11r3CacheMisses = 0L;
+    private long dev58g11r3CpuFallbacks = 0L, dev58g11r3LastStatsNanos = 0L;
+    private void dev58g11r3ReportIfDue() {
+        final long now = System.nanoTime();
+        if (dev58g11r3LastStatsNanos != 0L &&
+                now - dev58g11r3LastStatsNanos < 10_000_000_000L) return;
+        dev58g11r3LastStatsNanos = now;
+        LOGGER.info((dev58g11r7PilotMesh(source.getPath()) ? "[DEV58G11R7-STATS]" :
+                    dev58g11r6PilotMesh(source.getPath()) ? "[DEV58G11R6-STATS]" :
+                    dev58g11r5PilotMesh(source.getPath()) ? "[DEV58G11R5-STATS]" :
+                    dev58g11r4PilotMesh(source.getPath()) ? "[DEV58G11R4-STATS]" :
+                    "[DEV58G11R3-STATS]") +
+                " mesh={} gpuDraws={} uploads={} " +
+                "cacheHits={} cacheMisses={} cpuFallbacks={} evictions={} " +
+                "throttled={} residentVariants={} staticChunks={}",
+                source, dev58g11Draws, dev58g11Uploads,
+                dev58g11r3CacheHits, dev58g11r3CacheMisses,
+                dev58g11r3CpuFallbacks, dev58g11r2Evictions,
+                dev58g11r2Throttled, dev58g11Variants.size(),
+                dev58g9EligibleStaticChunks.cardinality());
+    }
+    private long dev58g11r2WindowStarted = 0L;
+    private int dev58g11r2WindowUploads = 0;
+    private boolean dev58g11r2MemoryHalt = false;
+    private long dev58g11r2MemoryChecked = 0L;
+    private static final int DEV58G11R2_MAX_UPLOADS_PER_10S = 6;
+    // The source mesh is shared by all visible B765s. A scratch builder avoids
+    // repeated ~1 MiB direct-buffer allocations when a new pose is encountered.
+    private com.mojang.blaze3d.vertex.BufferBuilder dev58g11r2UploadScratch;
+    // Resource-replacement cleanup, only for the one experimental B765 model.
+    private static LegacyStaticMesh dev58g11r2LastLoadedB765;
+    // Exact two-model resource-reload ownership, not a permanent per-world cache.
+    private static final java.util.Map<String,LegacyStaticMesh> dev58g11r4LastLoaded =
+            new java.util.HashMap<>();
+
+    private static long dev58g11r2PrivateCommit() {
+        var os=java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+        if (os instanceof com.sun.management.OperatingSystemMXBean win)
+            return win.getCommittedVirtualMemorySize();
+        return -1L;
+    }
+    private void dev58g11r2ReleaseGpu(String reason) {
+        // Called only by the client render thread, never from a Cleaner/worker.
+        for(var entry : dev58g11Variants) {
+            try {entry.buffer().close();}catch(Exception ex) {
+                LOGGER.warn("[DEV58G11R2-CLOSE-WARN] mesh={} reason={}",source,reason,ex);
+            }
+        }
+        dev58g11Variants.clear();
+        dev58g11ActiveBuffer=null;
+        if(dev58g9GpuBuffer!=null) {
+            try {dev58g9GpuBuffer.close();} catch(Exception ex) {
+                LOGGER.warn("[DEV58G11R2-CLOSE-WARN] G9 proof buffer mesh={}",source,ex);
+            }
+            dev58g9GpuBuffer=null;
+        }
+        if(dev58g9s2DrawBuffer!=null) {
+            try {dev58g9s2DrawBuffer.close();}catch(Exception ignored){}
+            dev58g9s2DrawBuffer=null;
+        }
+        dev58g11r2UploadScratch=null;
+        dev58g11r1PacketScratch=null;
+        dev58g8r1Packets.clear();
+        LOGGER.info("[DEV58G11R2-RELEASE] mesh={} reason={} evictions={} uploads={}",
+                source,reason,dev58g11r2Evictions,dev58g11Uploads);
+    }
+    private boolean dev58g11r2MemorySafe() {
+        if(dev58g11r2MemoryHalt || dev58g11Disabled)return false;
+        final long now=System.nanoTime();
+        if (now-dev58g11r2MemoryChecked >= 3_000_000_000L) {
+            dev58g11r2MemoryChecked=now;
+            long committed=dev58g11r2PrivateCommit();
+            // Guard actual Java-process private commit, not system-wide Commit.
+            if (committed >= 16L*1024L*1024L*1024L) {
+                dev58g11r2MemoryHalt=true;
+                dev58g11Disabled=true;
+                dev58g11r2ReleaseGpu("PRIVATE_COMMIT_16_GIB");
+                LOGGER.error("[DEV58G11R2-MEMORY-HALT] privateCommitGiB={} GPU drawing " +
+                        "disabled until restart; original CPU path retained",
+                        committed/(1024.0*1024.0*1024.0));
+                return false;
+            }
+        }
+        return true;
+    }
+    private boolean dev58g11r2AllowUpload() {
+        if(!dev58g11r2MemorySafe())return false;
+        final long now=System.nanoTime();
+        if (dev58g11r2WindowStarted==0L ||
+                now-dev58g11r2WindowStarted >= 10_000_000_000L) {
+            dev58g11r2WindowStarted=now;
+            dev58g11r2WindowUploads=0;
+        }
+        if(dev58g11r2MemoryHalt)return false;
+        if(dev58g11r2WindowUploads>=DEV58G11R2_MAX_UPLOADS_PER_10S) {
+            dev58g11r2Throttled++;
+            if(dev58g11r2Throttled==1 || dev58g11r2Throttled%204096L==0L)
+                LOGGER.warn("[DEV58G11R2-THROTTLE] CPU fallback (original uncached) " +
+                        "uploadsThisWindow={} heldVariants={} count={}",
+                        dev58g11r2WindowUploads,dev58g11Variants.size(),dev58g11r2Throttled);
+            return false;
+        }
+        return true;
+    }
+    private com.mojang.blaze3d.vertex.VertexBuffer dev58g11ActiveBuffer;
+    private boolean dev58g11Disabled = false, dev58g11VariantCapReported = false;
+    private long dev58g11Draws = 0L, dev58g11Uploads = 0L, dev58g11FastSkips = 0L;
+    private static final int DEV58G11_MAX_VARIANTS = 12; // R2 hard memory ceiling
+    private static final java.util.Set<String> DEV58G11_ANNOUNCED =
+            java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    private boolean dev58g11PrepareGpu(PoseStack.Pose pose, int light, int overlay) {
+        dev58g11ActiveBuffer = null;
+        if(!dev58g11GpuMesh(this.source.getPath()) || dev58g11Disabled ||
+                dev58g9GpuBuffer == null || dev58g9EligibleStaticChunks.cardinality() < 8)
+            return false;
+        // Check even on cache HITS, not only when uploading fresh geometry.
+        if(!dev58g11r2MemorySafe())return false;
+        for(var entry : dev58g11Variants) {
+            if(entry.light()==light && entry.overlay()==overlay &&
+                    !entry.buffer().isInvalid()) {
+                dev58g11r3CacheHits++;
+                dev58g11ActiveBuffer = entry.buffer();
+                // Access-order for true bounded eviction; no shader/light approximation.
+                dev58g11Variants.remove(entry);
+                dev58g11Variants.add(entry);
+                return true;
+            }
+        }
+        dev58g11r3CacheMisses++;
+        if(!dev58g11r2AllowUpload()) return false;
+        com.mojang.blaze3d.vertex.VertexBuffer next = null;
+        try {
+            var fmt = com.mojang.blaze3d.vertex.DefaultVertexFormat.NEW_ENTITY;
+            var b = dev58g11r2UploadScratch;
+            if(b==null) {
+                b=new com.mojang.blaze3d.vertex.BufferBuilder(Math.max(1024,
+                        dev58g9EligibleStaticChunks.cardinality()*24*fmt.getVertexSize()));
+                dev58g11r2UploadScratch=b;
+            }
+            if(b.building())throw new IllegalStateException("R2 upload scratch nested");
+            b.clear();
+            b.begin(com.mojang.blaze3d.vertex.VertexFormat.Mode.QUADS,fmt);
+            int emitted = 0;
+            for(int ch=dev58g9EligibleStaticChunks.nextSetBit(0);ch>=0;
+                    ch=dev58g9EligibleStaticChunks.nextSetBit(ch+1)) {
+                int start=ch*24*FLOATS_PER_VERTEX;
+                if(start<0 || start+24*FLOATS_PER_VERTEX>vertices.length)
+                    throw new IllegalStateException("Pilot certified chunk out of mesh");
+                for(int k=0;k<24;k++) {
+                    int i=start+k*FLOATS_PER_VERTEX;
+                    b.vertex(vertices[i],vertices[i+1],vertices[i+2])
+                            .color(255,255,255,255)
+                            .uv(vertices[i+3],vertices[i+4])
+                            .overlayCoords(overlay).uv2(light)
+                            .normal(vertices[i+5],vertices[i+6],vertices[i+7])
+                            .endVertex();
+                    emitted++;
+                }
+            }
+            var ready=b.end();
+            try {
+                next = new com.mojang.blaze3d.vertex.VertexBuffer(
+                        com.mojang.blaze3d.vertex.VertexBuffer.Usage.STATIC);
+                next.bind();next.upload(ready);
+            } finally {
+                com.mojang.blaze3d.vertex.VertexBuffer.unbind();
+                if(b.building())b.discard();
+                b.clear();
+            }
+            if(next.isInvalid())throw new IllegalStateException("Pilot GPU buffer invalid");
+            if(dev58g11Variants.size()>=DEV58G11_MAX_VARIANTS) {
+                // Only evict AFTER a successful replacement upload; never draw
+                // a closed buffer. Close oldest on the render thread.
+                var oldest=dev58g11Variants.remove(0);
+                oldest.buffer().close();
+                dev58g11r2Evictions++;
+                if(dev58g11r2Evictions==1 || dev58g11r2Evictions%64L==0L)
+                    LOGGER.info("[DEV58G11R2-EVICT] model={} evictions={} maxVariants={}",
+                            source,dev58g11r2Evictions,DEV58G11_MAX_VARIANTS);
+            }
+            dev58g11Variants.add(new Dev58G11Variant(light, overlay, next));
+            dev58g11r2WindowUploads++;
+            dev58g11ActiveBuffer = next;
+            dev58g11Uploads++;
+            if(dev58g11Uploads <= 3)
+                LOGGER.info("[DEV58G11-UPLOAD] mesh={} staticChunks={} vertices={} " +
+                        "variant={} light={} normals=LOCAL shaderLights=PER_DRAW immutableUntilResourceReset=true",
+                        source,dev58g9EligibleStaticChunks.cardinality(),emitted,
+                        dev58g11Variants.size(),light);
+            next=null;
+            return true;
+        } catch(Exception ex) {
+            if(next!=null)try{next.close();}catch(Exception ignored){}
+            dev58g11Disabled=true;
+            LOGGER.error("[DEV58G11R2-SAFETY-HOLD] Failed GPU variant upload; " +
+                    "preserving original CPU draw mesh={}",source,ex);
+            return false;
+        }
+    }
+
+    // The vanilla entity shader computes diffuse light in its vertex shader
+    // using Light0_Direction / Light1_Direction dot Normal. The normal transform
+    // formerly happened on the CPU at EVERY GPU upload. Move it to two uniforms
+    // per VBO draw: (M*n) dot L == n dot (transpose(M)*L).
+    // Always restore RenderSystem's shared shader lights, even on GL exceptions.
+    private static org.joml.Vector3f dev58g11r3ReadShaderLight(
+            com.mojang.blaze3d.shaders.Uniform u) {
+        if (u == null || u.getFloatBuffer() == null ||
+                u.getFloatBuffer().capacity() < 3)
+            throw new IllegalStateException("Entity diffuse shader light uniform missing");
+        var f = u.getFloatBuffer();
+        return new org.joml.Vector3f(f.get(0), f.get(1), f.get(2));
+    }
+
+    private void dev58g9s2RestoreSkipped(com.mojang.blaze3d.vertex.VertexConsumer consumer,
+                    PoseStack.Pose pose,int light,int overlay) {
+        if(!(consumer instanceof com.mojang.blaze3d.vertex.BufferBuilder b)||!b.building())
+            throw new IllegalStateException("CPU backup buffer not writable");
+        for(int ch=dev58g9s2Skipped.nextSetBit(0);ch>=0;ch=dev58g9s2Skipped.nextSetBit(ch+1)) {
+            java.nio.ByteBuffer packet=dev58g8r1StaticPacket(ch,pose,light,overlay);
+            if(packet==null)throw new IllegalStateException("missing CPU fallback packet "+ch);
+            b.putBulkData(packet);
+            if(DEV58G10_METRICS_ON) dev58g10RestoredVertices+=24L;
+        }
+    }
+
+    // Required by the real VBO pilot. All non-MILW and nonstandard buffer
+    // sources call the original renderer unchanged. We flush the pending
+    // entity RenderType before the GPU draw and restore its state afterward.
+    public void dev58g9s2Render(PoseStack stack,
+            net.minecraft.client.renderer.MultiBufferSource buffers,
+            net.minecraft.client.renderer.RenderType type,
+            int light,int overlay) {
+        var out=buffers.getBuffer(type);
+        final boolean dev58g11Model=dev58g11GpuMesh(this.source.getPath());
+        boolean capable=out instanceof com.mojang.blaze3d.vertex.BufferBuilder b && b.building() &&
+                buffers instanceof net.minecraft.client.renderer.MultiBufferSource.BufferSource &&
+                (dev58g11Model ? dev58g11PrepareGpu(stack.last(),light,overlay) :
+                                   dev58g9s2PrepareGpu(stack.last(),light,overlay));
+        if(!capable){
+            if(dev58g11Model) {
+                dev58g11r3CpuFallbacks++;
+                dev58g11r3ReportIfDue();
+            }
+            render(stack,out,light,overlay);
+            return;
+        }
+        if(dev58g11Model)dev58g11r3ReportIfDue();
+        dev58g9s2Skipped.clear();
+        dev58g9s2SkipThisRender=true;
+        try {render(stack,out,light,overlay);}
+        finally {dev58g9s2SkipThisRender=false;}
+        if(!dev58g9s2Skipped.equals(dev58g9EligibleStaticChunks)) {
+            dev58g9s2Fallbacks++;
+            dev58g9s2RestoreSkipped(out,stack.last(),light,overlay);
+            if(dev58g9s2Fallbacks<=3)
+                LOGGER.warn("[DEV58G9S2-FALLBACK] model={} currentSkipped={} certified={} reason=dynamic-or-hidden-chunk",
+                    source,dev58g9s2Skipped.cardinality(),dev58g9EligibleStaticChunks.cardinality());
+            return;
+        }
+        boolean stateActive=false;
+        try {
+            // Direct VBO calls must reproduce vanilla entity render state.
+            // NOTE: this is a PILOT, not a released translucent sorter.
+            ((net.minecraft.client.renderer.MultiBufferSource.BufferSource)buffers).endBatch(type);
+            type.setupRenderState();stateActive=true;
+            var shader=com.mojang.blaze3d.systems.RenderSystem.getShader();
+            if(shader==null)throw new IllegalStateException("missing translucent entity shader");
+            var modelView=new org.joml.Matrix4f(
+                com.mojang.blaze3d.systems.RenderSystem.getModelViewMatrix()).mul(stack.last().pose());
+            final com.mojang.blaze3d.vertex.VertexBuffer activeGpu =
+                    dev58g11Model ? dev58g11ActiveBuffer : dev58g9s2DrawBuffer;
+            if(activeGpu==null || activeGpu.isInvalid())
+                throw new IllegalStateException("missing certified GPU draw buffer");
+            activeGpu.bind();
+            if(dev58g11Model) {
+                // Capture the EXACT current vanilla entity light directions;
+                // never use fixed guessed lighting, even in night/other dimensions.
+                com.mojang.blaze3d.systems.RenderSystem.setupShaderLights(shader);
+                var original0=dev58g11r3ReadShaderLight(shader.LIGHT0_DIRECTION);
+                var original1=dev58g11r3ReadShaderLight(shader.LIGHT1_DIRECTION);
+                var normalTranspose=new org.joml.Matrix3f(stack.last().normal()).transpose();
+                var local0=new org.joml.Vector3f(original0).mul(normalTranspose);
+                var local1=new org.joml.Vector3f(original1).mul(normalTranspose);
+                try {
+                    com.mojang.blaze3d.systems.RenderSystem.setShaderLights(local0,local1);
+                    activeGpu.drawWithShader(modelView,
+                        com.mojang.blaze3d.systems.RenderSystem.getProjectionMatrix(),shader);
+                } finally {
+                    com.mojang.blaze3d.systems.RenderSystem.setShaderLights(original0,original1);
+                }
+            } else {
+                activeGpu.drawWithShader(modelView,
+                    com.mojang.blaze3d.systems.RenderSystem.getProjectionMatrix(),shader);
+            }
+            if(dev58g11Model) {
+                dev58g11Draws++;
+                if(dev58g11Draws==1 || dev58g11Draws%204096L==0L)
+                    LOGGER.info((dev58g11r10PilotMesh(source.getPath()) ? "[DEV58G11R10-DRAW]" :
+                                dev58g11r9PilotMesh(source.getPath()) ? "[DEV58G11R9-DRAW]" :
+                                dev58g11r8PilotMesh(source.getPath()) ? "[DEV58G11R8-DRAW]" :
+                                dev58g11r7PilotMesh(source.getPath()) ? "[DEV58G11R7-DRAW]" :
+                                dev58g11r6PilotMesh(source.getPath()) ? "[DEV58G11R6-DRAW]" :
+                                dev58g11r5PilotMesh(source.getPath()) ? "[DEV58G11R5-DRAW]" :
+                                dev58g11r4PilotMesh(source.getPath()) ? "[DEV58G11R4-DRAW]" :
+                                "[DEV58G11-B765-DRAW]") +
+                            " mesh={} draws={} uploads={} " +
+                            "fastSkippedVertices={} lightVariants={} evictions={} throttled={} " +
+                            "fallbacks={} staticChunks={} dynamicVertices=ORIGINAL",
+                            source,dev58g11Draws,dev58g11Uploads,dev58g11FastSkips,
+                            dev58g11Variants.size(),dev58g11r2Evictions,dev58g11r2Throttled,
+                            dev58g9s2Fallbacks,dev58g9EligibleStaticChunks.cardinality());
+            } else {
+            dev58g9s2Draws++;
+            if(dev58g9s2Draws==1||dev58g9s2Draws%204096L==0L)
+                LOGGER.info("[DEV58G9S2-GPU-DRAW] model={} draws={} uploads={} fallbacks={} staticChunks={} shader={} light={} textured=true",
+                    source,dev58g9s2Draws,dev58g9s2Uploads,dev58g9s2Fallbacks,
+                    dev58g9EligibleStaticChunks.cardinality(),shader.getName(),light);
+            }
+        }catch(Exception ex) {
+            if(dev58g11Model) {
+                dev58g11Disabled=true;
+                LOGGER.error("[DEV58G11-SAFETY-HOLD] GPU draw failed; " +
+                        "GPU pilot uses CPU on subsequent frames",ex);
+            } else {
+                dev58g9s2Disabled=true;
+                LOGGER.error("[DEV58G9S2-SAFETY-HOLD] GPU draw failed; restore CPU chunks after flush",ex);
+            }
+            // After endBatch(), its old builder may have been finalized. Get a
+            // fresh buffer and reissue the exact original cached packets.
+            var fallback=buffers.getBuffer(type);
+            dev58g9s2RestoreSkipped(fallback,stack.last(),light,overlay);
+        }finally {
+            com.mojang.blaze3d.vertex.VertexBuffer.unbind();
+            if(stateActive)type.clearRenderState();
+            dev58g9s2Skipped.clear();
+        }
+    }
     // DEV54H8D: opt-in clean-slate ORIGINAL running-gear render mask.
     // This does not delete/modify TCM and does not mask H7 accepted wheel faces.
     // Purpose: isolate imported rods/pins/crossheads while replacement running
@@ -916,7 +1728,18 @@ private static boolean dev54h8fFreshRunningGearChunk(int ch) {
         new java.util.concurrent.ConcurrentHashMap<>();
     private static final java.util.Set<String> DEV54H15AI_S100_REPORTED =
         java.util.concurrent.ConcurrentHashMap.newKeySet();
+    // DEV58G11R17R3 HALL-ONLY: source-proven driver wheel planes are
+    // z=-0.625 and z=+0.125 (chunks 360..365), centerline=-0.25.
+    // Use the existing H15 bilateral mirroring/side classification around the
+    // true driver centerline, not z=0.  Both wheel phases and all source
+    // geometry remain untouched.  OFF instantly on the next client restart
+    // when this exact marker is absent; Hall R16 GPU shell flag is independent.
+    private static final boolean DEV58G11R17R3_HALL_MIRROR_ON=dev54h15tEnabled(
+        "DEV58G11R17R3-HALL-CENTERLINE-MIRROR-ON.flag",
+        "DEV58G11R17R3-HALL-CENTERLINE-MIRROR-ON-V1");
     private static float dev54h15aaZCenter(String path){
+        if(DEV58G11R17R3_HALL_MIRROR_ON &&
+           "legacy_meshes/locomotive_steam_hall_class.tcm".equals(path))return -.25f;
         if(dev54h15aaLssp7(path))return DEV54H15AA_LSSP7_CENTER_Z;
         if(dev54h15aiS100(path))return DEV54H15AI_S100_MIDZ.getOrDefault(path,.8125f);
         return 0f;
@@ -6564,10 +7387,9 @@ private static boolean dev54h8fFreshRunningGearChunk(int ch) {
     }
 
     private static final float[][] corners = new float[4][3];
-    static {
-        MinecraftForge.EVENT_BUS.register(new PickerEvents());
-        LOGGER.info("[TC-DEV44-R9] Crosshair picker registered: P=pick H=hide/unhide J=clear");
-    }
+    // DEV58B9R4 release cleanup: do not register in-game DEV44 picker / DEV54
+    // rod-editor keyboard controls. Keep mesh masks, saved rod data, renderers,
+    // animations and all original train part materials unchanged.
     private static final class PickerEvents {
         @SubscribeEvent public void onTick(TickEvent.ClientTickEvent event) {
             if (event.phase != TickEvent.Phase.END) return;
@@ -6821,6 +7643,19 @@ private static boolean dev54h8fFreshRunningGearChunk(int ch) {
                 for (int i = 0; i < data.length; i++) data[i] = in.readFloat();
                 LegacyStaticMesh mesh = new LegacyStaticMesh(location, data, vertexCount,
                         minX, minY, minZ, maxX, maxY, maxZ, stabilized, verified);
+                if(DEV58G11_B765_PATH.equals(location.getPath())) {
+                    if(dev58g11r2LastLoadedB765 != null && dev58g11r2LastLoadedB765 != mesh)
+                        dev58g11r2LastLoadedB765.dev58g11r2ReleaseGpu("REPLACED_MESH");
+                    dev58g11r2LastLoadedB765=mesh;
+                }
+                if(dev58g11r4PilotMesh(location.getPath()) ||
+                        dev58g11r5PilotMesh(location.getPath()) ||
+                        dev58g11r6PilotMesh(location.getPath()) ||
+                        dev58g11r7PilotMesh(location.getPath())) {
+                    var previous = dev58g11r4LastLoaded.put(location.getPath(),mesh);
+                    if(previous!=null && previous!=mesh)
+                        previous.dev58g11r2ReleaseGpu("R6_REPLACED_MESH");
+                }
                 mesh.dev54fMaskVerified = traincraft.debug.Dev54FRodMask.matches(meshName, rawBytes);
                 mesh.dev54hWheelParts = Dev54HRealWheelParts.fromSource(location, rawBytes, data, FLOATS_PER_VERTEX);
                 mesh.dev54h2WheelParts = Dev54H2FleetWheelParts.fromSource(location, rawBytes, data, FLOATS_PER_VERTEX);
@@ -6837,6 +7672,19 @@ private static boolean dev54h8fFreshRunningGearChunk(int ch) {
 public void render(PoseStack poseStack, VertexConsumer consumer, int packedLight, int packedOverlay) {
         final long dev44R13gStarted = dev44R13gProfileOn() ? System.nanoTime() : 0L;
         PoseStack.Pose pose = poseStack.last();
+        // DEV58G7: no modification to the pose stack or the animation context.
+        // BufferBuilder has a fast 14-field vertex writer in Minecraft 1.20.1.
+        // Wrappers/other consumers retain the G5R3 chained path unchanged.
+        if(dev58g8r1AllowedModel(this.source.getPath()) && dev58g8r1CacheHits>0 &&
+                (dev58g8r1CacheHits%16384L)==0L) {
+            LOGGER.info("[DEV58G8R2-PACKET-STATS] model={} chunks={} hits={} rebuilds={}",
+                    this.source,dev58g8r1Packets.size(),dev58g8r1CacheHits,dev58g8r1CacheMisses);
+            dev58g8r1CacheHits++; // avoid repeating the same milestone
+        }
+        final boolean dev58g7Direct = DEV58G7_FAST_VERTEX &&
+                consumer instanceof com.mojang.blaze3d.vertex.BufferBuilder;
+        final org.joml.Matrix4f dev58g7Position = pose.pose();
+        final org.joml.Matrix3f dev58g7Normal = pose.normal();
 
         int activeChunk = -1;
         traincraft.client.renderer.animation.BakedWheelAnimationContext.TransformSpec transform = null;
@@ -6907,7 +7755,7 @@ public void render(PoseStack poseStack, VertexConsumer consumer, int packedLight
             }
             LOGGER.info("[TC-DEV44-R13] mesh={} marker={} requested={} shaVerified={} hide={} suppressedChunks={} visibleHighlight={} cwd={}",
                     this.source, dev44R12MarkerPath().toAbsolutePath().normalize(), r12Requested,
-                    this.dev44R11Verified, r12Hide, suppressed, !r12Hide && this.dev44R11Verified,
+                    this.dev44R11Verified, r12Hide, suppressed, false, // magenta R11 debug highlighting retired
                     java.nio.file.Path.of("").toAbsolutePath().normalize());
             dev44R12LastReportedMode = r12Mode;
         }
@@ -7974,6 +8822,12 @@ public void render(PoseStack poseStack, VertexConsumer consumer, int packedLight
                 && !dev54h5Shay2WheelsOnly
                 ? Dev44FleetSweptLinkage.build(this.vertices,this.vertexCount,dev44R13hRoles,r13Wheels)
                 : null;
+        // DEV58G8R2: one-time guard audit; never log per frame or per vertex.
+        if(dev58g8r1AllowedModel(this.source.getPath()) && !dev58g8r2FrameReported) {
+            dev58g8r2FrameReported=true;
+            LOGGER.info("[DEV58G8R2-FRAME-GATE] model={} linkageFramePresent={} "
+                    +"dynamicChunksExcludedIndividually=true",this.source,dev44FleetFrame!=null);
+        }
         if(dev44FleetFrame!=null && !dev44FleetFirstReport) {
             dev44FleetFirstReport=true;
             LOGGER.info("[TC-DEV44-FLEET-CANDIDATE] mesh={} rods={} cranks={} held={} state=VISUAL_CANDIDATE_NOT_RUNTIME_ACCEPTED wheels=UNTOUCHED pistons=STATIONARY",
@@ -8554,55 +9408,93 @@ if(dev54h8fSelected && !dev54h8fFreshVisible && DEV54H8F_REPORT.add(90))
                     dev54h13Active);
         }
 
+        // DEV58G5: both caches are per-render, not global or per-entity.
+        // Chunk visibility is independent of vertex position; animation below remains
+        // per-vertex. The original source, saved markers and rod/wheel settings are not modified.
+        int dev58g5CachedMaskChunk = -1;
+        boolean dev58g5CachedMasked = false;
+        // DEV58G5R3: transient per-render, per-source-chunk decisions only.
+        // Each source chunk is 24 vertices; moving geometry still runs per vertex.
+        int dev58g5r3EarlyChunk = -1;
+        boolean dev58g5r3EarlySkip = false;
+        int dev58g5r3R10Chunk = -1;
+        boolean dev58g5r3R10Mapped = false;
+        int dev58g5r3PoseChunk = -1;
+        boolean dev58g5r3HasPose = false, dev58g5r3HasOffset = false;
+        Dev44R13uPose dev58g5r3CachedPose = null;
+        float[] dev58g5r3CachedOffset = null;
+        final boolean dev58g5r3J50Verified = DEV54H15AH_J50_STATIC_ON
+                    && this.dev44R11Verified
+                    && "legacy_meshes/locomotive_steam_j50.tcm".equals(this.source.getPath());
         for (int i = 0; i < this.vertices.length; i += FLOATS_PER_VERTEX) {
             int vertexIndex = i / FLOATS_PER_VERTEX;
             int chunkIndex = vertexIndex / 24;
-            if (dev54hFrame != null && dev54hFrame.hasChunk(chunkIndex)) continue;
-            if (dev54h2Frame != null && dev54h2Frame.hasChunk(chunkIndex)) continue;
-            if(dev54h15hSourceMask &&
-               dev54h14Tags!=null && dev54h14Tags.rod(chunkIndex) &&
-               traincraft.client.renderer.animation.BakedWheelAnimationContext
-                   .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null)continue;
-            if(dev54h15Replacing && !DEV54H15H_ON && dev54h14Tags!=null && dev54h14Tags.rod(chunkIndex) &&
-                    traincraft.client.renderer.animation.BakedWheelAnimationContext
-                        .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null)continue;
-            if(dev54h14Active && dev54h14Tags.rod(chunkIndex) &&
-                    traincraft.client.renderer.animation.BakedWheelAnimationContext
-                        .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null)continue;
-            if(dev54h9aActive && dev54h9aOldUnwantedChunk(chunkIndex)) continue;
-            if(dev54h11aActive && dev54h11aDeferredLink(this.source.getPath(),chunkIndex)) continue;
+            // DEV58G5R3: these seven mask decisions depend on the source chunk,
+            // never on vertex position. Evaluate once for each chunk, preserving
+            // short-circuit order and the original all-24-vertices skip semantics.
+            if (chunkIndex != dev58g5r3EarlyChunk) {
+                dev58g5r3EarlyChunk = chunkIndex;
+                dev58g5r3EarlySkip =
+                    (dev54hFrame != null && dev54hFrame.hasChunk(chunkIndex))
+                    || (dev54h2Frame != null && dev54h2Frame.hasChunk(chunkIndex))
+                    || (dev54h15hSourceMask && dev54h14Tags != null
+                        && dev54h14Tags.rod(chunkIndex)
+                        && traincraft.client.renderer.animation.BakedWheelAnimationContext
+                             .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null)
+                    || (dev54h15Replacing && !DEV54H15H_ON && dev54h14Tags!=null
+                        && dev54h14Tags.rod(chunkIndex)
+                        && traincraft.client.renderer.animation.BakedWheelAnimationContext
+                             .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null)
+                    || (dev54h14Active && dev54h14Tags.rod(chunkIndex)
+                        && traincraft.client.renderer.animation.BakedWheelAnimationContext
+                             .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null)
+                    || (dev54h9aActive && dev54h9aOldUnwantedChunk(chunkIndex))
+                    || (dev54h11aActive && dev54h11aDeferredLink(this.source.getPath(),chunkIndex));
+            }
+            if (dev58g5r3EarlySkip) {
+                i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX;
+                continue;
+            }
             // H13 masks only original tagged duplicates after source + phase
             // and both side-rod gates validate. Climax gearing never masked.
             if(DEV54H14B_ON && DEV54H14A_ON && dev54h13bActive &&
                     dev54h14bC41(this.source.getPath()) &&
                     dev54h13Tagged(this.source.getPath()).contains(chunkIndex) &&
                     traincraft.client.renderer.animation.BakedWheelAnimationContext
-                        .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null)continue;
+                        .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null){ i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             if(dev54h13Active && dev54h13Tagged(this.source.getPath()).contains(chunkIndex)
                     && !dev54h13Visible(this.source.getPath()).contains(chunkIndex)
                     && !(dev54h13bActive && dev54h13bReShow(this.source.getPath(),chunkIndex))
-                    && !(dev54h13cActive && dev54h13cRestore(this.source.getPath(),chunkIndex)))continue;
+                    && !(dev54h13cActive && dev54h13cRestore(this.source.getPath(),chunkIndex))){ i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             // H13E exact H12C user export (2026-10-17): C11 #298,
             // C62 32 body chunks; original wheel faces 0/1/8/12/21/26
             // and every unmarked piece remain untouched. Clean up only after
             // exact parent selector + H13B geometry/source gate passes.
-            if(dev54h13eC11Active && chunkIndex==298) continue;
-            if(dev54h13eC62Active && DEV54H13E_C62_HIDE.contains(chunkIndex)) continue;
+            if(dev54h13eC11Active && chunkIndex==298) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
+            if(dev54h13eC62Active && DEV54H13E_C62_HIDE.contains(chunkIndex)) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             // C41-series and C11 removals are strictly user-picked CSV chunks.
             // Never infer a block ID from color or from a different model.
             if(dev54h13cActive && dev54h13cUserHide(this.source.getPath(),chunkIndex)
                  && traincraft.client.renderer.animation.BakedWheelAnimationContext
-                    .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null)continue;
+                    .spec(meshKey,chunkIndex,this.vertices,FLOATS_PER_VERTEX)==null){ i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             // DEV54H12B: no duplicate stationary originals, only the exact
             // two-sided source linkage set receives poses. Pistons stay fixed.
             // H12D isolated override: the single exported ALCO hide candidate
             // wins over H12B crank animation; nearby source pin 362 is kept.
             // Do not suppress chunk 358 when the H12D marker is OFF.
             if(dev54h12bActive && DEV54H12D_ENABLED
-                && dev54h12bId.equals("locomotive_steam_alco_sc4") && chunkIndex==358) continue;
+                && dev54h12bId.equals("locomotive_steam_alco_sc4") && chunkIndex==358) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             if(dev54h12bActive && DEV54H12D_ENABLED && dev54h12eModel(dev54h12bId)
                     && dev54h12bId.equals("locomotive_steam_adler")
-                    && (chunkIndex==71 || chunkIndex==146 || chunkIndex==252 || chunkIndex==253)) continue;
+                    && (chunkIndex==71 || chunkIndex==146 || chunkIndex==252 || chunkIndex==253)) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             if(dev54h12bActive && dev54h12bTags(dev54h12bPath).contains(chunkIndex)
                     && !dev54h12bVisible(dev54h12bPath).contains(chunkIndex)
                     && !(dev54h12fActive && dev54h12fUnmask(chunkIndex))
@@ -8612,17 +9504,21 @@ if(dev54h8fSelected && !dev54h8fFreshVisible && DEV54H8F_REPORT.add(90))
                                     || (DEV54H12H_ENABLED && (chunkIndex==36 || chunkIndex==42))))
                     && !(DEV54H12D_ENABLED
                          && dev54h12bId.equals("locomotive_steam_alco_sc4")
-                         && chunkIndex==362)) continue;
+                         && chunkIndex==362)) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             if(dev54h10aActive && dev54h10aHideOtherOriginal(this.source.getPath(),chunkIndex)
-                    && !(dev54h10bActive && dev54h10bUnmask(this.source.getPath(),chunkIndex))) continue;
+                    && !(dev54h10bActive && dev54h10bUnmask(this.source.getPath(),chunkIndex))) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             // H8D clean preview: never touch new native 14 driver faces;
             // only suppress these ORIGINAL imported linkage mesh vertices.
 
 if(dev54h8dCleanSlate && dev54h8dImportedRunningGear(chunkIndex)
-        && !(dev54h8fFreshVisible && dev54h8fFreshRunningGearChunk(chunkIndex))) continue;
+        && !(dev54h8fFreshVisible && dev54h8fFreshRunningGearChunk(chunkIndex))) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             // H8E: AFTER accepted H7 wheel emission (hasChunk tested above),
             // suppress additional original TCM rod/crank viewer-labeled chunks.
-            if(dev54h8eViewerMask && dev54h8eExtraOldRodsOrCranks(chunkIndex)) continue;
+            if(dev54h8eViewerMask && dev54h8eExtraOldRodsOrCranks(chunkIndex)) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
              if (dev54fRodHide) {
                  if (chunkIndex != dev54fLastChunk) {
                      dev54fLastChunk = chunkIndex;
@@ -8632,7 +9528,8 @@ if(dev54h8dCleanSlate && dev54h8dImportedRunningGear(chunkIndex)
                      dev54fSkip = traincraft.debug.Dev54FRodMask.isRodOnly(this.source.getPath(), chunkIndex)
                               && f5Wheel == null;
                  }
-                 if (dev54fSkip) continue;
+                 if (dev54fSkip) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
              }
 
 
@@ -8647,19 +9544,32 @@ if(dev54h8dCleanSlate && dev54h8dImportedRunningGear(chunkIndex)
             // No change for any other mesh, cylinder shells, or crank classifications.
             final boolean r13jRod = r13jAlco && DEV44_R13_ROD_4.get(chunkIndex);
             boolean r13FixedShell = r13Preview && r13Role == 2;
-            if (r12Hide && dev44R10Mapped(this.source.getPath(), chunkIndex)
-                    && !r13FixedShell && !r13jRod && !r13oOffsets.containsKey(chunkIndex) && !r13uPoses.containsKey(chunkIndex)
+            // DEV58G5R3: the motion maps are built before the vertex loop and
+            // are not modified inside it. Resolve once per chunk; do not cache
+            // transformed positions, phase, normals, or output geometry.
+            if (chunkIndex != dev58g5r3PoseChunk) {
+                dev58g5r3PoseChunk = chunkIndex;
+                dev58g5r3HasPose = r13uPoses.containsKey(chunkIndex);
+                dev58g5r3HasOffset = r13oOffsets.containsKey(chunkIndex);
+                dev58g5r3CachedPose = r13uPoses.get(chunkIndex);
+                dev58g5r3CachedOffset = r13oOffsets.get(chunkIndex);
+            }
+            if (chunkIndex != dev58g5r3R10Chunk) {
+                dev58g5r3R10Chunk = chunkIndex;
+                dev58g5r3R10Mapped = r12Hide && dev44R10Mapped(this.source.getPath(),chunkIndex);
+            }
+            if (dev58g5r3R10Mapped
+                    && !r13FixedShell && !r13jRod && !dev58g5r3HasOffset && !dev58g5r3HasPose
                     && !(dev44FleetFrame!=null && dev44FleetFrame.has(chunkIndex))
-                    && !(r13Preview && r13Role != 2 && r13Role > 0 && r13Wheel != null)) continue;
-            boolean r11Marked = !r12Hide && this.dev44R11Verified && dev44R10Mapped(this.source.getPath(), chunkIndex);
+                    && !(r13Preview && r13Role != 2 && r13Role > 0 && r13Wheel != null)) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             boolean probeSelected = selectedChunk == chunkIndex && this.source.toString().equals(selectedMesh);
             // H15AH J50 chunk 38 is the ONLY new hide. 612 and 614 stay visible.
             // H15W source inspector may deliberately preview hidden #38.
-            final boolean dev54h15ahJ50Verified = DEV54H15AH_J50_STATIC_ON
-                    && this.dev44R11Verified
-                    && "legacy_meshes/locomotive_steam_j50.tcm".equals(this.source.getPath());
+            final boolean dev54h15ahJ50Verified = dev58g5r3J50Verified;
             if(dev54h15ahJ50Verified && chunkIndex == 38
-                    && !(probeSelected && DEV54H15W_J50_PICK_ON)) continue;
+                    && !(probeSelected && DEV54H15W_J50_PICK_ON)) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             final boolean dev54h15ahJ50KeepStatic = dev54h15ahJ50Verified
                     && (chunkIndex == 612 || chunkIndex == 614);
             if(dev54h15ahJ50KeepStatic && DEV54H15AH_LOGGED.add("J50"))
@@ -8669,33 +9579,45 @@ if(dev54h8dCleanSlate && dev54h8dImportedRunningGear(chunkIndex)
             // even when H12F previously unmasked or animated it.
             if(DEV54H12G_ENABLED && dev54h12bActive
                 && dev54h12bId.equals("locomotive_steam_br_black_5")
-                && chunkIndex==258)continue;
+                && chunkIndex==258){ i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
             // DEV54H12C: preview-hide ONLY user-picked original TCM chunks. Never edits mesh files,
             // accepted wheel-parts overlays, procedural rods, or persistent gameplay data.
             // H15W allows a currently selected J50 chunk to be seen in bright
             // magenta even if that chunk is already in the H12C hide preview.
             if (dev54h12cMask != null && dev54h12cMask.contains(chunkIndex)
                     && !(DEV54H15W_J50_PICK_ON && probeSelected &&
-                          DEV54H15W_J50_MESH.equals(selectedMesh))) continue;
-            // H15L exact saved H12C user masks survive closing and reopening the client.
-            if(dev54h15lMask.contains(chunkIndex)) continue;
-            if(dev54h15tMask.contains(chunkIndex)) continue;
-            if(dev54h15uLongMaskActive.contains(chunkIndex)) continue;
-            if(dev54h15xHideRemainder(this.source.getPath(),chunkIndex)) continue;
-            if(dev54h15yHideBatch4Source(this.source.getPath(),chunkIndex,
-                    this.dev44R11Verified,probeSelected)) continue;
-            if(dev54h15acHideOldRod(this.source.getPath(),chunkIndex,
-                    this.dev44R11Verified)) continue;
-            if(dev54h15aeHideUserExtra(this.source.getPath(),chunkIndex,
-                    this.dev44R11Verified)) continue;
-            if(dev54h15agHideJ50Block(this.source.getPath(),chunkIndex,
-                    this.dev44R11Verified,probeSelected)) continue;
-            // DEV54H15AI: PE/RW2/RW3 original user picks, protect wheel faces.
-            if(dev54h15aiHideBatch5Source(chunkIndex,this.dev44R11Verified)) continue;
-            if(dev54h15akHideSkookum(chunkIndex)) continue;
-            if(dev54h15alHideS100(chunkIndex)) continue;
-            if(dev54h15amHideB6(chunkIndex)) continue;
-            if (probeSelected && hideSelected) continue;
+                          DEV54H15W_J50_MESH.equals(selectedMesh))) { i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX; continue; }
+            // DEV58G5: H15L..H15AM exact hide selectors do not depend on the
+            // current vertex.  Cache their result for all 24 source vertices.
+            // Keeping this cache inside render() preserves edits between frames.
+            if (chunkIndex != dev58g5CachedMaskChunk) {
+                dev58g5CachedMaskChunk = chunkIndex;
+                dev58g5CachedMasked =
+                    dev54h15lMask.contains(chunkIndex)
+                    || dev54h15tMask.contains(chunkIndex)
+                    || dev54h15uLongMaskActive.contains(chunkIndex)
+                    || dev54h15xHideRemainder(this.source.getPath(), chunkIndex)
+                    || dev54h15yHideBatch4Source(this.source.getPath(), chunkIndex,
+                           this.dev44R11Verified, probeSelected)
+                    || dev54h15acHideOldRod(this.source.getPath(), chunkIndex,
+                           this.dev44R11Verified)
+                    || dev54h15aeHideUserExtra(this.source.getPath(), chunkIndex,
+                           this.dev44R11Verified)
+                    || dev54h15agHideJ50Block(this.source.getPath(), chunkIndex,
+                           this.dev44R11Verified, probeSelected)
+                    || dev54h15aiHideBatch5Source(chunkIndex, this.dev44R11Verified)
+                    || dev54h15akHideSkookum(chunkIndex)
+                    || dev54h15alHideS100(chunkIndex)
+                    || dev54h15amHideB6(chunkIndex)
+                    || (probeSelected && hideSelected);
+            }
+            if (dev58g5CachedMasked) {
+                i += Math.min(23 - (vertexIndex % 24),
+                    (this.vertices.length - i) / FLOATS_PER_VERTEX - 1) * FLOATS_PER_VERTEX;
+                continue;
+            }
 
             // TC_DEV38_R1G1Z7P3_440_PAIRED_WHEEL_PANEL_SPLIT
             // Truth sweep: chunks 0/1 are exact 1x6x14 two-wheel panels.
@@ -8759,14 +9681,89 @@ if(dev54h8dCleanSlate && dev54h8dImportedRunningGear(chunkIndex)
                     }
                 }
             }
+            // DEV58G8R2: a non-null fleet frame may own SOME moving linkage chunks;
+            // never cache frame.has(chunkIndex), but allow unaffected body chunks.
+            // DEV58G8R1: selected MILW/Berkshire opt-in CPU packet cache for *static* source
+            // chunks only. Every visibility/hide decision above still runs FIRST.
+            // Dynamic wheels, rods, pistons, selected pieces, motion maps, and
+            // editor previews always use the unmodified G7 per-vertex path.
+            // R1: keep the FIRST certification frame unchanged (otherwise
+            // G11 can never discover static chunks or upload its GPU body).
+            // AFTER residency is attempted, GPU failures / rate-limit fallback
+            // go straight to the ORIGINAL vertex path: no packet churn.
+            // GPU-success frames (skipThisRender=true) keep the G11 fast path.
+            if(dev58g8r1AllowedModel(this.source.getPath()) &&
+                    !(dev58g11GpuMesh(this.source.getPath()) && dev58g9UploadAttempted &&
+                      !dev58g9s2SkipThisRender) &&
+                    consumer instanceof com.mojang.blaze3d.vertex.BufferBuilder dev58g8Target &&
+                    dev58g8Target.building() && (vertexIndex%24)==0 &&
+                    (this.vertices.length-i)>=24*FLOATS_PER_VERTEX &&
+                    transform==null && r13Offset==null &&
+                    !dev58g5r3HasPose && !dev58g5r3HasOffset &&
+                    !pickNow && !probeSelected && !dev54h15Editing &&
+                    !r13Preview && !r13kAlco && !r13jAlco &&
+                    !dev54fRodHide && (dev44FleetFrame==null || !dev44FleetFrame.has(chunkIndex)) &&
+                    // R7R1 GWR101: H15S animates ONLY the enumerated source
+                    // rod/crank/slider chunks. Exclude those individually;
+                    // retain the accepted animation and all other dynamic guards.
+                    !(dev54h15sActive && dev54h15sMovingChunk(chunkIndex)) &&
+                    // R16 narrows GWR whole-mesh guard ONLY with its explicit opt-in.
+                    // Animated rods/crossheads remain CPU, unchanged, by source chunk ID.
+                    (!(dev54h15tGwrLive || dev54h15wLive) ||
+                        (DEV58G11R16_FIVE_ON &&
+                         !(dev54h15tGwrLive && dev54h15tGwrRod(chunkIndex)) &&
+                         !(dev54h15wLive && dev54h15w72Rod(chunkIndex)))) &&
+                    !(DEV58G11R16_HALL_ON &&
+                        dev58g11r16ProtectedHallChunk(this.source.getPath(),chunkIndex))) {
+                // Preserve source->destination BufferBuilder format expectations:
+                // this entity RenderType normally uses NEW_ENTITY. The pilot
+                // is disabled by default; enable only for the visual A/B test.
+                // G11: do NOT rebuild/retrieve the CPU pose packet for a GPU-resident,
+                // re-certified Berkshire static chunk. Existing hide, wheel, piston,
+                // picker and linkage conditions above are all satisfied first.
+                if(dev58g11GpuMesh(this.source.getPath()) && dev58g9s2SkipThisRender &&
+                        dev58g9EligibleStaticChunks.get(chunkIndex)) {
+                    dev58g9s2Skipped.set(chunkIndex);
+                    dev58g11FastSkips+=24L;
+                    if(DEV58G10_METRICS_ON)dev58g10GpuSkippedVertices+=24L;
+                    i+=23*FLOATS_PER_VERTEX;
+                    continue;
+                }
+                java.nio.ByteBuffer packet=dev58g8r1StaticPacket(
+                        chunkIndex,pose,packedLight,packedOverlay);
+                if(packet!=null) {
+                    // G9 proof records only G8R2-certified, actually visible chunks.
+                    // No draw path changes; keep all G8R2 rendering semantics intact.
+                    if((DEV58G9_GPU_UPLOAD_ONLY || dev58g11GpuMesh(this.source.getPath())) &&
+                            !dev58g9UploadAttempted)
+                        dev58g9EligibleStaticChunks.set(chunkIndex);
+                    // Real GPU pilot: only suppress per-frame re-certified
+                    // static chunks already present in G9's resident buffer.
+                    if(dev58g9s2SkipThisRender &&
+                            dev58g9EligibleStaticChunks.get(chunkIndex)) {
+                        dev58g9s2Skipped.set(chunkIndex);
+                        if(DEV58G10_METRICS_ON) dev58g10GpuSkippedVertices+=24L;
+                    } else {
+                        dev58g8Target.putBulkData(packet);
+                        if(DEV58G10_METRICS_ON) dev58g10CpuPacketVertices+=24L;
+                    }
+                    if(!dev58g8r1Announced) {
+                        dev58g8r1Announced=true;
+                        LOGGER.info("[DEV58G8R2-PILOT] model={} firstStaticChunk={} mode=CPU_PACKET "
+                            +"G7DynamicFallback=PRESERVED",this.source,chunkIndex);
+                    }
+                    i+=23*FLOATS_PER_VERTEX;
+                    continue;
+                }
+            }
             float x = vertices[i];
             float y = vertices[i + 1];
             float z = vertices[i + 2];
 
-            if(r13uPoses.containsKey(chunkIndex)) {
+            if(dev58g5r3HasPose) {
                 transform=null; // rigid linkage owns the rod pose; wheels use accepted animator
-            } else if(r13oOffsets.containsKey(chunkIndex)) {
-                float[] motion=r13oOffsets.get(chunkIndex);
+            } else if(dev58g5r3HasOffset) {
+                float[] motion=dev58g5r3CachedOffset;
                 x+=motion[0];y+=motion[1];z+=motion[2];
                 transform=null; // one authored group translation, no double rotation
             } else if (r13kAlco && r13jRod && !r13Wheels.isEmpty()) {
@@ -8793,7 +9790,7 @@ if(dev54h8dCleanSlate && dev54h8dImportedRunningGear(chunkIndex)
             float ny = vertices[i + 6];
             float nz = vertices[i + 7];
 
-            var r13uPose=r13uPoses.get(chunkIndex);
+            var r13uPose=dev58g5r3CachedPose;
             if(r13uPose!=null) {
                 // R13ab: only Berkshire 765 rod348, only with its guarded pose.
                 // Calibrate mesh *render coordinates* once in rest pose; do not
@@ -8821,8 +9818,8 @@ if(dev54h8dCleanSlate && dev54h8dImportedRunningGear(chunkIndex)
             }
             // DEV44 sweep runs after older linkage poses have had priority.
             // Native wheel transforms are never replaced or combined with this pass.
-            if (dev44FleetFrame!=null && !r13uPoses.containsKey(chunkIndex)
-                    && !r13oOffsets.containsKey(chunkIndex)
+            if (dev44FleetFrame!=null && !dev58g5r3HasPose
+                    && !dev58g5r3HasOffset
                     && (transform==null || !transform.rotates())) {
                 var fleetMotion=dev44FleetFrame.get(chunkIndex);
                 if(fleetMotion!=null) {
@@ -8942,8 +9939,8 @@ if(dev54h8dCleanSlate && dev54h8dImportedRunningGear(chunkIndex)
                 x=vertices[i]; y=vertices[i+1]; z=vertices[i+2];
                 nx=vertices[i+5]; ny=vertices[i+6]; nz=vertices[i+7];
             }
-            // Selected chunk only: lift 0.85 model units and tint magenta to reveal its identity.
-            // All other chunks retain the accepted production vertex transforms exactly.
+            // The optional picker retains its temporary selection lift, but no longer tints
+            // the selected mesh; accepted authored vertex colors/textures render normally.
             if (probeSelected) y += 0.20F;
             if (pickNow) {
                 int vi=vertexIndex % 4;
@@ -8965,15 +9962,49 @@ if(dev54h8dCleanSlate && dev54h8dImportedRunningGear(chunkIndex)
                     }
                 }
             }
-            consumer.vertex(pose.pose(), x, y, z)
-                    .color(probeSelected || r11Marked ? 255 : 255, probeSelected || r11Marked ? 32 : 255,
-                            probeSelected || r11Marked ? 205 : 255, 255)
-                    .uv(vertices[i + 3], vertices[i + 4])
-                    .overlayCoords(packedOverlay)
-                    .uv2(packedLight)
-                    .normal(pose.normal(), nx, ny, nz)
-                    .endVertex();
+            // DEV58G7: perform the same position/normal matrix transforms and
+            // submit the same white, UV, overlay, light and normal values.
+            // Only the BufferBuilder path uses its optimized single-call writer.
+            // Animated rods/pistons/wheels and all masks above remain untouched.
+            if(DEV58G10_METRICS_ON) {
+                dev58g10LegacyVertices++;
+                // Known motion-map candidates only. This is a lower-bound
+                // classification, NOT every animated vertex in the fleet.
+                if(dev58g5r3HasPose || dev58g5r3HasOffset || r13Offset!=null || r13jRod)
+                    dev58g10KnownMotionVertices++;
+            }
+            if (dev58g7Direct) {
+                // JOML column-major matrix products; matches VertexConsumer's
+                // vertex(Matrix4f,...) and normal(Matrix3f,...) transformations.
+                final float px = dev58g7Position.m00() * x + dev58g7Position.m10() * y
+                               + dev58g7Position.m20() * z + dev58g7Position.m30();
+                final float py = dev58g7Position.m01() * x + dev58g7Position.m11() * y
+                               + dev58g7Position.m21() * z + dev58g7Position.m31();
+                final float pz = dev58g7Position.m02() * x + dev58g7Position.m12() * y
+                               + dev58g7Position.m22() * z + dev58g7Position.m32();
+                final float nnx = dev58g7Normal.m00() * nx + dev58g7Normal.m10() * ny
+                                + dev58g7Normal.m20() * nz;
+                final float nny = dev58g7Normal.m01() * nx + dev58g7Normal.m11() * ny
+                                + dev58g7Normal.m21() * nz;
+                final float nnz = dev58g7Normal.m02() * nx + dev58g7Normal.m12() * ny
+                                + dev58g7Normal.m22() * nz;
+                consumer.vertex(px, py, pz, 1.0f, 1.0f, 1.0f, 1.0f,
+                        vertices[i + 3], vertices[i + 4], packedOverlay,
+                        packedLight, nnx, nny, nnz);
+            } else {
+                // Frozen G5R3 path: exact original semantics for wrappers and OFF.
+                consumer.vertex(pose.pose(), x, y, z)
+                        .color(255, 255, 255, 255)
+                        .uv(vertices[i + 3], vertices[i + 4])
+                        .overlayCoords(packedOverlay)
+                        .uv2(packedLight)
+                        .normal(pose.normal(), nx, ny, nz)
+                        .endVertex();
+            }
         }
+        // G9 proof: create ONE GPU-resident static-geometry buffer, after the
+        // complete original vertex loop. Never replace or draw this buffer yet.
+        dev58g9UploadOnlyProof();
         // H15A runs the fallback after original TCM vertices, independently
         // of whether H14 masks the original rods. No draw state is altered.
         if(pickNow && DEV54H15A_ON && dev54h15Editing)

@@ -19,7 +19,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /** DEV50b2q: read-only three-row track state/ownership audit. */
-@Mod.EventBusSubscriber(modid=Traincraft.MOD_ID, bus=Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class MediumParallelDeepWorldCommand {
     private MediumParallelDeepWorldCommand() { }
     @SubscribeEvent

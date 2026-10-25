@@ -13,9 +13,10 @@ import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import traincraft.debug.Dev55L19Settings;
+import traincraft.debug.Dev58B10FleetPitch;
 import java.util.*;
 
-/** DEV55L19: preview-only, model-relative to world-relative SINGLE beam path.
+/** DEV58F1: opt-in fleet + review, model-relative to world-relative SINGLE beam path.
  * Both the drawn ribbon and the block/entity rays derive from this segment.
  * Never touches DEV55L13 4-4-0 or any production entity. */
 public final class Dev55L19FleetBeams {
@@ -61,6 +62,13 @@ public final class Dev55L19FleetBeams {
         v.vertex(pose,x,y,z).color(255,232,161,alpha).endVertex();
     }
     public static void setWorld(Matrix4f transform){WORLD.set(transform);}
+    /** DEV58B10R3: read-only copy of the EXISTING renderer-supplied model-to-
+     * world transform. Unlike the client PoseStack, it contains no spectator
+     * camera translation. The existing preview ray calculations are untouched. */
+    public static Matrix4f currentModelToWorld(){
+        Matrix4f matrix=WORLD.get();
+        return matrix==null?null:new Matrix4f(matrix);
+    }
     // Recovered trams set their own model pose each render; do not leak that
     // ThreadLocal transform into another renderer after finishing their beams.
     public static void clearWorld(){WORLD.remove();}
@@ -110,6 +118,10 @@ public final class Dev55L19FleetBeams {
         if(!active(entity,id))return false;
         Matrix4f model=WORLD.get();
         if(model==null){warn(id,"model-to-world matrix not set; review beam unavailable");return false;}
+        // DEV58B10F3 user-accepted viewer calibration overrides the older F1/F2
+        // editor and center12 only when the explicit NEW viewer test flag is ON.
+        if(Dev58B10F3ViewerRuntime.active(entity,id))
+            return Dev58B10F3ViewerRuntime.render(entity,id,v,screenPose,model,brightness);
         try{
             List<Dev55L23RayExport.Ray> published=new ArrayList<>();
             List<Vector3f> points=new ArrayList<>();
@@ -124,7 +136,8 @@ public final class Dev55L19FleetBeams {
             // 2-lamp crossbar: the coordinates with smaller spread are longitudinal.
             boolean zForward=(maxX-minX)>1.30D*(maxZ-minZ);
             // Otherwise prefer X longitudinal, except known Z-forward two-lamp mesh.
-            if(id.equals("locomotive_steam_adler")||id.equals("locomotive_steam_u57"))zForward=true;
+            if(id.equals("locomotive_steam_adler")||id.equals("locomotive_steam_u57")
+                    ||id.equals("locomotive_steam_4_4_0"))zForward=true;
             // DEV55L26: Minetrain's two height-separated original -X headlamps
             // are NOT a Z-forward crossbar. Use their verified -X facing and
             // expose center/left/right independently (previously center twice).
@@ -196,6 +209,13 @@ public final class Dev55L19FleetBeams {
                     sideZ=Math.abs(alongZ)>0.5F?0F:1F;
                 }
                 float defaultAngle=config.mode().equals("angled")?(name.equals("left")?-27F:name.equals("right")?27F:0F):0F;
+                // DEV58B10R2: these user-marked face normals are straight:
+                // U57 +Z (three lenses), WWCP -X (two front lenses).
+                // The old +/-27-degree preset crossed their physically flat
+                // lamp beams. Preserve explicit per-lamp config.angle() below.
+                if ((id.equals("locomotive_steam_u57")
+                        || id.equals("locomotive_steam_wwcp_062t"))
+                        && config.face().equals("auto")) defaultAngle=0F;
                 double effectiveAngle=defaultAngle+config.angle();
                 double radians=Math.toRadians(effectiveAngle);
                 double cos=Math.cos(radians),sin=Math.sin(radians);
@@ -216,7 +236,14 @@ public final class Dev55L19FleetBeams {
                 Vector3f worldDir=model.transformDirection(new Vector3f(localDir));
                 double horizontalSpeed=Math.hypot(worldDir.x(),worldDir.z());
                 if(horizontalSpeed<0.05D)throw new IllegalStateException("zero horizontal beam direction");
-                double localDistance=config.reach()/horizontalSpeed;
+                // DEV58B10F2: shared center-headlamp rule for the disposable
+                // integrated-singleplayer fleet review. Twelve HORIZONTAL world
+                // blocks to the target ground cell, independent of a previously
+                // stored center reach; side channels keep their own reach.
+                // Stored editor rows are never rewritten by this rule.
+                final double requestedReach=name.equals("center") && Dev55L19Settings.fleetMode(entity)
+                    ? 12.0D : config.reach();
+                double localDistance=requestedReach/horizontalSpeed;
                 Vector3f end=vec(ox+(float)(dirX*localDistance),oy,oz+(float)(dirZ*localDistance));
                 Vec3 startWorld=world(entity,model,from);
                 Vec3 endWorldPre=world(entity,model,end);
@@ -228,18 +255,35 @@ public final class Dev55L19FleetBeams {
                 Vec3 downEnd=new Vec3(endWorldPre.x,entity.getY()-6.0D,endWorldPre.z);
                 BlockHitResult footing=entity.level().clip(new ClipContext(downStart,downEnd,
                     ClipContext.Block.COLLIDER,ClipContext.Fluid.NONE,entity));
-                if(footing.getType()==HitResult.Type.BLOCK){
+                boolean groundFound=footing.getType()==HitResult.Type.BLOCK;
+                if(groundFound){
                     double floorY=footing.getLocation().y;
                     if(floorY<=entity.getY()+0.30D && floorY>=entity.getY()-5.95D)
                         desiredY=floorY+0.065D;
                 }
-                // At maximum reach, the visible ribbon END and collision END
-                // use this exact same ground-contact coordinate.
+                // DEV58F1: optional independent downward pitch per lamp. An
+                // unsaved pitch retains the original terrain-following target.
+                float pitchDegrees=Dev58B10FleetPitch.get(id,name);
+                // Side beams retain user pitch.  The CENTER must land at the
+                // twelfth horizontal block, rather than ending midair because
+                // of a previously saved angle. An obstruction may clip sooner.
+                // For other non-fleet contexts, the old editor behavior remains.
+                final boolean center12=name.equals("center") && Dev55L19Settings.fleetMode(entity);
+                if(Float.isFinite(pitchDegrees) && !center12)
+                    desiredY=startWorld.y-requestedReach*Math.tan(Math.toRadians(pitchDegrees));
+                // The visible ribbon, entity/wall clipping and L23 ground
+                // bridge all consume this one world-space target.
                 end.y+=(float)((desiredY-endWorldPre.y)/upWorld.y());
                 Vec3 endWorld=world(entity,model,end);
                 Vector3f sideDir=model.transformDirection(vec(-dirZ,0,dirX));
                 Vec3 transverse=new Vec3(sideDir.x(),0D,sideDir.z()).normalize();
                 Hit hit=trace(entity,startWorld,endWorld,transverse);
+                if(name.equals("center") && Dev55L19Settings.fleetMode(entity)
+                        && entity.tickCount%100==0){
+                    double horizontal= Math.hypot(endWorld.x-startWorld.x,endWorld.z-startWorld.z);
+                    LOG.info("[DEV58B10F2-CENTER12] model={} entity={} targetXZ={} terrainFound={} start={} target={} clippedFraction={} block={} hitEntity={}",
+                        id,entity.getId(),horizontal,groundFound,startWorld,endWorld,hit.fraction(),hit.block(),hit.entityId());
+                }
                 float fraction=(float)hit.fraction();
                 Vector3f clipped=vec(from.x+(end.x-from.x)*fraction,from.y+(end.y-from.y)*fraction,from.z+(end.z-from.z)*fraction);
                 Vector3f width=vec(-dirZ,0,dirX);
@@ -279,6 +323,8 @@ public final class Dev55L19FleetBeams {
                         fraction,hit.entityId(),hit.block(),config.reach()*fraction,config.depth(),desiredY);
             }
             Dev55L23RayExport.publish(entity,id,published);
+            if (Dev55L19Settings.fleetMode(entity) && entity.tickCount%100==0)
+                LOG.info("[DEV58B10F1-FLEET-ACTIVE] model={} entity={} beams={} sharedClipping=true groundBridge=REQUESTED",id,entity.getId(),published.size());
             return true;
         }catch(Exception err){warn(id,err.toString());return false;}
     }

@@ -69,10 +69,8 @@ public final class ForneyPistonLinkPilotRenderer {
     private static boolean editing;
     private static int selectedId=-1;
 
-    static {
-        if(DESIGNER_ENABLED && !Dev54H15PNativeFleetEditor.enabled())
-            MinecraftForge.EVENT_BUS.addListener(ForneyPistonLinkPilotRenderer::onKey);
-    }
+    // DEV58B9R4: developer-only piston editor hotkeys are retired.
+    // Persisted accepted rod dimensions and render logic are untouched.
 
     private ForneyPistonLinkPilotRenderer(){}
 

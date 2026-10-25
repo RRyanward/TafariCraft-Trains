@@ -12,6 +12,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import traincraft.entity.train.freight.FreightCart;
 import traincraft.client.renderer.animation.RollingStockWheelAnimation;
+import traincraft.client.renderer.Dev58G11R15GpuBatch;
+import com.mojang.math.Axis;
 
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
@@ -32,8 +34,34 @@ public final class Dev50D3UReplacementMeshes {
         final float[] data; // xyz uv normal (8 floats per vertex)
         final byte[] wheel; // zero=static, 1..4=running wheel axle
         final float[] pivots; // xyz x 4
+        final Dev58G11R15GpuBatch.Part[] gpuParts;
         Mesh(int n, float[] data, byte[] wheel, float[] pivots) {
             this.n=n;this.data=data;this.wheel=wheel;this.pivots=pivots;
+            @SuppressWarnings("unchecked")
+            java.util.ArrayList<Integer>[] byGroup = new java.util.ArrayList[5];
+            for (int g=0;g<5;g++) byGroup[g]=new java.util.ArrayList<>();
+            for(int i=0;i<n;i+=3) {
+                int g=wheel[i]&0xff;
+                if(g>4 || wheel[i+1]!=wheel[i] || wheel[i+2]!=wheel[i])
+                    throw new IllegalStateException("Unsafe mixed wheel triangle at "+i);
+                byGroup[g].add(i);
+            }
+            this.gpuParts=new Dev58G11R15GpuBatch.Part[5];
+            for(int g=0;g<5;g++) {
+                if(byGroup[g].isEmpty())continue;
+                final int[] starts=byGroup[g].stream().mapToInt(Integer::intValue).toArray();
+                this.gpuParts[g]=new Dev58G11R15GpuBatch.Part(
+                    "transport-group-"+g+"-vertices-"+n,starts.length*4,(sink,light)->{
+                        com.mojang.blaze3d.vertex.PoseStack.Pose identity = new com.mojang.blaze3d.vertex.PoseStack().last();
+                        for(int i:starts)for(int j=0;j<4;j++) {
+                            int k=(i+Math.min(j,2))*8;
+                            sink.vertex(identity.pose(),data[k],data[k+1],data[k+2])
+                                .color(255,255,255,255).uv(data[k+3],data[k+4])
+                                .overlayCoords(OverlayTexture.NO_OVERLAY).uv2(light)
+                                .normal(identity.normal(),data[k+5],data[k+6],data[k+7]).endVertex();
+                        }
+                    });
+            }
         }
     }
     private static Mesh load(String id) {
@@ -66,8 +94,25 @@ public final class Dev50D3UReplacementMeshes {
         Mesh m=prisoner?marshal:livestock;
         if(m==null)return false;
         ResourceLocation texture=prisoner?MARSHAL_TEXTURE:LIVESTOCK_TEXTURE;
-        VertexConsumer out=buffers.getBuffer(RenderType.entityCutoutNoCull(texture));
+        final RenderType renderType=RenderType.entityCutoutNoCull(texture);
         float phase=(float)RollingStockWheelAnimation.sampleNativePhase(entity,partialTicks);
+        if(m.gpuParts[0]!=null && m.gpuParts[1]!=null && m.gpuParts[2]!=null &&
+           m.gpuParts[3]!=null && m.gpuParts[4]!=null) {
+            Dev58G11R15GpuBatch.Draw[] draws=new Dev58G11R15GpuBatch.Draw[5];
+            draws[0]=new Dev58G11R15GpuBatch.Draw(m.gpuParts[0],pose.last());
+            for(int axle=0;axle<4;axle++) {
+                int o=axle*3;
+                pose.pushPose();
+                pose.translate(m.pivots[o],m.pivots[o+1],0D);
+                pose.mulPose(Axis.ZP.rotation(phase));
+                pose.translate(-m.pivots[o],-m.pivots[o+1],0D);
+                draws[axle+1]=new Dev58G11R15GpuBatch.Draw(m.gpuParts[axle+1],pose.last());
+                pose.popPose();
+            }
+            if(Dev58G11R15GpuBatch.draw(prisoner?"mob_transport_car":"livestock_car",
+                    buffers,renderType,packedLight,draws))return true;
+        }
+        VertexConsumer out=buffers.getBuffer(renderType);
         float cos=(float)Math.cos(phase),sin=(float)Math.sin(phase);
         Matrix4f xform=pose.last().pose();Matrix3f normalMatrix=pose.last().normal();
         // VertexConsumer uses QUADS for entityCutoutNoCull. Each independent input triangle

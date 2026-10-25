@@ -1,8 +1,20 @@
+// DEV56J19 village-level structure-start filter (Forge 1.20.1)
+buildscript {
+    repositories { maven { url 'https://repo.spongepowered.org/repository/maven-public/' }; mavenCentral() }
+    dependencies { classpath 'org.spongepowered:mixingradle:0.7-SNAPSHOT' }
+}
 plugins {
     id 'eclipse'
     id 'idea'
     id 'maven-publish'
     id 'net.minecraftforge.gradle' version '[6.0,6.2)'
+}
+
+apply plugin: 'org.spongepowered.mixin'
+
+mixin {
+    add sourceSets.main, 'traincraft.j19.refmap.json'
+    config 'traincraft.j19.mixins.json'
 }
 
 version = mod_version
@@ -165,3 +177,7 @@ minecraft {
     }
 }
 // TC_DEV38_R1G1S2_SERVER_REFMAP_END
+
+// DEV56J2 - use native Forge/Minecraft jigsaw-pool injection in the disposable test world.
+// Avoid Structure Pool API's SRG-name mixin failure in ForgeGradle userdev.
+// Production dependency and deployment will be decided after live placement acceptance.

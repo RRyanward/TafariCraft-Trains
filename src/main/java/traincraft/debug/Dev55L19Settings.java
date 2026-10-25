@@ -21,12 +21,20 @@ public final class Dev55L19Settings {
     public static Path path(){return FMLPaths.GAMEDIR.get().resolve("DEV55L19-BEAM-PROFILES.csv");}
     public static Path switchPath(){return FMLPaths.GAMEDIR.get().resolve("DEV55L19-FLEET-ON.flag");}
     public static Path debugPath(){return FMLPaths.GAMEDIR.get().resolve("DEV55L19-DIAGNOSTICS.flag");}
-    public static boolean enabled(Entity e){return e!=null && e.getCustomName()!=null && TAG.equals(e.getCustomName().getString()) && Files.isRegularFile(switchPath());}
+    // DEV58B10F1: opt-in, per-project full-fleet calibration. Original Creative
+    // preview remains available; normal trains enter ONLY when this explicit
+    // switch and the existing DEV55L19 switch are both present.
+    public static Path fleetPath(){return FMLPaths.GAMEDIR.get().resolve("DEV58B10-FLEET-CALIBRATION-ON.flag");}
+    public static boolean fleetMode(Entity e){return e!=null && e.isAlive()
+        && Files.isRegularFile(fleetPath()) && Files.isRegularFile(switchPath());}
+    public static boolean enabled(Entity e){return e!=null && Files.isRegularFile(switchPath())
+        && (fleetMode(e) || (e.getCustomName()!=null && TAG.equals(e.getCustomName().getString())));}
+
     public static boolean diagnostic(){return Files.isRegularFile(debugPath());}
     /** DEV55L22 review-only: forbid fallback to the old visible beam renderer.
      * Normal locomotives and protected models never enter the cutover. */
     public static Path newOnlyPath(){return FMLPaths.GAMEDIR.get().resolve("DEV55L22-NEW-BEAMS-ONLY.flag");}
-    public static boolean newOnly(){return Files.isRegularFile(newOnlyPath());}
+    public static boolean newOnly(){return Files.isRegularFile(newOnlyPath()) || Files.isRegularFile(fleetPath());}
 
     public static String model(String input){
         String s=input.toLowerCase(Locale.ROOT).trim();
@@ -43,7 +51,10 @@ public final class Dev55L19Settings {
     }
     public static boolean supported(String model){
         String m=model(model);
-        if(m.equals("locomotive_steam_4_4_0")||m.equals("locomotive_steam_vb_shay")||m.equals("locomotive_steam_vb_shay_2")) return false;
+        // DEV58 fleet opt-in includes the formerly protected engines so their
+        // individual settings can be repaired; original geometry is unchanged.
+        if(m.equals("locomotive_steam_vb_shay_2")) return java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58B10F3-VIEWER-TEST-ON.flag")); // guarded viewer test only
         if(m.equals("locomotive_steam_c40"))return false;
         return m.startsWith("locomotive_steam_") || m.equals("locomotive_diesel_gp7") || m.equals("locomotive_diesel_kof") || m.equals("locomotive_diesel_shunter") || m.equals("locomotive_electric_minetrain") || m.equals("locomotive_electric_br_e69")
             || m.equals("locomotive_electric_tram") || m.equals("locomotive_electric_tram_ny");

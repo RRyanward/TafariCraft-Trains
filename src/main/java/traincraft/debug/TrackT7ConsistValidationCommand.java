@@ -58,7 +58,8 @@ import java.util.UUID;
  * Locomotive. The locomotive must already be mutually coupled to a SteamTender.
  * The trace records the whole loaded secondary-coupler chain for up to 60 seconds.
  */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TrackT7ConsistValidationCommand {
     private static final int TRACE_TICKS = 20 * 60;
     private static final int DETAIL_INTERVAL_TICKS = 2;

@@ -19,8 +19,6 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraftforge.registries.RegisterEvent;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import traincraft.entity.train.steam.small.SmallSteamLocomotive;
 import java.util.HashMap;
 import java.util.Map;
@@ -35,7 +33,6 @@ import java.util.Map;
 @Mod.EventBusSubscriber(modid = "traincraft")
 public final class Dev44HeadlightWorldLights {
     private Dev44HeadlightWorldLights() {}
-    private static final Logger LOG = LoggerFactory.getLogger("TC-DEV44-LIGHT-WORLD11");
     private static final ResourceLocation ID = new ResourceLocation("traincraft", "transient_headlight_light");
     private static final Map<String, Long> EXPIRES = new HashMap<>();
     private static final int KEEP_TICKS = 20;
@@ -74,10 +71,9 @@ public final class Dev44HeadlightWorldLights {
         if (event.phase != TickEvent.Phase.END || !(event.level instanceof ServerLevel level)) return;
         if (level.getGameTime()%5L != 0L) return;
         float night=nightStrength(level.getDayTime());
-        if (night<=0.05F) return;
+        // AUTO, ON and OFF use each locomotive's actual ambient light, not global time.
         Block light=lightBlock();
         if (light == null || light==Blocks.AIR) return;
-        int engines=0, placed=0;
         for (Entity ent : level.getAllEntities()) {
             if (!(ent instanceof SmallSteamLocomotive engine) || !ent.isAlive()) continue;
             ResourceLocation type=ForgeRegistries.ENTITY_TYPES.getKey(ent.getType());
@@ -87,8 +83,7 @@ public final class Dev44HeadlightWorldLights {
             // DEV55L23: L19 preview Berkshire beams have their own exact
             // clipped endpoint. Keep the old three block placers in production only.
             if (Dev55L23GroundBridge.claims(ent,id)) continue;
-            if (engine.getBurnTime()<=0 && engine.getSteamAmount()<=0) continue;
-            engines++;
+            if (!LocomotiveLightMode.enabled(engine)) continue;
             double yaw=Math.toRadians(ent.getYRot());
             // Same Berkshire forward projection as accepted Fix 7/Fix 8.
             double dx=Math.sin(yaw),dz=-Math.cos(yaw);
@@ -119,15 +114,11 @@ public final class Dev44HeadlightWorldLights {
                 if (state.getBlock()!=light && !state.is(Blocks.AIR)) continue;
                 if (state.getBlock()!=light) {
                     if (!level.setBlock(pos,light.defaultBlockState(),3)) continue;
-                    placed++;
                 }
                 EXPIRES.put(key(level,pos),level.getGameTime()+KEEP_TICKS);
                 level.scheduleTick(pos,light,KEEP_TICKS);
             }
         }
-        if (engines>0 && level.getGameTime()%100L==0L)
-            LOG.info("[TC-DEV44-LIGHT-WORLD11] dimension={} activeBerkshires={} newAirLightBlocks={} expiryTicks={} nightStrength={}",
-                    level.dimension().location(),engines,placed,KEEP_TICKS,night);
     }
 
     private static float nightStrength(long time) {

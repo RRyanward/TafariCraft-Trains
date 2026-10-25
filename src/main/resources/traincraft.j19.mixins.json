@@ -1,0 +1,12 @@
+{
+  "required": true,
+  "minVersion": "0.8",
+  "package": "traincraft.worldgen.mixin",
+  "compatibilityLevel": "JAVA_17",
+  "refmap": "traincraft.j19.refmap.json",
+  "mixins": [
+    "Dev56J19StructureStartAccessor",
+    "Dev56J19StructureGenerationMixin"
+  ],
+  "injectors": { "defaultRequire": 1 }
+}

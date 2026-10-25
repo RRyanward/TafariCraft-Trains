@@ -144,13 +144,27 @@ public final class LegacyMediumCurveTrackItem extends Item {
         return new SnapPlacement(newEndpointSegment.subtract(offset), newFacing, newEndpointPart);
     }
 
+    // DEV58B8R3B: preserve all solid support and rail blocks; plants may be replaced.
+    private static boolean tcCanReplaceVegetation(BlockState state) {
+        return TrackPlacementVegetation.canReplace(state);
+    }
+
+    private static boolean tcIsPlantCell(Level level, BlockPos pos) {
+        return level != null && tcCanReplaceVegetation(level.getBlockState(pos))
+                && !level.getBlockState(pos).isAir();
+    }
+
+    private static BlockPos tcManualAnchor(Level level, BlockPos clicked) {
+        return tcIsPlantCell(level, clicked) ? clicked : clicked.above();
+    }
+
     private static boolean canPlaceAssembly(Level level, Player player, ItemStack stack,
                                             BlockPos root, Direction facing) {
         for (int part = 0; part < LegacyMediumCurveRailBlock.PART_COUNT; part++) {
             BlockPos railPos = LegacyMediumCurveRailBlock.offsetForPart(root, facing, part);
             BlockPos supportPos = railPos.below();
 
-            if (!level.getBlockState(railPos).isAir()
+            if (!tcCanReplaceVegetation(level.getBlockState(railPos))
                     || !level.getBlockState(supportPos).isFaceSturdy(level, supportPos, Direction.UP)
                     || !player.mayUseItemAt(railPos, Direction.UP, stack)) {
                 return false;
@@ -572,14 +586,25 @@ public final class LegacyMediumCurveTrackItem extends Item {
                 || stack.isEmpty()
                 || hit == null
                 || (hit.getDirection() != Direction.UP
-                    && !clickedRail)) {
+                    && !clickedRail
+                    && !tcIsPlantCell(level, hit.getBlockPos()))) {
             return null;
         }
 
-        BlockPos manualRoot =
-                hit.getBlockPos().above();
+        // G12R3: use the real rail cell for an otherwise blocked direct rail
+        // click, so the diagnostic ghost shows the intended crossing rather
+        // than floating a block above it. The real placement remains guarded.
+        BlockPos anchor = clickedRail ? hit.getBlockPos()
+                : tcManualAnchor(level, hit.getBlockPos());
+        Direction selectedFacing = player.isShiftKeyDown()
+                ? player.getDirection().getClockWise()
+                : player.getDirection();
+        BlockPos manualRoot = anchor.subtract(
+                LegacyMediumCurveRailBlock.offsetForPart(BlockPos.ZERO, selectedFacing, 0));
         Direction manualFacing =
-                player.getDirection();
+                player.isShiftKeyDown()
+                        ? player.getDirection().getClockWise()
+                        : player.getDirection();
 
         // TC_FINAL_RELEASE_R1H_DIRECT_RAIL_REQUEST_CELL
         BlockPos requestedCell =
@@ -601,18 +626,28 @@ public final class LegacyMediumCurveTrackItem extends Item {
                     continuation.facing);
         }
 
-        if (!tcCanPlaceMediumCurve(
-                level,
-                player,
-                stack,
-                manualRoot,
-                manualFacing)) {
-            return null;
+        if (clickedRail
+                && level.getBlockState(hit.getBlockPos()).getBlock()
+                        instanceof LegacyMediumCurveRailBlock) {
+            // Match the native R2 curve-to-curve fallback when available.
+            net.minecraft.world.item.context.UseOnContext tcContext =
+                    new net.minecraft.world.item.context.UseOnContext(
+                            player, net.minecraft.world.InteractionHand.MAIN_HAND, hit);
+            SnapTarget target = resolveCurveSnapTarget(level, tcContext,
+                    hit.getBlockPos(), level.getBlockState(hit.getBlockPos()));
+            if (target != null) {
+                SnapPlacement chosen = findCurveEndpointSnap(level, player,
+                        stack, target.pos, target.state);
+                if (chosen != null) {
+                    return new PlacementPreview(chosen.root, chosen.facing);
+                }
+            }
         }
 
-        return new PlacementPreview(
-                manualRoot,
-                manualFacing);
+        // G12R3 preview must remain visible even if the footprint is
+        // obstructed: RealTrackPlacementGhostPreview paints it RED. The
+        // actual useOn() still calls canPlaceAssembly before any world writes.
+        return new PlacementPreview(manualRoot, manualFacing);
     }
 @Override
     public InteractionResult useOn(UseOnContext context) {
@@ -642,7 +677,8 @@ public final class LegacyMediumCurveTrackItem extends Item {
         // face because rails are thin; allow that rail click to reach the same
         // accepted r3zo endpoint resolver.
         if (context.getClickedFace() != Direction.UP
-                && !tcEntryClickedRail) {
+                && !tcEntryClickedRail
+                && !tcIsPlantCell(level, tcEntryClickedPos)) {
             return InteractionResult.PASS;
         }
 
@@ -660,7 +696,9 @@ public final class LegacyMediumCurveTrackItem extends Item {
         BlockPos clickedPos = context.getClickedPos();
         BlockState clickedState = level.getBlockState(clickedPos);
 
-        Direction facing = player.getDirection();
+        Direction facing = player.isShiftKeyDown()
+                ? player.getDirection().getClockWise()
+                : player.getDirection();
 
         // Manual/first placement: the block the player clicks is the visible
         // START of the curve, not the hidden assembly root.
@@ -668,86 +706,68 @@ public final class LegacyMediumCurveTrackItem extends Item {
         // Anchor part 0 exactly at clickedPos.above(), then solve the root from
         // the same assembly geometry used everywhere else. This removes the
         // several-block visual jump without introducing any magic offset.
-        BlockPos manualAnchor = clickedPos.above();
+        BlockPos manualAnchor = tcManualAnchor(level, clickedPos);
         BlockPos part0Offset = LegacyMediumCurveRailBlock.offsetForPart(
                 BlockPos.ZERO, facing, 0);
         BlockPos root = manualAnchor.subtract(part0Offset);
 
-        SnapTarget snapTarget = resolveCurveSnapTarget(
-                level, context, clickedPos, clickedState);
-
+        // DEV58G12R2: resolve the actual endpoint/parallel intention BEFORE
+        // checking any footprint.  The old code validated a manual root first,
+        // rejecting valid clicks on a straight before the continuation solver ran.
+        // The same solver also powers PlacementPreview above.
+        BlockPos tcRequestedCell = tcRequestedContinuationCell(level, clickedPos);
+        TcContinuationPlacement tcContinuation = tcFindMediumContinuation(
+                level, tcRequestedCell, context.getClickLocation(), player, stack);
+        SnapTarget snapTarget = null;
         SnapPlacement chosenSnap = null;
-        if (snapTarget != null) {
-            chosenSnap = findCurveEndpointSnap(
-                    level, player, stack, snapTarget.pos, snapTarget.state);
-            if (chosenSnap == null) {
-                writeSnapAttemptDebug(level, player, stack, context,
-                        clickedPos, clickedState, snapTarget,
-                        null, root, facing);
-                return InteractionResult.FAIL;
-            }
-            root = chosenSnap.root;
-            facing = chosenSnap.facing;
-        }
 
-        writeSnapAttemptDebug(level, player, stack, context,
-                clickedPos, clickedState, snapTarget,
-                chosenSnap, root, facing);
-
-        if (!canPlaceAssembly(level, player, stack, root, facing)) {
-            return InteractionResult.FAIL;
-        }
-
-        LegacyMediumCurveRailBlock block =
-                (LegacyMediumCurveRailBlock) TCBlocks.TRACK_MEDIUM_CURVE_SEGMENT.get();
-        // TC_FINAL_RELEASE_R1G_R3ZO_MANUAL_SNAP_RESTORE
-        // Keep the runtime-accepted r3zj/r3zm/r3zo endpoint + C/S-hand solver
-        // authoritative for real held Medium Curve placement. The only release
-        // correction here is to enter that proven solver when the player clicks
-        // the endpoint rail itself as well as when clicking adjacent ground.
-        BlockPos tcRequestedCell =
-                tcRequestedContinuationCell(
-                        level,
-                        context.getClickedPos());
-
-        traincraft.Traincraft.LOGGER.info(
-                "[TC-FINAL-MEDIUM-R1H-REQUEST] clicked={} clickedIsRail={} requested={} click={}",
-                context.getClickedPos(),
-                net.minecraft.world.level.block.BaseRailBlock.isRail(
-                        level.getBlockState(context.getClickedPos())),
-                tcRequestedCell,
-                context.getClickLocation());
-
-        TcContinuationPlacement tcContinuation =
-                tcFindMediumContinuation(
-                        level,
-                        tcRequestedCell,
-                        context.getClickLocation(),
-                        player,
-                        stack);
         if (tcContinuation != null) {
             root = tcContinuation.root;
             facing = tcContinuation.facing;
             traincraft.Traincraft.LOGGER.info(
-                    "[TC-R3ZJ-MEDIUM-ENDPOINT] requested={} source={} sourceSegment={} sourceOut={} sourcePart={} attachPart={} root={} facing={} handoff={}",
-                    context.getClickedPos().above(),
+                    "[TC-G12R2-MEDIUM-CONNECT] source={} endpoint={} outward={} root={} facing={} shift={}",
                     tcContinuation.sourceId,
                     tcContinuation.sourceSegment,
                     tcContinuation.sourceOutward,
-                    tcContinuation.sourceEndpointPart,
-                    tcContinuation.attachedPart,
-                    root,
-                    facing,
-                    tcContinuation.handoff);
-            traincraft.Traincraft.LOGGER.info(
-                    "[TC-FINAL-MEDIUM-R3ZO-RESTORE] source={} root={} facing={} attachPart={} shift={}",
-                    tcContinuation.sourceId,
-                    root,
-                    facing,
-                    tcContinuation.attachedPart,
-                    player.isShiftKeyDown());
+                    root, facing, player.isShiftKeyDown());
+        } else if (clickedState.getBlock() instanceof LegacyMediumCurveRailBlock) {
+            // Preserve direct curve-interior clicks that formerly selected its
+            // nearest free endpoint.  Never allow this legacy fallback for a
+            // *ground* click beside an existing, unconnected parallel line.
+            snapTarget = resolveCurveSnapTarget(level, context, clickedPos, clickedState);
+            if (snapTarget == null) return InteractionResult.FAIL;
+            chosenSnap = findCurveEndpointSnap(
+                    level, player, stack, snapTarget.pos, snapTarget.state);
+            if (chosenSnap == null) return InteractionResult.FAIL;
+            root = chosenSnap.root;
+            facing = chosenSnap.facing;
+        } else if (tcEntryClickedRail) {
+            // A direct rail click must find a real open connector.  Do not
+            // replace/float over an occupied existing railway.
+            return InteractionResult.FAIL;
         }
-for (int part = 0; part < LegacyMediumCurveRailBlock.PART_COUNT; part++) {
+
+        // Whether snapped or free/parallel, validate the FINAL occupied cells.
+        // We intentionally allow adjacent rail cells, but never overlapping ones.
+        if (!canPlaceAssembly(level, player, stack, root, facing)) {
+            return InteractionResult.FAIL;
+        }
+        writeSnapAttemptDebug(level, player, stack, context,
+                clickedPos, clickedState, snapTarget, chosenSnap, root, facing);
+
+        // R7: validate ALL cells first, then clear safe vegetation only.
+        // A rejected placement above never changes the world.
+        for (int part = 0; part < LegacyMediumCurveRailBlock.PART_COUNT; part++) {
+            BlockPos plantPos = LegacyMediumCurveRailBlock.offsetForPart(root, facing, part);
+            if (TrackPlacementVegetation.isPlant(level.getBlockState(plantPos))) {
+                level.destroyBlock(plantPos, !player.getAbilities().instabuild, player);
+            }
+        }
+
+        LegacyMediumCurveRailBlock block =
+                (LegacyMediumCurveRailBlock) TCBlocks.TRACK_MEDIUM_CURVE_SEGMENT.get();
+        for (int part = 0; part < LegacyMediumCurveRailBlock.PART_COUNT; part++) {
+
             BlockPos railPos = LegacyMediumCurveRailBlock.offsetForPart(root, facing, part);
             BlockState state = block.defaultBlockState()
                     .setValue(RailBlock.SHAPE, LegacyMediumCurveRailBlock.shapeForPart(facing, part))
@@ -854,7 +874,7 @@ for (int part = 0; part < LegacyMediumCurveRailBlock.PART_COUNT; part++) {
         }
         return clickedPos == null
                 ? BlockPos.ZERO
-                : clickedPos.above();
+                : tcManualAnchor(level, clickedPos);
     }
     private static TcContinuationPlacement tcFindMediumContinuation(
             Level level, BlockPos requestedCell,
@@ -879,8 +899,13 @@ for (int part = 0; part < LegacyMediumCurveRailBlock.PART_COUNT; part++) {
                 BlockPos candidateRoot = requiredNewEndpoint.subtract(
                         LegacyMediumCurveRailBlock.offsetForPart(
                                 BlockPos.ZERO, candidateFacing, attachedPart));
-                if (!tcCanPlaceMediumCurve(level, player, stack,
-                        candidateRoot, candidateFacing)) continue;
+                // G12R6: Direction is a geometric choice, not a permission test.
+                // Keep BOTH handed endpoint connections even if one overlaps a
+                // rail, flower or block. That candidate is rendered RED by the
+                // shared ghost clearance checker and rejected only by the
+                // final server-side canPlaceAssembly() before world edits.
+                // Filtering here previously made the preview bend AWAY from
+                // an obstruction and broke the player's chosen direction.
 
                 int rolePenalty = 0;
                 if ("legacy_medium_curve".equals(source.sourceId)
@@ -901,14 +926,45 @@ for (int part = 0; part < LegacyMediumCurveRailBlock.PART_COUNT; part++) {
 
         if (placementCandidates.isEmpty()) return null;
 
+        // R7: prefer the bend the crosshair is pointing toward, instead
+        // of forcing the player to walk around and change cardinal facing.
+        // The source endpoint already fixes the track tangent. The sign of
+        // the lateral aim vector selects the two mirrored curve branches.
+        double aimX = click.x - (requiredNewEndpoint.getX() + 0.5D);
+        double aimZ = click.z - (requiredNewEndpoint.getZ() + 0.5D);
+        double aimSide = source.outward.getStepX() * aimZ
+                - source.outward.getStepZ() * aimX;
+        if (Math.abs(aimSide) < 0.35D) {
+            // Clicking near the endpoint's center is ambiguous. Use the
+            // camera look direction, not the player's walk/standing position.
+            net.minecraft.world.phys.Vec3 look = player.getLookAngle();
+            aimSide = source.outward.getStepX() * look.z
+                    - source.outward.getStepZ() * look.x;
+        }
+        final double signedAim = aimSide;
         placementCandidates.sort(java.util.Comparator
-                .comparingInt((TcContinuationPlacement c) -> c.score)
+                .comparingInt((TcContinuationPlacement c) -> {
+                    int farPart = c.attachedPart == 0
+                            ? lastPart : 0;
+                    BlockPos far = LegacyMediumCurveRailBlock.offsetForPart(
+                            c.root, c.facing, farPart);
+                    double pathSide = source.outward.getStepX()
+                            * (far.getZ() - requiredNewEndpoint.getZ())
+                            - source.outward.getStepZ()
+                            * (far.getX() - requiredNewEndpoint.getX());
+                    if (Math.abs(signedAim) < 0.10D
+                            || Math.abs(pathSide) < 0.10D) return 0;
+                    return Math.signum(signedAim) == Math.signum(pathSide) ? 0 : 1;
+                })
+                .thenComparingInt(c -> c.score)
                 .thenComparingInt(c -> c.attachedPart)
                 .thenComparingInt(c -> c.facing.get2DDataValue()));
 
         // TC_BATCH8_R3ZO_MEDIUM_S_BEND_HAND
         // Default remains the preferred same-hand continuation (C bend).
-        // Holding Shift selects the alternate valid continuation even when the
+        // Holding Shift selects the alternate geometric continuation, even
+        // if that route is obstructed (the red ghost makes that visible).
+        // This works even when the
         // source is another Medium Curve, allowing mirrored S bends from either
         // a right-going or left-going first curve.
         boolean alternateHand = player.isShiftKeyDown()
@@ -1042,7 +1098,7 @@ for (int part = 0; part < LegacyMediumCurveRailBlock.PART_COUNT; part++) {
         for(int part=0;part<LegacyMediumCurveRailBlock.PART_COUNT;part++){
             BlockPos railPos=LegacyMediumCurveRailBlock.offsetForPart(root,facing,part);
             BlockPos supportPos=railPos.below();
-            if(!level.getBlockState(railPos).isAir()
+            if(!tcCanReplaceVegetation(level.getBlockState(railPos))
                     ||!level.getBlockState(supportPos).isFaceSturdy(level,supportPos,Direction.UP)
                     ||!player.mayUseItemAt(railPos,Direction.UP,stack)) return false;
         }

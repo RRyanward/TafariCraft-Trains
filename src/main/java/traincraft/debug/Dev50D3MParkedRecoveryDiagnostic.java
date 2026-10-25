@@ -29,7 +29,8 @@ import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import traincraft.Traincraft;
 
-@Mod.EventBusSubscriber(modid=Traincraft.MOD_ID, bus=Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Dev50D3MParkedRecoveryDiagnostic {
     private Dev50D3MParkedRecoveryDiagnostic() { }
     private static final String PREFIX="New World - Railway DEV50D3M PARKED ";

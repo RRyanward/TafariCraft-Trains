@@ -50,7 +50,8 @@ import java.util.Map;
  * This audit does not place blocks, mutate the world, alter snapping, or touch
  * any production file.
  */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TrackOneCorePairAuditCommand {
     private static final int EXPECTED_SPEC_COUNT = 50;
     private static final int MAX_FAILURE_DETAILS_PER_PAIR = 12;

@@ -20,6 +20,8 @@ import org.joml.Vector3f;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import traincraft.entity.train.power.LegacyPoweredLocomotive;
+import traincraft.client.renderer.legacy.Dev58B10F3ViewerRuntime;
+import traincraft.client.renderer.legacy.Dev55L19FleetBeams;
 import java.io.InputStream;
 import java.security.MessageDigest;
 import java.util.HashMap;
@@ -205,7 +207,22 @@ public final class Dev50D3VExactPoweredHeadlights {
                             float sx,float sy,float sz,float pt) {
         Spec spec = SPECS.get(meshId);
         if (spec == null || !e.isAlive() || !verified(meshId,spec)) return;
-        float brightness = night(e.level().getDayTime());
+        float brightness = traincraft.lighting.LocomotiveLightMode.brightness(e);
+        // DEV58B10F3: explicit reviewed head+tail lamp geometry for exact powered
+        // locomotives. Do not draw another set of legacy rays/white tail beams.
+        String viewerId=(meshId.equals("gp7")||meshId.equals("kof")||meshId.equals("shunter"))
+            ? "locomotive_diesel_"+meshId : "locomotive_electric_"+meshId;
+        if(brightness>.005F && Dev58B10F3ViewerRuntime.active(e,viewerId)){
+            Dev55L19FleetBeams.setWorld(Dev55L19FleetBeams.worldMatrix(
+                e.getRenderTrainFacingYaw(pt),e.tcCalibrationHeightAdjustment(),0F,
+                tx,ty,tz,rx,ry,rz,sx,sy,sz));
+            try{
+                var lightBuffer=buffers.getBuffer(traincraft.client.renderer.legacy.Dev44TrainLightVisuals.creativeBeamType());
+                if(Dev58B10F3ViewerRuntime.render(e,viewerId,lightBuffer,pose.last().pose(),
+                        Dev55L19FleetBeams.currentModelToWorld(),brightness))return;
+                return; // fail closed while viewer flag is ON
+            }finally{Dev55L19FleetBeams.clearWorld();}
+        }
         // DEV55L3: only preview entities have this synced hidden name.
         // Gameplay locomotives still require actual diesel/electric power.
         boolean tcDev55L3ReviewLamp = e.getCustomName() != null

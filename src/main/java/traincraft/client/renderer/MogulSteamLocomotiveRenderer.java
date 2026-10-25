@@ -53,6 +53,8 @@ public class MogulSteamLocomotiveRenderer extends EntityRenderer<MogulSteamLocom
         VertexConsumer vertices = buffers.getBuffer(RenderType.entityCutoutNoCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, TEXTURE)));
         this.model.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
 
+        // DEV58B9R2: only this previously unlit steam model. Existing mesh and animation unchanged.
+        Dev58B9R2SteamHeadlights.draw(entity, poseStack, buffers, partialTicks, "mogul");
         poseStack.popPose();
         super.render(entity, entityYaw, partialTicks, poseStack, buffers, packedLight);
     }

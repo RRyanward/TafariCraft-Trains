@@ -95,8 +95,26 @@ public abstract class LegacyMultiMeshRenderer<T extends Entity> extends EntityRe
             if (p.sx != 1.0F || p.sy != 1.0F || p.sz != 1.0F) {
                 poseStack.scale(p.sx, p.sy, p.sz);
             }
-            VertexConsumer vertices = buffers.getBuffer(RenderType.entityTranslucentCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, p.texture)));
-            p.mesh.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+            // DEV58G11R7R2R2 PE BODY ONLY: delegate through the accepted bounded GPU/CPU path.
+            // PE trucks, C62/D51 bogies and all other multi-part meshes retain CPU rendering.
+            final RenderType peGpuType = RenderType.entityTranslucentCull(traincraft.client.skin.ClientRollingStockSkinManager.texture(entity, p.texture));
+            // DEV58G11R9R2: admit ONLY the 3 verified multi-mesh locomotive bodies.
+if ((java.nio.file.Files.isRegularFile(net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R15-ONE-BATCH-GPU-ON.flag")) &&
+     "legacy_meshes/locomotive_steam_c11.tcm".equals(p.meshId.getPath())) ||
+    "legacy_meshes/locomotive_steam_pe.tcm".equals(p.meshId.getPath()) ||
+    "legacy_meshes/locomotive_steam_c62_body.tcm".equals(p.meshId.getPath()) ||
+    "legacy_meshes/locomotive_steam_d51_body.tcm".equals(p.meshId.getPath()) ||
+    "legacy_meshes/locomotive_steam_d51_long_body.tcm".equals(p.meshId.getPath()) ||
+    (java.nio.file.Files.isRegularFile(net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G11R16-FIVE-LOCO-GPU-ON.flag")) &&
+     ("legacy_meshes/locomotive_steam_pe_front_truck.tcm".equals(p.meshId.getPath()) ||
+      "legacy_meshes/locomotive_steam_pe_rear_truck.tcm".equals(p.meshId.getPath()) ||
+      "legacy_meshes/locomotive_steam_c11_front_truck.tcm".equals(p.meshId.getPath()) ||
+      "legacy_meshes/locomotive_steam_c11_rear_truck.tcm".equals(p.meshId.getPath())))) {
+                p.mesh.dev58g9s2Render(poseStack, buffers, peGpuType, packedLight, OverlayTexture.NO_OVERLAY);
+            } else {
+                VertexConsumer vertices = buffers.getBuffer(peGpuType);
+                p.mesh.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+            }
             Dev55L19FleetBeams.setWorld(Dev55L19FleetBeams.worldMatrix(trainYaw,0D,0F,tx,ty,tz,rx,ry,rz,sx,sy,sz)
                     .translate((float)p.tx,(float)p.ty,(float)p.tz)
                     .rotateX((float)Math.toRadians(p.rx)).rotateY((float)Math.toRadians(p.ry))

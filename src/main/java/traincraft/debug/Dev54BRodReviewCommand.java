@@ -47,7 +47,8 @@ import traincraft.Traincraft;
  * No block placement, production renderer/animation changes or calibration edits.
  * A forced minecart delta is only a diagnostic stimulus, NOT native drive proof.
  */
-@Mod.EventBusSubscriber(modid = Traincraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Dev54BRodReviewCommand {
     private static final String TAG = "tc_dev54b_rod_review_owned";
     private static final List<String> ROSTER = List.of(

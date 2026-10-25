@@ -97,8 +97,8 @@ public final class MediumParallelRenderIsolation {
                 default -> { }
             }
         }
-        Traincraft.LOGGER.warn("[TC-DEV50B2R] WRAPPED straight={} mediumParallelCurve={} parallelSwitch={} startMode=0 (original) -- press F8 to A/B",
-                straight, curve, sw);
+
+        // DEV58B9R4R1: obsolete rail F-key developer hint retired; renderer stays at default mode zero.
     }
 
     private static boolean crossesCell(BakedQuad quad) {

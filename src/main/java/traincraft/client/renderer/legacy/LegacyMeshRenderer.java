@@ -14,6 +14,49 @@ import traincraft.client.model.legacy.LegacyStaticMesh;
 import traincraft.debug.LegacyRollingStockDebug;
 
 public abstract class LegacyMeshRenderer<T extends Entity> extends EntityRenderer<T> {
+    // DEV58G10: read-only per-model wall-clock distribution. OFF by default.
+    private static final boolean DEV58G10_METRICS_ON=java.nio.file.Files.isRegularFile(
+            net.minecraftforge.fml.loading.FMLPaths.GAMEDIR.get().resolve("DEV58G10-METRICS-ON.flag"));
+    private static final org.slf4j.Logger DEV58G10_LOG=com.mojang.logging.LogUtils.getLogger();
+    private long dev58g10WindowStart=0L,dev58g10Calls=0L;
+    private long dev58g10MeshNanos=0L,dev58g10LightsNanos=0L;
+    private long dev58g10DebugNanos=0L,dev58g10SuperNanos=0L,dev58g10TotalNanos=0L;
+    private long[] dev58g10LastCounters=null;
+    private static double dev58g10Ms(long ns) {
+        return Math.round(ns/10000.0D)/100.0D;
+    }
+    private void dev58g10Report(long start,long meshDone,long lightsDone,long debugDone,long finish) {
+        if(dev58g10WindowStart==0L) dev58g10WindowStart=start;
+        dev58g10Calls++;
+        dev58g10MeshNanos+=Math.max(0L,meshDone-start);
+        dev58g10LightsNanos+=Math.max(0L,lightsDone-meshDone);
+        dev58g10DebugNanos+=Math.max(0L,debugDone-lightsDone);
+        dev58g10SuperNanos+=Math.max(0L,finish-debugDone);
+        dev58g10TotalNanos+=Math.max(0L,finish-start);
+        if(finish-dev58g10WindowStart<10_000_000_000L)return;
+        final long[] snapshot=mesh.dev58g10Counters();
+        final long[] change=new long[snapshot.length];
+        for(int i=0;i<snapshot.length;i++)
+            change[i]=snapshot[i]-(dev58g10LastCounters==null?0L:dev58g10LastCounters[i]);
+        dev58g10LastCounters=snapshot;
+        DEV58G10_LOG.info("[DEV58G10-RENDER] model={} calls={} window_ms={} mesh_ms={} "
+            +"lights_ms={} debug_ms={} super_ms={} total_ms={} mesh_ms_per_call={} "
+            +"legacy_vertices={} known_motion_vertices_lower_bound={} cpu_packet_vertices={} "
+            +"gpu_skipped_vertices={} restored_vertices={} packet_hits={} packet_rebuilds={} "
+            +"gpu_draws={} gpu_uploads={} gpu_fallbacks={} gpu_upload_ms={} "
+            +"measurement=RENDERER_WALL_TIME_NOT_GPU_TIME",
+            mesh.source(),dev58g10Calls,dev58g10Ms(finish-dev58g10WindowStart),
+            dev58g10Ms(dev58g10MeshNanos),dev58g10Ms(dev58g10LightsNanos),
+            dev58g10Ms(dev58g10DebugNanos),dev58g10Ms(dev58g10SuperNanos),
+            dev58g10Ms(dev58g10TotalNanos),
+            dev58g10Ms(dev58g10MeshNanos)/Math.max(1L,dev58g10Calls),
+            change[0],change[1],change[2],change[3],change[4],change[5],
+            change[6],change[7],change[8],change[9],dev58g10Ms(change[10]));
+        dev58g10WindowStart=finish;
+        dev58g10Calls=0;dev58g10MeshNanos=0L;dev58g10LightsNanos=0L;
+        dev58g10DebugNanos=0L;dev58g10SuperNanos=0L;dev58g10TotalNanos=0L;
+    }
+
     private final String stockName;
     private final ResourceLocation texture;
     private final LegacyStaticMesh mesh;
@@ -91,14 +134,24 @@ public abstract class LegacyMeshRenderer<T extends Entity> extends EntityRendere
         if (rz != 0.0F) poseStack.mulPose(Axis.ZP.rotationDegrees(rz));
         if (sx != 1.0F || sy != 1.0F || sz != 1.0F) poseStack.scale(sx, sy, sz);
 
-        VertexConsumer vertices = buffers.getBuffer(tcRenderType(getTextureLocation(entity)));
-        mesh.render(poseStack, vertices, packedLight, OverlayTexture.NO_OVERLAY);
+        final long dev58g10Start=DEV58G10_METRICS_ON?System.nanoTime():0L;
+        // DEV58G9S2: OFF by default. The mesh itself verifies the exact
+        // MILW pilot, source-certified static chunks, buffer and shader state.
+        // Any mismatch uses the unchanged CPU vertex renderer.
+        mesh.dev58g9s2Render(poseStack,buffers,tcRenderType(getTextureLocation(entity)),
+                packedLight,OverlayTexture.NO_OVERLAY);
+        final long dev58g10AfterMesh=DEV58G10_METRICS_ON?System.nanoTime():0L;
         Dev55L19FleetBeams.setWorld(Dev55L19FleetBeams.worldMatrix(trainYaw,railLift,railPitch,tx,ty,tz,rx,ry,rz,sx,sy,sz));
         Dev44TrainLightVisuals.draw(tcDev44LightMeshId, entity, poseStack, buffers, mesh.minX(), mesh.maxX(), mesh.minY());
+        final long dev58g10AfterLights=DEV58G10_METRICS_ON?System.nanoTime():0L;
         LegacyRollingStockDebug.logRender(entity, stockName, trainYaw, mesh,
                 tx, ty, tz, rx, ry, rz, sx, sy, sz, renderedMinY, renderedMaxY);
+        final long dev58g10AfterDebug=DEV58G10_METRICS_ON?System.nanoTime():0L;
         poseStack.popPose();
         super.render(entity, entityYaw, partialTicks, poseStack, buffers, packedLight);
+        if(DEV58G10_METRICS_ON)
+            dev58g10Report(dev58g10Start,dev58g10AfterMesh,
+                dev58g10AfterLights,dev58g10AfterDebug,System.nanoTime());
     }
 
     @Override

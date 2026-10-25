@@ -36,7 +36,8 @@ import traincraft.entity.train.CouplingManager;
 import traincraft.entity.train.power.LegacyPoweredLocomotive;
 import traincraft.entity.train.tender.SteamTender;
 
-@Mod.EventBusSubscriber(modid=Traincraft.MOD_ID, bus=Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Dev50D3LVisualAutoDrive {
     private Dev50D3LVisualAutoDrive() { }
     private static final String PREFIX="New World - Railway DEV50D3L VISUAL ";

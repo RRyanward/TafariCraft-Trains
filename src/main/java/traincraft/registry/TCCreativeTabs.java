@@ -27,7 +27,8 @@ import java.util.Set;
  *                          then workshop/crafting blocks, machines, support blocks, parts/materials.
  *   TafariCraft - Tracks : proven basic track pieces first, then curve/slope/crossing/switch
  *                          options, specialty functional rails and trackside crossing equipment.
- *   TafariCraft - Trains : Steam locomotives/tenders -> Diesel -> Electric -> rolling stock.
+ *   TafariCraft - Trains : locomotives short->long, tenders short->long, cars,
+ *                          then animal/mob carriers and TCT tankers.
  *
  * Ordering only. Registry IDs, placement logic, track math, physics and entity behavior are untouched.
  */
@@ -237,53 +238,51 @@ public final class TCCreativeTabs {
                     .withTabsBefore(new ResourceLocation(Traincraft.MOD_ID, "traincraft"))
                     .displayItems((parameters, output) -> {
                         Set<Item> shown = new HashSet<>();
-                        // 1) Pinned top row: Track Builder + modular crossing pieces.
-                        // TC_FINAL_RELEASE_R1AH_FORMAL_TRACK_FAMILIES
-                        // Trackside tools remain first, then geometry families.
-                        // Material variants are grouped with their geometry.
-                        List<Item> trackItems =
-                                allTraincraftItems();
+                        // DEV58B8R3A: stable normal-first, Energy-second geometry order.
+                        // Trackside Builder and crossing equipment are pinned at the END.
+                        List<Item> trackItems = allTraincraftItems();
+                        List<String> families = List.of(
+                                "STRAIGHTS", "DIAGONALS", "CURVES", "CURVES_45",
+                                "CURVES_29_32", "PARALLEL_CURVES", "SWITCHES",
+                                "SWITCHES_45", "PARALLEL_SWITCHES", "SLOPES",
+                                "CURVED_SLOPES", "CROSSINGS");
 
-                        acceptIds(output, shown, TRACKSIDE_OPTIONS);
-
-                        // Builder color: GREEN
-                        acceptTrackFamily(output, shown, trackItems, "STRAIGHTS");
-
-                        // Builder color: AQUA
-                        acceptTrackFamily(output, shown, trackItems, "DIAGONALS");
-
-                        // Builder color: GOLD
-                        acceptTrackFamily(output, shown, trackItems, "CURVES");
-                        acceptTrackFamily(output, shown, trackItems, "CURVES_45");
-                        acceptTrackFamily(output, shown, trackItems, "CURVES_29_32");
-                        acceptTrackFamily(output, shown, trackItems, "PARALLEL_CURVES");
-
-                        // Builder color: YELLOW
-                        acceptTrackFamily(output, shown, trackItems, "SWITCHES");
-                        acceptTrackFamily(output, shown, trackItems, "SWITCHES_45");
-                        acceptTrackFamily(output, shown, trackItems, "PARALLEL_SWITCHES");
-
-                        // Builder color: LIGHT_PURPLE
-                        acceptTrackFamily(output, shown, trackItems, "SLOPES");
-                        acceptTrackFamily(output, shown, trackItems, "CURVED_SLOPES");
-
-                        // Builder color: RED
-                        acceptTrackFamily(output, shown, trackItems, "CROSSINGS");
-
-                        // Builder color: GRAY / Other
+                        // NORMAL / Steel / Copper / Snow first, matching track geometry order.
+                        for (String family : families) {
+                            acceptTrackFamily(output, shown, trackItems, family, false);
+                        }
+                        // Then ENERGY tracks in precisely the same family sequence.
+                        for (String family : families) {
+                            acceptTrackFamily(output, shown, trackItems, family, true);
+                        }
+                        // Retain unclassified registered track items, with normal
+                        // before Energy and no duplicates or invisible segments.
+                        for (boolean energy : new boolean[]{false, true}) {
+                            for (Item item : trackItems) {
+                                String id = itemId(item);
+                                if (isTrackContent(id)
+                                        && isEnergyVariant(id) == energy
+                                        && !TRACKSIDE_OPTIONS.contains(id)
+                                        && !isSpecialTrackId(id)
+                                        && !isUnifiedHiddenLeftTrack(id)
+                                        && !id.endsWith("_segment")
+                                        && !id.contains("_gag")
+                                        && shown.add(item)) {
+                                    output.accept(item);
+                                }
+                            }
+                        }
+                        // Functional specialty rails follow ALL physical Normal/Energy tracks.
                         acceptIds(output, shown, SPECIALTY_TRACK_OPTIONS);
-                        // 4) Future/new track options not known to this build are appended
-                        //    automatically instead of disappearing from the tab.
-                        for (Item item : allTraincraftItems()) {
+                        // Future functional rails are also grouped here, never among ordinary geometry.
+                        for (Item item : trackItems) {
                             String id = itemId(item);
-                            if (isTrackContent(id)
-                                    && !isUnifiedHiddenLeftTrack(id)
-                                    && !id.endsWith("_segment")
-                                    && !id.contains("_gag")
-                                    && shown.add(item)) {
+                            if (isSpecialTrackId(id) && shown.add(item)) {
                                 output.accept(item);
                             }
                         }
+                        // Builder + lamp, crossbuck, arm, base, pole LAST.
+                        acceptIds(output, shown, TRACKSIDE_OPTIONS);
                     })
                     .build());
 
@@ -297,31 +296,159 @@ public final class TCCreativeTabs {
                         Set<Item> shown = new HashSet<>();
                         List<Item> items = allTraincraftItems();
 
-                        // Steam locomotives first.
-                        acceptPrefix(output, shown, items, "locomotive_steam_");
-
-                        // Steam tenders directly after steam locomotives.
-                        acceptRollingStockContaining(output, shown, items, "tender");
-
-                        // Then diesel locomotives.
-                        acceptPrefix(output, shown, items, "locomotive_diesel_");
-
-                        // Then electric locomotives.
-                        acceptPrefix(output, shown, items, "locomotive_electric_");
-
-                        // Then the familiar core non-powered cars.
-                        acceptIds(output, shown, ROLLING_STOCK_ORDER);
-
-                        // Append every other rolling-stock placement item automatically.
-                        // This removes legacy tenders/cars that were leaking into Misc.
+                        // DEV58B10F8: ALL locomotives from compact to long, regardless of power type.
+                        // Then tenders; then ordinary coaches/wagons; finally animal/mob and TCT tankers.
+                        // Only changes Creative inventory presentation (no entity behavior).
+                        List<Item> trains = new ArrayList<>();
                         for (Item item : items) {
-                            String id = itemId(item);
-                            if (isTrainContent(item, id) && shown.add(item)) {
+                            if (isTrainContent(item, itemId(item))) {
+                                trains.add(item);
+                            }
+                        }
+                        trains.sort(Comparator
+                                .comparingInt((Item item) -> trainGroup(itemId(item)))
+                                .thenComparingDouble((Item item) -> trainLengthHint(itemId(item)))
+                                .thenComparing(TCCreativeTabs::itemId));
+                        for (Item item : trains) {
+                            if (shown.add(item)) {
                                 output.accept(item);
                             }
                         }
                     })
                     .build());
+
+    // DEV58B10F8. Sizes are horizontal extents in model blocks. The 37 TCM-backed
+    // steam models are measured from immutable captured mesh headers; other models
+    // have conservative manual display-order hints, NOT authoritative geometry.
+    // Unknown future items use category-specific fallback and stable ID order.
+    private static final java.util.Map<String, Double> TRAIN_DISPLAY_LENGTHS = java.util.Map.ofEntries(
+            java.util.Map.entry("caboose", 3.1000D),
+            java.util.Map.entry("freight_cart", 2.0000D),
+            java.util.Map.entry("gs4_baggage_car", 5.0000D),
+            java.util.Map.entry("gs4_observatory_car", 5.0000D),
+            java.util.Map.entry("gs4_passenger_car", 5.0000D),
+            java.util.Map.entry("gs4_tail_car", 5.0000D),
+            java.util.Map.entry("livestock_car", 2.8000D),
+            java.util.Map.entry("locomotive_diesel_cd742", 4.1000D),
+            java.util.Map.entry("locomotive_diesel_chme3", 4.5000D),
+            java.util.Map.entry("locomotive_diesel_gp7", 5.4000D),
+            java.util.Map.entry("locomotive_diesel_kof", 2.1000D),
+            java.util.Map.entry("locomotive_diesel_sd40", 5.9000D),
+            java.util.Map.entry("locomotive_diesel_sd70", 6.4000D),
+            java.util.Map.entry("locomotive_diesel_shunter", 3.0000D),
+            java.util.Map.entry("locomotive_diesel_v60", 3.2000D),
+            java.util.Map.entry("locomotive_electric_br_e69", 3.0000D),
+            java.util.Map.entry("locomotive_electric_high_speed_zeroed", 5.6000D),
+            java.util.Map.entry("locomotive_electric_minetrain", 1.9000D),
+            java.util.Map.entry("locomotive_electric_tram", 4.1000D),
+            java.util.Map.entry("locomotive_electric_tram_ny", 4.5000D),
+            java.util.Map.entry("locomotive_electric_vl10", 5.8000D),
+            java.util.Map.entry("locomotive_steam_262t", 4.6256D),
+            java.util.Map.entry("locomotive_steam_4_4_0", 3.3310D),
+            java.util.Map.entry("locomotive_steam_a4_mallard", 7.1000D),
+            java.util.Map.entry("locomotive_steam_adler", 2.3188D),
+            java.util.Map.entry("locomotive_steam_alco_sc4", 5.0000D),
+            java.util.Map.entry("locomotive_steam_alice_0_4_0", 2.4000D),
+            java.util.Map.entry("locomotive_steam_berkshire_1225", 7.6253D),
+            java.util.Map.entry("locomotive_steam_berkshire_765", 7.6253D),
+            java.util.Map.entry("locomotive_steam_br01", 6.5000D),
+            java.util.Map.entry("locomotive_steam_br80", 3.5006D),
+            java.util.Map.entry("locomotive_steam_br_black_5", 6.0000D),
+            java.util.Map.entry("locomotive_steam_br_britannia", 5.4156D),
+            java.util.Map.entry("locomotive_steam_c11", 4.8441D),
+            java.util.Map.entry("locomotive_steam_c41", 5.3159D),
+            java.util.Map.entry("locomotive_steam_c41_080", 5.4258D),
+            java.util.Map.entry("locomotive_steam_c41t", 5.6761D),
+            java.util.Map.entry("locomotive_steam_c62", 6.4000D),
+            java.util.Map.entry("locomotive_steam_cherepanov", 2.3756D),
+            java.util.Map.entry("locomotive_steam_climax", 4.7506D),
+            java.util.Map.entry("locomotive_steam_climax_2", 4.6531D),
+            java.util.Map.entry("locomotive_steam_coronation_class", 7.5000D),
+            java.util.Map.entry("locomotive_steam_d51", 6.2000D),
+            java.util.Map.entry("locomotive_steam_d51_long", 7.6000D),
+            java.util.Map.entry("locomotive_steam_forney", 3.2000D),
+            java.util.Map.entry("locomotive_steam_fowler", 4.3159D),
+            java.util.Map.entry("locomotive_steam_glyn_042t", 4.0006D),
+            java.util.Map.entry("locomotive_steam_gs4", 7.9378D),
+            java.util.Map.entry("locomotive_steam_gwr_101_class", 4.0631D),
+            java.util.Map.entry("locomotive_steam_gwr_42xx", 5.9381D),
+            java.util.Map.entry("locomotive_steam_gwr_72xx", 6.6881D),
+            java.util.Map.entry("locomotive_steam_hall_class", 6.2000D),
+            java.util.Map.entry("locomotive_steam_heavy", 5.7000D),
+            java.util.Map.entry("locomotive_steam_j50", 4.8441D),
+            java.util.Map.entry("locomotive_steam_king_class", 7.2000D),
+            java.util.Map.entry("locomotive_steam_lssp7", 2.1256D),
+            java.util.Map.entry("locomotive_steam_midland_compound", 6.6000D),
+            java.util.Map.entry("locomotive_steam_milw_class_a", 6.8438D),
+            java.util.Map.entry("locomotive_steam_mogul", 4.8000D),
+            java.util.Map.entry("locomotive_steam_pannier", 3.6000D),
+            java.util.Map.entry("locomotive_steam_pe", 5.1256D),
+            java.util.Map.entry("locomotive_steam_rw_type_2", 3.3131D),
+            java.util.Map.entry("locomotive_steam_rw_type_3", 4.2506D),
+            java.util.Map.entry("locomotive_steam_s100_uk", 4.0062D),
+            java.util.Map.entry("locomotive_steam_s100_us", 4.0000D),
+            java.util.Map.entry("locomotive_steam_sentinel_y3", 2.1000D),
+            java.util.Map.entry("locomotive_steam_shay", 4.0000D),
+            java.util.Map.entry("locomotive_steam_shay_3_truck", 3.6253D),
+            java.util.Map.entry("locomotive_steam_skookum", 5.7506D),
+            java.util.Map.entry("locomotive_steam_small", 2.8000D),
+            java.util.Map.entry("locomotive_steam_snow_plow", 5.7500D),
+            java.util.Map.entry("locomotive_steam_southern1102", 5.2534D),
+            java.util.Map.entry("locomotive_steam_star_class", 3.1406D),
+            java.util.Map.entry("locomotive_steam_u57", 6.0006D),
+            java.util.Map.entry("locomotive_steam_ussr", 5.6000D),
+            java.util.Map.entry("locomotive_steam_vb_0_4_0", 2.7000D),
+            java.util.Map.entry("locomotive_steam_vb_shay", 5.5006D),
+            java.util.Map.entry("locomotive_steam_vb_shay_2", 4.5770D),
+            java.util.Map.entry("locomotive_steam_wwcp_062t", 5.8131D),
+            java.util.Map.entry("milw_baggage_car", 4.5000D),
+            java.util.Map.entry("milw_passenger_car", 4.5000D),
+            java.util.Map.entry("milw_tail_car", 4.5000D),
+            java.util.Map.entry("mob_transport_car", 3.0000D),
+            java.util.Map.entry("passenger_coach_blue", 3.6000D),
+            java.util.Map.entry("steam_tender", 2.0000D),
+            java.util.Map.entry("steam_tender_4000_gallon", 3.8000D),
+            java.util.Map.entry("steam_tender_4_4_0", 2.2000D),
+            java.util.Map.entry("steam_tender_a4_mallard", 3.6000D),
+            java.util.Map.entry("steam_tender_adler", 1.4000D),
+            java.util.Map.entry("steam_tender_berkshire", 3.7000D),
+            java.util.Map.entry("steam_tender_br01", 3.0000D),
+            java.util.Map.entry("steam_tender_br1", 2.8000D),
+            java.util.Map.entry("steam_tender_br_black_5", 3.0000D),
+            java.util.Map.entry("steam_tender_c41", 2.3000D),
+            java.util.Map.entry("steam_tender_c62", 3.1000D),
+            java.util.Map.entry("steam_tender_coronation_class", 3.8000D),
+            java.util.Map.entry("steam_tender_d51", 3.0000D),
+            java.util.Map.entry("steam_tender_fowler", 2.6000D),
+            java.util.Map.entry("steam_tender_gs4", 4.0000D),
+            java.util.Map.entry("steam_tender_heavy", 3.4000D),
+            java.util.Map.entry("steam_tender_midland_compound", 3.0000D),
+            java.util.Map.entry("steam_tender_milw", 3.0000D),
+            java.util.Map.entry("steam_tender_pe", 3.1000D),
+            java.util.Map.entry("steam_tender_rw_type_2", 2.4000D),
+            java.util.Map.entry("steam_tender_shay_3_truck", 2.2000D),
+            java.util.Map.entry("steam_tender_skookum", 3.5000D),
+            java.util.Map.entry("steam_tender_southern1102", 2.8000D),
+            java.util.Map.entry("steam_tender_star_class", 2.8000D),
+            java.util.Map.entry("steam_tender_u57", 2.5000D),
+            java.util.Map.entry("steam_tender_ussr", 3.0000D),
+            java.util.Map.entry("tct_tanker_lava", 3.0000D),
+            java.util.Map.entry("tct_tanker_universal", 3.0000D),
+            java.util.Map.entry("tct_tanker_water", 3.0000D)
+    );
+
+    private static int trainGroup(String id) {
+        if (id.startsWith("locomotive_")) return 0;
+        if (id.contains("tender")) return 1;
+        if (id.contains("mob_transport") || id.contains("livestock")
+                || id.contains("animal_transport")) return 3;
+        if (id.startsWith("tct_tanker") || id.contains("tanker") || id.contains("tank_car")) return 4;
+        return 2;
+    }
+
+    private static double trainLengthHint(String id) {
+        return TRAIN_DISPLAY_LENGTHS.getOrDefault(id, 999.0D);
+    }
 
     // TC_FINAL_RELEASE_R1AH_FORMAL_TRACK_FAMILIES
     //
@@ -332,7 +459,8 @@ public final class TCCreativeTabs {
             CreativeModeTab.Output output,
             Set<Item> shown,
             List<Item> items,
-            String family) {
+            String family,
+            boolean energyOnly) {
         List<Item> matches =
                 new ArrayList<>();
 
@@ -341,14 +469,19 @@ public final class TCCreativeTabs {
                     itemId(
                             item);
 
+            // DEV58B8R3C: crossing-gate hardware is equipment, not a CROSSINGS rail.
+            // Keep it out of geometry families so it is emitted ONLY at the tab end.
             if (!isTrackContent(
                             id)
+                    || TRACKSIDE_OPTIONS.contains(id)
+                    || isSpecialTrackId(id)
                     || id.endsWith(
                             "_segment")
                     || id.contains(
                             "_gag")
                     || isUnifiedHiddenLeftTrack(
-                            id)) {
+                            id)
+                    || isEnergyVariant(id) != energyOnly) {
                 continue;
             }
 
@@ -366,11 +499,12 @@ public final class TCCreativeTabs {
         }
 
         matches.sort(
-                Comparator.comparing(
+                Comparator.comparingInt(
                                 (Item item) ->
-                                        trackGeometryBaseId(
-                                                itemId(
-                                                        item)))
+                                        trackGeometryPriority(
+                                                trackGeometryBaseId(itemId(item))))
+                        .thenComparing(
+                                (Item item) -> trackGeometryBaseId(itemId(item)))
                         .thenComparingInt(
                                 item ->
                                         trackMaterialRank(
@@ -386,6 +520,34 @@ public final class TCCreativeTabs {
                         item);
             }
         }
+    }
+
+    private static boolean isSpecialTrackId(String id) {
+        return SPECIALTY_TRACK_OPTIONS.contains(id)
+                || id.startsWith("track_detector_")
+                || id.startsWith("track_boarding_")
+                || id.startsWith("track_disembark")
+                || id.startsWith("track_station")
+                || id.startsWith("track_coupler")
+                || id.startsWith("track_locomotive_")
+                || id.startsWith("track_horn_")
+                || id.startsWith("track_crossing_approach");
+    }
+
+    private static boolean isEnergyVariant(String id) {
+        return "track_energy".equals(id) || id.endsWith("_energy");
+    }
+
+    // Keep the four straight lengths in the familiar length order, not ID order.
+    private static int trackGeometryPriority(String id) {
+        return switch (id) {
+            case "track_normal" -> 0;
+            case "track_medium_straight" -> 1;
+            case "track_long_straight" -> 2;
+            case "track_very_long_straight" -> 3;
+            case "track_medium_curve" -> 4;
+            default -> 100;
+        };
     }
 
     private static boolean trackFamilyMatches(

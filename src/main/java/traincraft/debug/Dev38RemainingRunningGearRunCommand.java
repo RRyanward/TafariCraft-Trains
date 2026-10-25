@@ -47,7 +47,8 @@ import traincraft.Traincraft;
  *
  * DEBUG/VALIDATION ONLY. Remove before public release.
  */
-@Mod.EventBusSubscriber(modid = Traincraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Dev38RemainingRunningGearRunCommand {
     private static final String TAG = "tc_dev38_r1g1z7_runninggear";
     private static final Map<UUID, Session> SESSIONS = new ConcurrentHashMap<>();

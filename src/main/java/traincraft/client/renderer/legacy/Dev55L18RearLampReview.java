@@ -31,9 +31,10 @@ public final class Dev55L18RearLampReview {
     }
     public static boolean active(Entity entity) {
         return entity!=null && entity.isAlive()
-            && entity.getCustomName()!=null
-            && "DEV55L3_TEST_LAMPS".equals(entity.getCustomName().getString())
-            && Files.isRegularFile(FMLPaths.GAMEDIR.get().resolve("DEV55L18-REAR-PREVIEW-ON.flag"));
+            && (traincraft.debug.Dev55L19Settings.fleetMode(entity)
+               || (entity.getCustomName()!=null
+                 && "DEV55L3_TEST_LAMPS".equals(entity.getCustomName().getString())
+                 && Files.isRegularFile(FMLPaths.GAMEDIR.get().resolve("DEV55L18-REAR-PREVIEW-ON.flag"))));
     }
     public static double[][] positions(String id) {
         return REAR.getOrDefault(id, new double[0][]);

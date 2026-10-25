@@ -69,7 +69,8 @@ import java.util.Set;
  *  5. Known c2 seam: 45 Medium Right active endpoint index 2 / p4
  *     -> Medium Diagonal p0.
  */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TrackT7RealPlacementSeamCommand {
     private static final String ENV = "TC_T7_RP1_HEADLESS";
     private static final double TEST_SPEED = 0.18D;

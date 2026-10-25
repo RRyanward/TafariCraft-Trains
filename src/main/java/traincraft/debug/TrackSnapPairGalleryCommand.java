@@ -47,7 +47,8 @@ import java.util.List;
  *
  * Remove before release.
  */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TrackSnapPairGalleryCommand {
     private static final int COLUMNS = 5;
     private static final int SPACING = 46;

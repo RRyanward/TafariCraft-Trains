@@ -139,7 +139,7 @@ public final class Dev55FleetGroundLights {
         // every server tick. All other fleet sources keep the accepted 10-tick cadence.
         final boolean tcL20NormalPulse=(level.getGameTime()%10L==0L);
         final boolean tcL20FastPreview=Dev55L20Ground262Pilot.enabled();
-        if((!tcL20NormalPulse && !tcL20FastPreview) || !dark(level))return;
+        if(!tcL20NormalPulse && !tcL20FastPreview)return;
         final boolean tcDev55L3NormalGroundLights = enabled();
         Block block=lightBlock();
         if(block==null||block==Blocks.AIR)return;
@@ -159,8 +159,11 @@ public final class Dev55FleetGroundLights {
             if(!tcL20NormalPulse && !Dev55L20Ground262Pilot.eligible(engine,id.getPath()))continue;
             if((id.getPath().equals("locomotive_steam_berkshire_1225")
                || id.getPath().equals("locomotive_steam_berkshire_765")) && !tcDev55L3Review)continue;
-            if(!tcDev55L3Review && !active(engine))continue;
+            if(!LocomotiveLightMode.enabled(engine))continue;
             count++;
+            // DEV58F1: all selected fleet beams use the L23 clipped endpoint.
+            // No parallel L20/L12/L14/default approximation for the same engine.
+            if (Dev55L23GroundBridge.claims(engine,id.getPath())) continue;
             // The LIVE L19 262T beam must own ground lighting before either
             // the 7.5-block legacy source or L14's independent approximate ray.
             if (Dev55L20Ground262Pilot.apply(level,engine,id.getPath())) continue;

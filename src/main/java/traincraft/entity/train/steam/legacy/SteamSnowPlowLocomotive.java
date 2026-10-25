@@ -17,8 +17,9 @@ public class SteamSnowPlowLocomotive extends SmallSteamLocomotive {
      *   translate = (-2.000000, +0.562813, 0.000000)
      *   rotate    = (0, 180, 180)
      *
-     * The supplied TCM resolves the centered exhaust stack to transformed
-     * X -3.15625 with a top Y of 2.187813.  The cab seat is placed near
+     * The supplied TCM resolves the centered exhaust stack to rendered local
+     * X -3.15625; the world-forward particle hook requires +3.15625 instead.
+     * The opening is at Y 2.187813. The cab seat is placed near
      * the rear cab center as a runtime-calibration candidate.
      *
      * Shared Small Steam defaults and renderer transforms remain frozen.
@@ -27,8 +28,21 @@ public class SteamSnowPlowLocomotive extends SmallSteamLocomotive {
     private static final double SNOW_PLOW_DRIVER_SEAT_Y_OFFSET = 0.3000D;
     private static final double SNOW_PLOW_DRIVER_SEAT_SIDE_OFFSET = 0.0D;
 
-    private static final double SNOW_PLOW_CHIMNEY_FRONT_OFFSET = -3.15625D;
-    private static final double SNOW_PLOW_CHIMNEY_TOP_Y_OFFSET = 2.187813D;
+    // DEV58B10F4R2: positive = world-facing train NOSE in getChimneyTop().
+    // Mesh stack center is X=-1.15625; render translation adds -2, yielding
+    // local-render X=-3.15625. LegacyMeshRenderer maps local -X to +forward.
+    // The entity particle emitter uses POSITIVE front along the same forward
+    // vector. F4R1 wrongly gave it negative front, so smoke rose behind the cab.
+    // Do not change the mesh transform or the 2.250313-block exhaust height.
+    private static final double SNOW_PLOW_CHIMNEY_FRONT_OFFSET = +3.15625D;
+    // DEV58B10F4R1: exhaust mesh chunks 36 & 37 as selected in the viewer.
+    // Mesh bounds X[-1.313,-1.000] Y[-1.625,-0.875] Z[-0.125,+0.125].
+    // The fixed snowplow renderer converts their center/top to:
+    //   render local X = -2.000000 + (-1.15625) = -3.15625
+    //   particle +forward = +3.15625 (corrected in F4R2)
+    //   top   = 0.562813 + 1.625 = 2.187813 blocks above entity
+    // Emit 1/16 block ABOVE that opening so the first smoke puff clears the rim.
+    private static final double SNOW_PLOW_CHIMNEY_TOP_Y_OFFSET = 2.187813D + 0.0625D;
     private static final double SNOW_PLOW_CHIMNEY_SIDE_OFFSET = 0.0D;
 
     /* Step 8.5.4a-r1 - dedicated 3 x 2 x 3 snow-clearance envelope. */

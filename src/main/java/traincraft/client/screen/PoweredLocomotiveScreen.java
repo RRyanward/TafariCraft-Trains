@@ -40,6 +40,19 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
     @Override
     protected void init() {
         super.init();
+        if (!menu.getLocomotive().isBuilder()) {
+            addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
+                Component.literal("Lights: "+traincraft.lighting.LocomotiveLightMode.label(menu.getLocomotive())),
+                button -> {
+                    var e=menu.getLocomotive();
+                    int next=(traincraft.lighting.LocomotiveLightMode.mode(e)+1)%3;
+                    traincraft.lighting.LocomotiveLightMode.syncClient(e.getUUID(),next);
+                    TCNetwork.CHANNEL.sendToServer(new
+                        traincraft.network.packet.LocomotiveLightModePacket(e.getId(),next));
+                    button.setMessage(Component.literal("Lights: "+
+                        traincraft.lighting.LocomotiveLightMode.label(e)));
+                }).bounds(leftPos+62,topPos-23,94,20).build());
+        }
         if (menu.getLocomotive().isBuilder()) {
             addRenderableWidget(
                     net.minecraft.client.gui.components.Button.builder(
@@ -854,6 +867,29 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
         var key = net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES.getKey(locomotive.getType());
         return key != null && key.getPath().startsWith("locomotive_electric_");
     }
+    // DEV58B10F8R4 -- FUEL GAUGE HOVER-OVERLAY REPAIR
+    // The original 5x3 diesel storage menu has positions x=134 and x=152
+    // at y=18,36,54. These six slots visually overlap the vertical green
+    // fuel gauge. Minecraft normally draws a translucent white 16x16 hovered
+    // slot overlay, making white blocks appear on BOTH sides of the gauge.
+    // Only suppress the HIGHLIGHT COLOR for those six slots. Do not suppress
+    // slot hit-testing, clicking, stored items, fuel fill or tooltips.
+    // Match the actual hovered Slot coordinates, not an assumed slot index;
+    // Forge versions may pass an index or local coordinates to getSlotColor.
+    @Override
+    public int getSlotColor(int slotIndex) {
+        if (!menu.getLocomotive().isBuilder()
+                && !tcDev37ElectricGui(menu.getLocomotive())
+                && this.hoveredSlot != null
+                && (this.hoveredSlot.x == 134 || this.hoveredSlot.x == 152)
+                && (this.hoveredSlot.y == 18
+                    || this.hoveredSlot.y == 36
+                    || this.hoveredSlot.y == 54)) {
+            return 0x00000000; // transparent: no white hover rectangle
+        }
+        return super.getSlotColor(slotIndex);
+    }
+
     private ResourceLocation texture(){var l=menu.getLocomotive();if(l.isBuilder())return BUILDER;return tcDev37ElectricGui(l)?ELECTRIC:DIESEL;}
     @Override
     protected void renderBg(
@@ -967,31 +1003,15 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
             return;
         }
 
-        graphics.drawString(
-                font,
-                title,
-                40,
-                6,
-                0xD3A900,
-                false);
-
-        if (!tcDev37ElectricGui(locomotive)) {
-            graphics.drawString(
-                    font,
-                    "Fuel: "
-                            + menu.getPowerAmount()
-                            + "/"
-                            + menu.getPowerCapacity(),
-                    8,
-                    19,
-                    0x404040,
-                    false);
-        }
+        // F8R3: real train name is rendered in the upper OUTSIDE header.
+        // Diesel's fuel amount appears only when hovering its green gauge.
     }
     private void renderStatusPanel(GuiGraphics g){
         var l=menu.getLocomotive();if(l.isBuilder())return;
         int y=topPos-49;g.fill(leftPos,y,leftPos+imageWidth,topPos-18,0xD8202020);
-        g.drawCenteredString(font,title,leftPos+imageWidth/2,y+3,0xFFE070);
+        TrainGuiNames.drawFit(g, font,
+                TrainGuiNames.fromEntity(l), leftPos+imageWidth/2, y+3,
+                imageWidth - 8, 0xFFE070, true);
         if(tcDev37ElectricGui(l)){
             boolean line=l.isOnPoweredEnergyTrack();boolean backup=menu.hasBackupRedstone();
             String status=line?"LINE POWER":backup?"BACKUP":"NO POWER";
@@ -1000,7 +1020,7 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
             String detail=line?"Energy Track primary | backup preserved":backup?menu.getBackupLabel()+" (consumed while moving)":"Put Redstone in left backup slot";
             g.drawCenteredString(font,detail,leftPos+imageWidth/2,y+22,0xE0E0E0);
         }else{
-            g.drawCenteredString(font,"Diesel Fuel: "+menu.getPowerAmount()+" / "+menu.getPowerCapacity(),leftPos+imageWidth/2,y+17,0xE0E0E0);
+            // Diesel fuel is now the gauge's hover tooltip (no fixed text).
         }
     }
     // TC_DEV36_R1K19_RESPONSIVE_BUILDER_SCREEN
@@ -1109,12 +1129,26 @@ public final class PoweredLocomotiveScreen extends AbstractContainerScreen<Power
                     mouseX,
                     mouseY,
                     partialTick);
+            TrainGuiNames.drawClassicHeader(graphics, font,
+                    TrainGuiNames.fromEntity(menu.getLocomotive()),
+                    leftPos, topPos, imageWidth);
             renderBrake(
                     graphics);
             renderTooltip(
                     graphics,
                     mouseX,
                     mouseY);
+            // Like SteamLocomotiveScreen's water column, the diesel reserve
+            // shows its amount ONLY on hover, even when the bar is empty.
+            // The selected rectangle covers the entire 48px green gauge.
+            if (!tcDev37ElectricGui(menu.getLocomotive())
+                    && mouseX >= leftPos + 143 && mouseX < leftPos + 161
+                    && mouseY >= topPos + 18 && mouseY < topPos + 69) {
+                graphics.renderTooltip(font,
+                        Component.literal("Fuel: " + menu.getPowerAmount()
+                                + " / " + menu.getPowerCapacity()),
+                        mouseX, mouseY);
+            }
             return;
         }
 

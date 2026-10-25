@@ -27,7 +27,8 @@ import java.time.format.DateTimeFormatter;
 import java.util.*;
 
 /** Opt-in server-side observations only: never writes blocks or entity motion. */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class MediumCurveDiagnostics {
     private MediumCurveDiagnostics() {}
 

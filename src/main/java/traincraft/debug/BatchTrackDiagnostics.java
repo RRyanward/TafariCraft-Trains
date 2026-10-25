@@ -54,7 +54,8 @@ import java.util.UUID;
  *
  * Neither command mutates rails, routing, rolling stock, or rendering.
  */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class BatchTrackDiagnostics {
     private static final int TRACE_TICKS = 20 * 15;
     private static final int TRACE_SAMPLE_INTERVAL = 2;

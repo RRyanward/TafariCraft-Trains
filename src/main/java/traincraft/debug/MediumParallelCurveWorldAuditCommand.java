@@ -23,7 +23,8 @@ import java.util.Map;
  * DEV50b2o temporary read-only live-world diagnostic.
  * Does not modify blocks, visuals, model resources, train pathing, or worldgen.
  */
-@Mod.EventBusSubscriber(modid = Traincraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class MediumParallelCurveWorldAuditCommand {
     private MediumParallelCurveWorldAuditCommand() { }
 

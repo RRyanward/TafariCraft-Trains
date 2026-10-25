@@ -58,9 +58,8 @@ import java.util.Set;
  *
  * The same comparison is repeated for the dedicated Medium Curve.
  */
-@Mod.EventBusSubscriber(
-        modid = Traincraft.MOD_ID,
-        bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Dev34BlueprintRouteClearanceAutoTest {
     private static final String PREFIX =
             "[TC-DEV34-BLUEPRINT-ROUTE] ";

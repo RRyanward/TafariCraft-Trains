@@ -24,12 +24,15 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.context.BlockPlaceContext;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.RailBlock;
+import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.block.state.properties.RailShape;
 import net.minecraft.world.phys.BlockHitResult;
+import net.minecraft.world.phys.HitResult;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.api.distmarker.Dist;
 import net.minecraftforge.client.event.RenderLevelStageEvent;
+import net.minecraftforge.client.event.InputEvent;
 import net.minecraftforge.client.model.data.ModelData;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -48,15 +51,14 @@ import traincraft.registry.TCBlocks;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.function.Supplier;
 
 /**
- * White-only placement ghost for REAL held track items.
- *
- * This intentionally has no green/red/blue status language. It is only a
- * direction/orientation preview so the player can see where the real track
- * will go before clicking.
+ * Placement ghost for REAL held track items: WHITE when clear, RED when
+ * the intended footprint encounters an obstruction. This is read-only and
+ * never overwrites tracks or changes native placement/crossing rules.
  */
 @Mod.EventBusSubscriber(
         modid = Traincraft.MOD_ID,
@@ -69,8 +71,13 @@ public final class RealTrackPlacementGhostPreview {
     private static final int FULL_LIGHT =
             LightTexture.FULL_BRIGHT;
 
-    private static final float WHITE_ALPHA =
-            0.66F;
+    private static final float WHITE_ALPHA = 0.66F;
+    private static final float BLOCKED_ALPHA = 0.86F;
+
+    // G12R4R4: only the track ghost turns red; no per-cell wireframe boxes.
+    // Click warnings are emitted once per placement attempt, never every frame.
+    private static final int MAX_OBSTRUCTION_CELLS = 128;
+
     // TC_FINAL_RELEASE_R1F_MEDIUM_RUNTIME_FINGERPRINT
     private static int tcMediumHeldFingerprintTick =
             Integer.MIN_VALUE;
@@ -153,6 +160,66 @@ public final class RealTrackPlacementGhostPreview {
 
     private RealTrackPlacementGhostPreview() {}
 
+    /** Block-only hit target, immune to cows/villagers/player entities walking
+     * in front of the crosshair. Do not change native server collisions. */
+    private static BlockHitResult trackGroundTarget(Minecraft mc) {
+        if (mc.level == null || mc.player == null) return null;
+        // Entity#pick traces blocks only (not entities), unlike mc.hitResult.
+        double reach = mc.player.getAbilities().instabuild ? 5.0D : 4.5D;
+        HitResult result = mc.player.pick(reach, mc.getFrameTime(), false);
+        if (result instanceof BlockHitResult blockHit
+                && result.getType() == HitResult.Type.BLOCK) {
+            return blockHit;
+        }
+        return null;
+    }
+
+    private static List<BlockPos> collisionCells(Minecraft mc, HeldTrack held,
+            List<WorldPreviewPart> parts) {
+        LinkedHashSet<BlockPos> blocked = new LinkedHashSet<>();
+        for (WorldPreviewPart part : parts) {
+            if (part.seamOnly()) continue;
+            if (tcGhostCellBlocked(mc, held, part)) {
+                blocked.add(part.pos().immutable());
+                if (blocked.size() >= MAX_OBSTRUCTION_CELLS) break;
+            }
+        }
+        return List.copyOf(blocked);
+    }
+
+    /** Fired on an actual right-click, not continuously while looking. */
+    @SubscribeEvent
+    public static void onTrackUseAttempt(InputEvent.InteractionKeyMappingTriggered event) {
+        if (!event.isUseItem()) return;
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null || mc.player == null || mc.screen != null) return;
+        HeldTrack held = heldRealTrack(mc);
+        if (held == null || held.hand() != event.getHand()) return;
+        BlockHitResult hit = trackGroundTarget(mc);
+        if (hit == null) return;
+
+        // Right-clicking while a mob walks between the player and target
+        // should reach the block, exactly as the stable ghost does. Restrict
+        // this override to a real held track: ordinary tools, entity clicks,
+        // and unrelated items keep vanilla targeting.
+        if (mc.hitResult != null
+                && mc.hitResult.getType() == HitResult.Type.ENTITY) {
+            mc.hitResult = hit;
+        }
+
+        List<WorldPreviewPart> parts = previewParts(mc, held, hit);
+        if (parts.isEmpty()) return;
+        List<BlockPos> collided = collisionCells(mc, held, parts);
+        if (!collided.isEmpty()) {
+            mc.player.displayClientMessage(
+                    net.minecraft.network.chat.Component.literal("COLLISION DETECTED")
+                            .withStyle(net.minecraft.ChatFormatting.RED,
+                                    net.minecraft.ChatFormatting.BOLD), true);
+            // Native server placement still rejects overlaps, as before.
+            // No forced crossings, entity removal, or world edits.
+        }
+    }
+
     @SubscribeEvent
     public static void onRenderLevel(
             RenderLevelStageEvent event) {
@@ -193,25 +260,19 @@ public final class RealTrackPlacementGhostPreview {
             return;
         }
 
-        HeldTrack held =
-                heldRealTrack(
-                        mc);
-
-                if (held == null
-                || !(mc.hitResult
-                        instanceof BlockHitResult hit)) {
-            return;
-        }
+        HeldTrack held = heldRealTrack(mc);
+        if (held == null) return;
+        // A mob crossing the sight line can change mc.hitResult to ENTITY.
+        // A fresh block-only ray keeps preview location/facing stable instead
+        // of flickering on/off based on entity targeting.
+        BlockHitResult hit = trackGroundTarget(mc);
+        if (hit == null) return;
 
         List<WorldPreviewPart> parts =
                 previewParts(
                         mc,
                         held,
                         hit);
-
-        if (parts.isEmpty()) {
-            return;
-        }
 
         PoseStack pose =
                 event.getPoseStack();
@@ -222,16 +283,16 @@ public final class RealTrackPlacementGhostPreview {
         MultiBufferSource.BufferSource buffers =
                 mc.renderBuffers().bufferSource();
 
-        for (WorldPreviewPart part
-                : parts) {
-            renderWhiteBlockState(
-                    mc,
-                    pose,
-                    buffers,
-                    part,
-                    camera);
+        // G12R3: use the full proposed assembly for the obstruction test.
+        // Even when it intersects existing rails the ghost stays visible;
+        // this is a visual inspection aid, NOT permission to replace rails.
+        List<BlockPos> obstructingCells = collisionCells(mc, held, parts);
+        boolean obstructed = !obstructingCells.isEmpty();
+        for (WorldPreviewPart part : parts) {
+            renderWhiteBlockState(mc, pose, buffers, part, camera, obstructed);
         }
 
+        // No red block outline. Only the actual proposed track is red.
         buffers.endBatch();
     }
 
@@ -248,12 +309,17 @@ public final class RealTrackPlacementGhostPreview {
         // TC_FINAL_RELEASE_R1M_BATCH_8WAY_REAL_SNAP_PARITY
         boolean tcRailSideSnapHit =
                 (item instanceof LegacyMediumCurveTrackItem
+                        || item instanceof LegacyStraightTrackItem
                         || item instanceof LegacyBatchTrackItem)
                         && net.minecraft.world.level.block.BaseRailBlock.isRail(
                                 mc.level.getBlockState(hit.getBlockPos()));
 
+        boolean tcVegetationHit =
+                traincraft.item.track.TrackPlacementVegetation.isPlant(
+                        mc.level.getBlockState(hit.getBlockPos()));
         if (hit.getDirection() != Direction.UP
-                && !tcRailSideSnapHit) {
+                && !tcRailSideSnapHit
+                && !tcVegetationHit) {
             return List.of();
         }
 
@@ -327,18 +393,12 @@ public final class RealTrackPlacementGhostPreview {
         // Dedicated Straight and Medium placement source files remain frozen.
         // Their preview is directional/manual: enough to show orientation
         // without changing accepted world-placement behavior.
-        BlockPos manualAnchor =
-                hit.getBlockPos().above();
-
-        Direction facing =
-                mc.player.getDirection();
-
-        if (item
-                instanceof LegacyStraightTrackItem straight) {
-            return straightParts(
-                    straight,
-                    manualAnchor,
-                    facing);
+        if (item instanceof LegacyStraightTrackItem straight) {
+            LegacyStraightTrackItem.PlacementPreview placement = straight.previewPlacement(
+                    mc.level, mc.player, stack, held.hand(), hit);
+            return placement == null
+                    ? List.of()
+                    : straightParts(straight, placement.start(), placement.forward());
         }
 
         if (item
@@ -371,9 +431,12 @@ public final class RealTrackPlacementGhostPreview {
             if (placement == null) {
                 return List.of();
             }
-            return mediumCurveParts(
-                    placement.root(),
-                    placement.facing());
+            List<WorldPreviewPart> snapped = mediumCurveParts(
+                    placement.root(), placement.facing());
+            // R7: never invent a second, manually reoriented ghost when
+            // obstructed. The native item's aim-side choice is authoritative;
+            // its actual placement uses the same endpoint solver.
+            return snapped;
         }
 
         return List.of();
@@ -855,6 +918,8 @@ public final class RealTrackPlacementGhostPreview {
             Minecraft mc,
             HeldTrack held,
             BlockHitResult hit) {
+        if (net.minecraft.world.level.block.BaseRailBlock.isRail(
+                mc.level.getBlockState(hit.getBlockPos()))) return List.of();
         Item item =
                 held.stack().getItem();
 
@@ -1005,12 +1070,35 @@ public final class RealTrackPlacementGhostPreview {
         return parts;
     }
 
+    private static boolean tcGhostCellBlocked(Minecraft mc,
+            HeldTrack held, WorldPreviewPart part) {
+        BlockPos pos = part.pos();
+        BlockState occupied = mc.level.getBlockState(pos);
+        // All normal/energy rail blocks are occupied, even if a different
+        // rail shape intersects at a right angle. No silent replacement.
+        // R7: identical predicate to native medium, straight and batch
+        // rail placement. A Torchflower is clearable; a crop/rail isn't.
+        boolean occupiedCell =
+                !traincraft.item.track.TrackPlacementVegetation.canReplace(occupied);
+        boolean fluid = !occupied.getFluidState().isEmpty();
+        BlockPos below = pos.below();
+        // Batch ramps use spec-defined support positions, not necessarily
+        // the block directly below every visual part. Do not flag them RED
+        // solely from a naive below-cell probe.
+        boolean unsupported = !(held.stack().getItem() instanceof LegacyBatchTrackItem)
+                && !mc.level.getBlockState(below).isFaceSturdy(
+                        mc.level, below, Direction.UP);
+        boolean denied = !mc.player.mayUseItemAt(pos, Direction.UP, held.stack());
+        return occupiedCell || fluid || unsupported || denied;
+    }
+
     private static void renderWhiteBlockState(
             Minecraft mc,
             PoseStack pose,
             MultiBufferSource buffers,
             WorldPreviewPart part,
-            Vec3 camera) {
+            Vec3 camera,
+            boolean obstructed) {
         BlockState state = part.state();
         BlockPos worldPos = part.pos();
         BakedModel model =
@@ -1057,7 +1145,7 @@ public final class RealTrackPlacementGhostPreview {
                 state, null, random, modelData, null);
         emitWhiteQuads(pose, consumer, part.seamOnly()
                 ? tcMediumDiagOutsideSourceOnly(unculledQuads, part)
-                : unculledQuads);
+                : unculledQuads, obstructed);
 
         for (Direction side
                 : SIDES) {
@@ -1068,7 +1156,7 @@ public final class RealTrackPlacementGhostPreview {
                     state, side, random, modelData, null);
             emitWhiteQuads(pose, consumer, part.seamOnly()
                     ? tcMediumDiagOutsideSourceOnly(faceQuads, part)
-                    : faceQuads);
+                    : faceQuads, obstructed);
         }
 
         pose.popPose();
@@ -1077,7 +1165,8 @@ public final class RealTrackPlacementGhostPreview {
     private static void emitWhiteQuads(
             PoseStack pose,
             VertexConsumer consumer,
-            List<BakedQuad> quads) {
+            List<BakedQuad> quads,
+            boolean obstructed) {
         int[] light = {
                 FULL_LIGHT,
                 FULL_LIGHT,
@@ -1099,9 +1188,9 @@ public final class RealTrackPlacementGhostPreview {
                     quad,
                     shade,
                     1.0F,
-                    1.0F,
-                    1.0F,
-                    WHITE_ALPHA,
+                    obstructed ? 0.15F : 1.0F,
+                    obstructed ? 0.15F : 1.0F,
+                    obstructed ? BLOCKED_ALPHA : WHITE_ALPHA,
                     light,
                     OverlayTexture.NO_OVERLAY,
                     false);

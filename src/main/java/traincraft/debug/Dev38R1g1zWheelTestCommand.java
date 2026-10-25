@@ -33,7 +33,8 @@ import traincraft.Traincraft;
  *
  * Remove this class before the public release command-surface freeze.
  */
-@Mod.EventBusSubscriber(modid = Traincraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Dev38R1g1zWheelTestCommand {
     private static final String TAG = "tc_dev38_r1g1z_wheeltest";
     private static final int EXPECTED_ROSTER = 111;

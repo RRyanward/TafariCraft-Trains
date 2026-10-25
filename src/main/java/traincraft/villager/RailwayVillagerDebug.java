@@ -11,9 +11,9 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceKey;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.tags.PoiTypeTags;
 import net.minecraft.world.entity.ai.memory.MemoryModuleType;
-import net.minecraft.world.entity.ai.village.poi.PoiManager;
 import net.minecraft.world.entity.ai.village.poi.PoiType;
 import net.minecraft.world.entity.ai.village.poi.PoiTypes;
 import net.minecraft.world.entity.npc.Villager;
@@ -102,19 +102,28 @@ public final class RailwayVillagerDebug {
                 .getHolder(ResourceKey.create(Registries.POINT_OF_INTEREST_TYPE,
                         new ResourceLocation(Traincraft.MOD_ID, role + "_poi")))
                 .map(h -> h.is(PoiTypeTags.ACQUIRABLE_JOB_SITE)).orElse(false);
-        long poiCount = poi == null ? 0L : level.getPoiManager().getCountInRange(
-                holder -> holder.value() == poi.get(), villager.blockPosition(), 24,
-                PoiManager.Occupancy.ANY);
+        // No PoiManager.getCountInRange here: querying unloaded POI sections during
+        // chunk/entity loading can indirectly request chunk work on the server thread.
+        // The richer J14 /tcstaffdiag command remains available for POI ownership.
         // Verify POI recognition separately from registration: a placed workstation may
         // be present as a block but missing from PoiTypes' blockstate-to-POI mapping.
         int blocks = 0;
         int mapped = 0;
+        int skippedCells = 0;
         var block = workstation(role);
         BlockPos center = villager.blockPosition();
         for (BlockPos p : BlockPos.betweenClosed(center.offset(-8, -3, -8), center.offset(8, 3, 8))) {
-            if (level.getBlockState(p).is(block)) {
+            // getChunkNow returns null for chunks not FULLY loaded. Never use
+            // level.getBlockState here: that can synchronously load a missing chunk.
+            LevelChunk loaded = level.getChunkSource().getChunkNow(p.getX() >> 4, p.getZ() >> 4);
+            if (loaded == null) {
+                skippedCells++;
+                continue;
+            }
+            var state = loaded.getBlockState(p);
+            if (state.is(block)) {
                 blocks++;
-                if (PoiTypes.forState(level.getBlockState(p))
+                if (PoiTypes.forState(state)
                         .filter(h -> poi != null && h.value() == poi.get()).isPresent()) mapped++;
             }
         }
@@ -123,9 +132,25 @@ public final class RailwayVillagerDebug {
                 + " correct=" + (expected != null && profession == expected.get())
                 + " offers=" + villager.getOffers().size()
                 + " jobSite=" + site
-                + " POI-tag=" + listed + " POI-near24=" + poiCount
+                + " POI-tag=" + listed + " POI-near24=SKIPPED_SAFE"
                 + " blocks-near8=" + blocks + " mapped=" + mapped
+                + " skippedUnloadedCells=" + skippedCells
                 + " alive=" + villager.isAlive();
+    }
+
+    // Entity-only logging safe during EntityJoinLevelEvent and chunk promotion.
+    // In particular: no block scans, POI queries, or chunk source reads here.
+    private static String joinDetails(Villager villager) {
+        String role = roleOf(villager);
+        if (role.isEmpty()) return "NON_RAILWAY";
+        String site = villager.getBrain().getMemory(MemoryModuleType.JOB_SITE)
+                .map(GlobalPos::pos).map(BlockPos::toShortString).orElse("NONE");
+        return "uuid=" + villager.getUUID().toString().substring(0, 8)
+                + " role=" + role
+                + " profession=" + villager.getVillagerData().getProfession().name()
+                + " jobSite=" + site
+                + " pos=" + villager.blockPosition().toShortString()
+                + " diagnostic=ENTITY_ONLY_CHUNK_SAFE";
     }
 
     private static int inspect(CommandSourceStack source) {
@@ -155,7 +180,7 @@ public final class RailwayVillagerDebug {
     public static void entityJoin(EntityJoinLevelEvent event) {
         if (!(event.getEntity() instanceof Villager villager)
                 || !(event.getLevel() instanceof ServerLevel level)) return;
-        if (!roleOf(villager).isEmpty()) report("SPAWN_OR_LOAD " + details(level, villager));
+        if (!roleOf(villager).isEmpty()) report("SPAWN_OR_LOAD " + joinDetails(villager));
     }
 
     @SubscribeEvent

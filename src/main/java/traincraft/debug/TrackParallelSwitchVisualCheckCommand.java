@@ -58,7 +58,8 @@ import java.util.UUID;
  * Command:
  *   /tc_parallel_switch_visual_check
  */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TrackParallelSwitchVisualCheckCommand {
     private static final int COLUMN_SPACING = 34;
     private static final int ROW_SPACING = 34;

@@ -24,7 +24,8 @@ import java.util.List;
 import java.util.UUID;
 
 /** R13ak: fixture-only vertical alignment calibration; no global animation changes. */
-@Mod.EventBusSubscriber(modid="traincraft",bus=Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Dev44BerkshireReferenceTest {
     private static final org.slf4j.Logger LOG=com.mojang.logging.LogUtils.getLogger();
     private static final ResourceLocation TYPE=new ResourceLocation("traincraft","locomotive_steam_berkshire_765");

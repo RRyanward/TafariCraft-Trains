@@ -66,7 +66,8 @@ import java.util.UUID;
  * so even the largest 31-block-radius curves do not create one enormous loaded
  * gallery.
  */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TrackT7TraversalSweepCommand {
     private static final int EXPECTED_SPECS = 50;
 

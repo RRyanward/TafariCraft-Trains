@@ -75,24 +75,41 @@ public final class TctTankerRenderer extends EntityRenderer<TctTanker> {
             ResourceLocation bodyTex=new ResourceLocation(BASE,"textures/tct_tankers/"+TYPES[id]+"_body.png");
             ResourceLocation wheelTex=new ResourceLocation(BASE,"textures/tct_tankers/"+TYPES[id]+"_wheels.png");
             ResourceLocation truckTex=new ResourceLocation(BASE,"textures/tct_tankers/"+TYPES[id]+"_trucks.png");
-            mesh.render(pose,buffers.getBuffer(RenderType.entityCutoutNoCull(bodyTex)),light,0);
-            VertexConsumer wheelSink=buffers.getBuffer(RenderType.entityCutoutNoCull(wheelTex));
+            RenderType bodyType=RenderType.entityCutoutNoCull(bodyTex);
+            if(!mesh.gpuDraw("tanker-body",buffers,bodyType,pose,light,mesh.gpuBody))
+                mesh.render(pose,buffers.getBuffer(bodyType),light,0);
+            RenderType wheelType=RenderType.entityCutoutNoCull(wheelTex);
             if(mesh.wheelsSplit) {
                 double angle=rollAngle(entity,tick,trainYaw);
-                mesh.renderTriangleStarts(pose,wheelSink,light,1,mesh.staticWheelTriangles);
+                Dev58G11R15GpuBatch.Draw[] gpuWheelDraws=new Dev58G11R15GpuBatch.Draw[5];
+                gpuWheelDraws[0]=new Dev58G11R15GpuBatch.Draw(mesh.gpuStaticWheels,pose.last());
                 for(int axle=0;axle<4;axle++) {
                     pose.pushPose();
                     pose.translate(AXLE_X[axle],AXLE_Y,0D);
                     pose.mulPose(Axis.ZP.rotation((float)angle));
                     pose.translate(-AXLE_X[axle],-AXLE_Y,0D);
-                    mesh.renderTriangleStarts(pose,wheelSink,light,1,mesh.axleWheelTriangles[axle]);
+                    gpuWheelDraws[axle+1]=new Dev58G11R15GpuBatch.Draw(mesh.gpuAxles[axle],pose.last());
                     pose.popPose();
+                }
+                if(!Dev58G11R15GpuBatch.draw("tanker-wheels",buffers,wheelType,light,gpuWheelDraws)) {
+                    VertexConsumer wheelSink=buffers.getBuffer(wheelType);
+                    mesh.renderTriangleStarts(pose,wheelSink,light,1,mesh.staticWheelTriangles);
+                    for(int axle=0;axle<4;axle++) {
+                        pose.pushPose();
+                        pose.translate(AXLE_X[axle],AXLE_Y,0D);
+                        pose.mulPose(Axis.ZP.rotation((float)angle));
+                        pose.translate(-AXLE_X[axle],-AXLE_Y,0D);
+                        mesh.renderTriangleStarts(pose,wheelSink,light,1,mesh.axleWheelTriangles[axle]);
+                        pose.popPose();
+                    }
                 }
             } else {
                 // Unknown/replaced TCTM geometry: safe static fallback.
-                mesh.render(pose,wheelSink,light,1);
+                mesh.render(pose,buffers.getBuffer(wheelType),light,1);
             }
-            mesh.render(pose,buffers.getBuffer(RenderType.entityCutoutNoCull(truckTex)),light,2);
+            RenderType truckType=RenderType.entityCutoutNoCull(truckTex);
+            if(!mesh.gpuDraw("tanker-trucks",buffers,truckType,pose,light,mesh.gpuTruck))
+                mesh.render(pose,buffers.getBuffer(truckType),light,2);
         }
         pose.popPose();super.render(entity,yaw,tick,pose,buffers,light);
     }
@@ -104,6 +121,8 @@ public final class TctTankerRenderer extends EntityRenderer<TctTanker> {
         private final int[][] axleWheelTriangles = new int[4][];
         private final int[] staticWheelTriangles;
         private final boolean wheelsSplit;
+        private final Dev58G11R15GpuBatch.Part gpuBody, gpuTruck, gpuStaticWheels;
+        private final Dev58G11R15GpuBatch.Part[] gpuAxles=new Dev58G11R15GpuBatch.Part[4];
         private Mesh(float[][] pos,float[][] uv,float[][] normal,int[][] rgba,byte[] originalMeshHash){
             positions=pos;uvs=uv;normals=normal;colors=rgba;
             int[][] parts=loadWheelGroups(originalMeshHash,positions[1].length/3);
@@ -115,6 +134,35 @@ public final class TctTankerRenderer extends EntityRenderer<TctTanker> {
                 for(int i=0;i<4;i++)axleWheelTriangles[i]=parts[i];
                 staticWheelTriangles=parts[4];
             }
+            gpuBody=gpuBuildAll("body",0);
+            gpuTruck=gpuBuildAll("trucks",2);
+            gpuStaticWheels=parts==null?null:gpuBuildSubset("static-wheels",1,staticWheelTriangles);
+            if(parts!=null)for(int axle=0;axle<4;axle++)
+                gpuAxles[axle]=gpuBuildSubset("wheel-"+axle,1,axleWheelTriangles[axle]);
+        }
+        private Dev58G11R15GpuBatch.Part gpuBuildAll(String name,int group) {
+            int size=positions[group].length/3;
+            if(size==0 || size%3!=0)return null;
+            int[] starts=new int[size/3];
+            for(int i=0;i<starts.length;i++)starts[i]=i*3;
+            return gpuBuildSubset(name,group,starts);
+        }
+        private Dev58G11R15GpuBatch.Part gpuBuildSubset(String name,int group,int[] starts) {
+            if(starts==null || starts.length==0)return null;
+            return new Dev58G11R15GpuBatch.Part("tct-"+name,starts.length*4,(sink,light)->{
+                PoseStack.Pose identity=new PoseStack().last();
+                for(int i:starts) {
+                    emit(sink,identity,i,group,light);
+                    emit(sink,identity,i+1,group,light);
+                    emit(sink,identity,i+2,group,light);
+                    emit(sink,identity,i+2,group,light);
+                }
+            });
+        }
+        private boolean gpuDraw(String name,MultiBufferSource source,RenderType type,
+                                PoseStack pose,int light,Dev58G11R15GpuBatch.Part part) {
+            return part!=null && Dev58G11R15GpuBatch.draw(name,source,type,light,
+                    new Dev58G11R15GpuBatch.Draw(part,pose.last()));
         }
         private static int[][] loadWheelGroups(byte[] meshSha,int vertices){
             ResourceLocation ref=new ResourceLocation(BASE,"tct_meshes/tct_19k_wheelgroups.tcwg");

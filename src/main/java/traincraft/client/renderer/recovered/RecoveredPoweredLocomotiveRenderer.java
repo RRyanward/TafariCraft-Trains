@@ -71,7 +71,8 @@ public final class RecoveredPoweredLocomotiveRenderer<T extends LegacyPoweredLoc
         final String tramId=e.variantId();
         if (("locomotive_electric_tram".equals(tramId)
              || "locomotive_electric_tram_ny".equals(tramId))
-                && traincraft.client.renderer.legacy.Dev55L19FleetBeams.active(e,tramId)) {
+                && traincraft.client.renderer.legacy.Dev55L19FleetBeams.active(e,tramId)
+                && traincraft.lighting.LocomotiveLightMode.enabled(e)) {
             // Provisional model-space front lens positions (16 model units per
             // block). Viewer-approved per-lamp coordinates were not in capture;
             // keep these as review candidates, editable using /tclightfleet.
@@ -94,6 +95,15 @@ public final class RecoveredPoweredLocomotiveRenderer<T extends LegacyPoweredLoc
                 traincraft.client.renderer.legacy.Dev55L19FleetBeams.clearWorld();
             }
         }
+        // DEV58B9: exact user-reviewed High Speed Zeroed and VL10 front lamps.
+        // Restricted to those two electric variants; old accepted lights untouched.
+        // DEV58B10F7: six user-marked native models only. If this isolated
+        // test path draws ZeroED/VL10, do not overlay their legacy hard beam.
+        boolean sixViewerDrawn=traincraft.client.renderer.legacy.Dev58B10F7SixViewerLights.draw(
+                e,p,b,partial,tx,ty,tz,rx,ry,rz,sx,sy,sz);
+        if(!sixViewerDrawn)
+            Dev58B9RecoveredElectricHeadlights.draw(e,p,b,partial,
+                    tx,ty,tz,rx,ry,rz,sx,sy,sz);
         p.popPose();
         super.render(e,yaw,partial,p,b,light);
     }

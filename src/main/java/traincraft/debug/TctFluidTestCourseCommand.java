@@ -34,7 +34,8 @@ import java.util.Map;
 import java.util.UUID;
 
 /** DEV47c opt-in, no dependency on Mekanism; tests Forge-capable pipes. */
-@Mod.EventBusSubscriber(modid="traincraft", bus=Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TctFluidTestCourseCommand {
     private static final int LEN = 29;
     private static final int[] LANES = {0,12,24};

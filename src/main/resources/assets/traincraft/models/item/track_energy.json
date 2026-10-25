@@ -4,7 +4,7 @@
   "gui_light": "front",
   "children": {
     "track": {
-      "parent": "traincraft:block/legacy_track_normal"
+      "parent": "traincraft:block/legacy_track_normal_energy"
     }
   },
   "display": {

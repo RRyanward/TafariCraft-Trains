@@ -61,6 +61,8 @@ public class ForneySteamLocomotiveRenderer extends EntityRenderer<ForneySteamLoc
                 entity, partialTicks, poseStack, buffers, packedLight);
         // TC_DEV38_R1G1Z7P3_EXACT_PAIRED_WHEEL_PANEL_DRAW
         // DEV38 y18s: old rectangular rear-panel overlay disabled; carrier remains rigid.
+        // DEV58B9R2: only this previously unlit steam model. Existing mesh and animation unchanged.
+        Dev58B9R2SteamHeadlights.draw(entity, poseStack, buffers, partialTicks, "forney");
         poseStack.popPose();
         super.render(entity, entityYaw, partialTicks, poseStack, buffers, packedLight);
     }

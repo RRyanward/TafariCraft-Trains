@@ -48,7 +48,8 @@ import traincraft.Traincraft;
  * Opt-in command, no start-on-load, no persistent renderer animation edits.
  * Recorded motion is a visual diagnostic stimulus, NOT proof of native driving.
  */
-@Mod.EventBusSubscriber(modid = Traincraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Dev54FCaptureCommand {
     static boolean dev54h2CaptureActive() { return active != null; }
     static List<String> dev54h2Roster() { return ROSTER; }

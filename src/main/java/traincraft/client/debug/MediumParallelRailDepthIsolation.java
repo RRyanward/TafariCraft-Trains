@@ -86,8 +86,8 @@ public final class MediumParallelRailDepthIsolation {
             entry.setValue(new RailDepthIsolationModel(entry.getValue()));
             count++;
         }
-        Traincraft.LOGGER.warn("[TC-DEV50B2W] WRAPPED curveStates={} F10=rail-side normal offsets; F8/F7 must be mode 0; startup F10=0",
-                count);
+
+        // DEV58B9R4R1: obsolete rail F-key developer hint retired; renderer stays at default mode zero.
     }
 
     // Measurement origin: F7 success isolated the artifact to the rail SIDE/BASE,

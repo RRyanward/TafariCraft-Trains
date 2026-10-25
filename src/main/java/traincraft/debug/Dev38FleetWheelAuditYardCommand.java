@@ -40,7 +40,8 @@ import traincraft.Traincraft;
  * rebuild. Selection teleports the player next to one subject so the client
  * WheelPartProbe automatically inspects only that stock.
  */
-@Mod.EventBusSubscriber(modid = Traincraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Dev38FleetWheelAuditYardCommand {
     private static final String TAG = "tc_dev38_r1g1z5f_fleet_audit";
     private static final int EXPECTED_ROSTER = 111;

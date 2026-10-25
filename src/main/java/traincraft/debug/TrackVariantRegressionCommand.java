@@ -14,7 +14,8 @@ import traincraft.Traincraft;
 
 import java.util.List;
 
-@Mod.EventBusSubscriber(modid = Traincraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TrackVariantRegressionCommand {
     private static final List<String> TEST_ITEMS = List.of(
             "track_switch_small_right_energy",

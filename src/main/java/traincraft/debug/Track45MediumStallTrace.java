@@ -25,7 +25,8 @@ import java.util.UUID;
  *
  * Diagnostic only. No motion/state is changed.
  */
-@Mod.EventBusSubscriber(modid = Traincraft.MOD_ID, bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class Track45MediumStallTrace {
     private static final Logger LOGGER = LogManager.getLogger("TC45MediumStall");
     private static final Map<UUID, Integer> LOW_SPEED_TICKS = new HashMap<>();

@@ -53,7 +53,8 @@ import java.util.Map;
  * It establishes the canonical endpoint/core baseline before t6 rewrites any
  * track family. No world blocks are placed and no production state is changed.
  */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TrackOneCoreAuditCommand {
     private static final int EXPECTED_SPEC_COUNT = 50;
     private static final DateTimeFormatter STAMP =

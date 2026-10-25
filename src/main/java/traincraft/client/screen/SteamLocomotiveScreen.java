@@ -46,6 +46,23 @@ public final class SteamLocomotiveScreen extends AbstractContainerScreen<SteamLo
                 menu.getLocomotive().getId());
     }
 
+    @Override
+    protected void init() {
+        super.init();
+        addRenderableWidget(net.minecraft.client.gui.components.Button.builder(
+            net.minecraft.network.chat.Component.literal("Lights: "
+                + traincraft.lighting.LocomotiveLightMode.label(menu.getLocomotive())),
+            button -> {
+                var e=menu.getLocomotive();
+                int next=(traincraft.lighting.LocomotiveLightMode.mode(e)+1)%3;
+                traincraft.lighting.LocomotiveLightMode.syncClient(e.getUUID(),next);
+                TCNetwork.CHANNEL.sendToServer(new
+                    traincraft.network.packet.LocomotiveLightModePacket(e.getId(),next));
+                button.setMessage(net.minecraft.network.chat.Component.literal("Lights: "
+                    + traincraft.lighting.LocomotiveLightMode.label(e)));
+            }).bounds(leftPos+62,topPos-23,94,20).build());
+    }
+
     /** Keep classic driving controls active while the locomotive GUI is open. */
     @Override
     public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
@@ -150,6 +167,10 @@ public final class SteamLocomotiveScreen extends AbstractContainerScreen<SteamLo
         this.renderBackground(graphics);
         super.render(graphics, mouseX, mouseY, partialTick);
 
+        /* Classic gold/black train name in the empty band ABOVE the GUI. */
+        TrainGuiNames.drawClassicHeader(graphics, font,
+                TrainGuiNames.fromEntity(this.menu.getLocomotive()),
+                this.leftPos, this.topPos, this.imageWidth);
         /* The original parking-brake button sits just above the panel. */
         renderClassicBrakeButton(graphics);
         this.renderTooltip(graphics, mouseX, mouseY);
@@ -202,20 +223,8 @@ public final class SteamLocomotiveScreen extends AbstractContainerScreen<SteamLo
 
     @Override
     protected void renderLabels(GuiGraphics graphics, int mouseX, int mouseY) {
-        /*
-         * GuiLoco2.func_146979_b from 1.7.10 drew the locomotive name at these
-         * exact nine positions: eight black outline pixels around a gold center.
-         */
-        String text = this.title.getString();
-        graphics.drawString(this.font, text, 39, 7, 0x000000, false);
-        graphics.drawString(this.font, text, 41, 5, 0x000000, false);
-        graphics.drawString(this.font, text, 39, 5, 0x000000, false);
-        graphics.drawString(this.font, text, 41, 7, 0x000000, false);
-        graphics.drawString(this.font, text, 39, 6, 0x000000, false);
-        graphics.drawString(this.font, text, 41, 6, 0x000000, false);
-        graphics.drawString(this.font, text, 40, 7, 0x000000, false);
-        graphics.drawString(this.font, text, 40, 5, 0x000000, false);
-        graphics.drawString(this.font, text, 40, 6, 0xD3A900, false);
+        // F8R3: title is drawn in render(), ABOVE the GUI instead of over art.
+        // Keep the original screen controls and inventory unchanged.
     }
 
     private int brakeButtonX() {

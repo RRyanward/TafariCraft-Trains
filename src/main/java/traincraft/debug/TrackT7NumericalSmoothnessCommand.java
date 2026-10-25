@@ -56,7 +56,8 @@ import java.util.stream.Stream;
  * This stage validates bidirectional connected-course routing only. The later
  * full-consist stage is where actual reverse/S input and coupling are gated.
  */
-@Mod.EventBusSubscriber(modid = "traincraft", bus = Mod.EventBusSubscriber.Bus.FORGE)
+// DEV58B9R4: legacy diagnostic/test command subscriber retired.
+
 public final class TrackT7NumericalSmoothnessCommand {
     private static final String ENV = "TC_T7_SMOOTHNESS_HEADLESS";
 

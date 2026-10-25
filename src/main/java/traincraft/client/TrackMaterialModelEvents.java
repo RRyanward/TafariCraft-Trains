@@ -114,8 +114,12 @@ public final class TrackMaterialModelEvents {
                 continue;
             }
 
-            String normalPath =
-                    path.substring(0, path.length() - "_energy".length());
+            // DEV58B8R3D: track_energy also ends with _energy but its
+            // corresponding Normal item is track_normal, not "track".
+            // Reuse the existing EnergyItemModel for its inventory icon.
+            String normalPath = "track_energy".equals(path)
+                    ? "track_normal"
+                    : path.substring(0, path.length() - "_energy".length());
 
             ModelResourceLocation normalKey =
                     new ModelResourceLocation(

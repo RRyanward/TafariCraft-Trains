@@ -15,7 +15,7 @@ import traincraft.network.packet.LocomotiveWhistlePacket;
 
 /** Network channel used by the 1.20.1 Traincraft port. */
 public final class TCNetwork {
-    private static final String PROTOCOL_VERSION = "5";
+    private static final String PROTOCOL_VERSION = "6";
 
     public static final SimpleChannel CHANNEL = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(Traincraft.MOD_ID, "main"),
@@ -52,11 +52,21 @@ public final class TCNetwork {
                 ToggleHandBrakePacket::handle
         );
         CHANNEL.registerMessage(
-                id,
+                id++,
                 LocomotiveWhistlePacket.class,
                 LocomotiveWhistlePacket::encode,
                 LocomotiveWhistlePacket::decode,
                 LocomotiveWhistlePacket::handle
         );
+        CHANNEL.registerMessage(id++,
+                traincraft.network.packet.LocomotiveLightModePacket.class,
+                traincraft.network.packet.LocomotiveLightModePacket::encode,
+                traincraft.network.packet.LocomotiveLightModePacket::decode,
+                traincraft.network.packet.LocomotiveLightModePacket::handle);
+        CHANNEL.registerMessage(id,
+                traincraft.network.packet.LocomotiveLightSyncPacket.class,
+                traincraft.network.packet.LocomotiveLightSyncPacket::encode,
+                traincraft.network.packet.LocomotiveLightSyncPacket::decode,
+                traincraft.network.packet.LocomotiveLightSyncPacket::handle);
     }
 }
