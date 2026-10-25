@@ -6,6 +6,34 @@ The project is currently in final development / release-candidate validation and
 
 ## Unreleased
 
+### October 25, 2026 — Worldgen completion, lighting controls, GPU work and cleanup (DEV54–DEV58)
+
+This entry describes the source snapshot synchronized to GitHub on October 25 (`93df72b`) and completed development milestones. **No public release JAR or full release certification is implied.**
+
+**Village railway world generation — completed and frozen**
+- Completed DEV56 village station placement and cleanup: 25 current structure templates across desert, plains, savanna, snowy, and taiga pools, including active halts/depots, abandoned, overgrown and subway structures.
+- Added village-site rules, terrain/structure checks, railway staff lifecycle handling, and chance-based parked locomotive placements.
+- **Scope finalized:** no automatic inter-village rail connections, no self-building networks, and no unsupervised train dispatch. Players extend station tracks and connect villages themselves.
+
+**Locomotive visuals and player controls**
+- Accepted fleet running-gear work and locomotive headlight/ground-light development baselines from DEV54/DEV55; protect their calibration during cleanup.
+- Added per-locomotive `AUTO` / `ON` / `OFF` lighting modes, engine-aware/ambient-sensitive behavior, synchronization and GUI controls. Added associated steam/electric lighting repair and viewing utilities.
+- Added locomotive instrument settings and HUD/GUI updates, including train naming and options controls.
+- Improved creative inventory organization and restored/updated rolling-stock render paths.
+
+**Rendering and performance**
+- Added guarded immutable-mesh GPU/VBO paths, including opt-in rolling-stock batching with limits and CPU fallback, for comparison against established CPU rendering.
+- Ongoing fleet/performance regression work addresses multi-train FPS and memory stability. Changes are **not** a claim that all locomotive/rolling-stock scenarios have passed final performance certification.
+
+**Tracks and code cleanup**
+- Continued Medium Curve placement/preview, Energy Track presentation, and vegetation-aware track placement work; further runtime acceptance is required for edge cases.
+- Removed or disabled multiple obsolete debug and headless-test helpers while retaining protected movement, lighting and rendering behavior where still needed.
+- Several post-cleanup light/render regressions remain subject to targeted review; already accepted designs are not being redesigned.
+
+**Release gate still open:** complete targeted fixes; automatically re-run reusable regressions; certify clean client/server builds, survival, multiplayer, save/reload and performance; verify attribution/licensing. Public binary distribution requires the permissions described in `NOTICE.md`.
+
+**Supersedes October 13 planning:** automatic inter-village networks and autonomous dispatch are not in the agreed release scope.
+
 ### October 13, 2026 — Development source synchronization (DEV37–DEV52)
 
 The GitHub source tree was synchronized with the working Minecraft 1.20.1 project. Items below reflect added code/content and previously reported targeted development checks; they are **not** a claim that every feature has passed complete release or multiplayer regression testing.
